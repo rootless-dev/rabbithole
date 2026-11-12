@@ -171,11 +171,16 @@ final class GRPCDaemonClientTests: XCTestCase {
             XCTAssertEqual(error, .unavailable)
         }
 
-        // Once the daemon is up, the same client object reaches it (after its
-        // reconnect backoff), so allow a bounded number of attempts.
+        // Keep the daemon away long enough for the library's default backoff
+        // (1 s growing by 1.6x) to have grown past 3 s; the configured cap of
+        // 1 s must keep recovery quick regardless.
+        try await Task.sleep(for: .milliseconds(5500))
+
+        // Once the daemon is up, the same client object reaches it within 3 s.
         try daemon.start()
+        let started = ContinuousClock.now
         var last: DaemonError?
-        for _ in 0..<40 {
+        while ContinuousClock.now - started < .seconds(3) {
             do {
                 _ = try await withTimeout(10) { try await client.enqueue(localPath: "/tmp/none") }
                 XCTFail("expected an error")
@@ -183,9 +188,9 @@ final class GRPCDaemonClientTests: XCTestCase {
                 last = error
                 if error != .unavailable { break }
             }
-            try await Task.sleep(for: .milliseconds(250))
+            try await Task.sleep(for: .milliseconds(50))
         }
-        XCTAssertEqual(last, .notConfigured)
+        XCTAssertEqual(last, .notConfigured, "client did not recover within 3 seconds of the daemon starting")
     }
 
     func testSnapshotMapping() throws {

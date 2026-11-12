@@ -21,7 +21,14 @@ final class GRPCDaemonClient: DaemonClient {
         do {
             let transport = try HTTP2ClientTransport.Posix(
                 target: .unixDomainSocket(path: socketPath, authority: nil),
-                transportSecurity: .plaintext)
+                transportSecurity: .plaintext,
+                config: .defaults { config in
+                    // The client outlives daemon restarts and the app's configure
+                    // retries give up after about 2.5 s, so reconnect quickly
+                    // instead of using the library's 1 s to 120 s backoff.
+                    config.backoff = .init(
+                        initial: .milliseconds(100), max: .seconds(1), multiplier: 1.6, jitter: 0.2)
+                })
             let client = GRPCClient(transport: transport)
             grpcClient = client
             stub = Stub(wrapping: client)
