@@ -6,6 +6,10 @@ struct AWSSettings: Equatable, Sendable {
     var secretAccessKey: String
     var region: String
     var bucket: String
+
+    /// Where quick uploads land in the bucket. Fixed for this slice and sent to
+    /// the daemon with every configuration.
+    static let quickUploadsPrefix = "quick-uploads/"
 }
 
 enum UploadState: Equatable, Sendable {

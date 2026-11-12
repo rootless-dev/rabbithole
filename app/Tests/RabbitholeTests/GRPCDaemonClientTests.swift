@@ -125,6 +125,17 @@ final class GRPCDaemonClientTests: XCTestCase {
         }
     }
 
+    /// The daemon rejects an empty quick uploads prefix, so a successful call
+    /// proves the client sent a non-empty one. Nothing is enqueued, so no AWS call happens.
+    func testConfigureWithValidSettingsSucceedsAgainstRealDaemon() async throws {
+        try daemon.start()
+        let client = GRPCDaemonClient(socketPath: daemon.socketPath)
+        let settings = validSettings
+
+        try await withTimeout(10) { try await client.configure(settings) }
+        XCTAssertEqual(AWSSettings.quickUploadsPrefix, "quick-uploads/")
+    }
+
     func testWatchStreamEndsWhenTaskCancelled() async throws {
         try daemon.start()
         let client = GRPCDaemonClient(socketPath: daemon.socketPath)
