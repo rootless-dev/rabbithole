@@ -19,6 +19,8 @@ func Message(err error) string {
 		return "AWS denied permission to write to the bucket"
 	case errors.Is(err, ErrPreconditionFailed):
 		return "An object with this name appeared during the upload"
+	case errors.Is(err, ErrNoFreeName):
+		return "Could not find a free name for this file"
 	case errors.Is(err, ErrFileUnreadable):
 		return "File could not be read"
 	default:

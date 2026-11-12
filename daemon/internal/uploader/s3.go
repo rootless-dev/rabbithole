@@ -22,6 +22,8 @@ var (
 	// ErrWrongRegion means the bucket lives in a different region than the one
 	// configured.
 	ErrWrongRegion = errors.New("The bucket is in a different region")
+	// ErrNoFreeName means every candidate object key for the file was taken.
+	ErrNoFreeName = errors.New("Could not find a free name for this file")
 	// ErrBadCredentials means AWS rejected the access key.
 	ErrBadCredentials = errors.New("bad credentials")
 	// ErrNoNetwork means the request could not reach AWS.

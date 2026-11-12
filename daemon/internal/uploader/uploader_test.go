@@ -288,6 +288,59 @@ func TestExistingTimestampedKeyGetsSuffix(t *testing.T) {
 	}
 }
 
+func TestCandidatesShareOneTimestampWhenTheClockAdvances(t *testing.T) {
+	path := sparseFile(t, "report.pdf", 10)
+	tick := fixedNow
+	u := New(func() time.Time {
+		tick = tick.Add(time.Second) // every read of the clock differs
+		return tick
+	})
+	// The timestamp is read once, before the loop; the first read is fixedNow+1s.
+	stamp := fixedNow.Add(time.Second)
+	fake := newFake("p/report.pdf", CandidateKey("p/", "report.pdf", stamp, 1))
+
+	if err := u.Upload(context.Background(), fake, Request{Prefix: "p/", LocalPath: path}, Callbacks{}); err != nil {
+		t.Fatal(err)
+	}
+	want := CandidateKey("p/", "report.pdf", stamp, 2)
+	if !strings.HasSuffix(want, "-2.pdf") {
+		t.Fatalf("candidate %q does not end in -2.pdf", want)
+	}
+	if !slices.Equal(fake.putKeys, []string{want}) {
+		t.Fatalf("put keys = %v, want [%s]", fake.putKeys, want)
+	}
+}
+
+// everythingExists reports every key as taken.
+type everythingExists struct {
+	*fakeS3
+	checks int
+}
+
+func (e *everythingExists) ObjectExists(ctx context.Context, key string) (bool, error) {
+	e.checks++
+	return true, nil
+}
+
+func TestUploadGivesUpAfterAThousandTakenNames(t *testing.T) {
+	path := sparseFile(t, "report.pdf", 10)
+	fake := &everythingExists{fakeS3: newFake()}
+
+	err := newUploader().Upload(context.Background(), fake, Request{Prefix: "p/", LocalPath: path}, Callbacks{})
+	if !errors.Is(err, ErrNoFreeName) {
+		t.Fatalf("error = %v, want ErrNoFreeName", err)
+	}
+	if fake.checks != 1000 {
+		t.Fatalf("existence checks = %d, want 1000", fake.checks)
+	}
+	if fake.writeCalls() != 0 {
+		t.Fatalf("write calls = %v, want none", fake.calls)
+	}
+	if got := Message(err); got != "Could not find a free name for this file" {
+		t.Fatalf("Message = %q", got)
+	}
+}
+
 func TestSinglePutRejectedWriteMovesToNextCandidate(t *testing.T) {
 	path := sparseFile(t, "a.txt", 10)
 	fake := newFake()
@@ -506,6 +559,7 @@ func TestMessageMapping(t *testing.T) {
 		{ErrBucketNotFound, "Bucket not found"},
 		{ErrNoNetwork, "No internet connection"},
 		{ErrWriteDenied, "AWS denied permission to write to the bucket"},
+		{ErrWrongRegion, "The bucket is in a different region"},
 		{fmt.Errorf("wrapped: %w", ErrNoNetwork), "No internet connection"},
 		{errors.New("boom"), "Upload failed"},
 	}

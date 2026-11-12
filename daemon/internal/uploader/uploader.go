@@ -12,6 +12,9 @@ import (
 
 const abortTimeout = 1 * time.Second
 
+// maxKeyAttempts caps how many candidate keys one upload tries.
+const maxKeyAttempts = 1000
+
 // Request describes one file to upload.
 type Request struct {
 	Prefix    string
@@ -48,11 +51,13 @@ func (u *Uploader) Upload(ctx context.Context, s3 S3, req Request, cb Callbacks)
 	name := filepath.Base(req.LocalPath)
 	progress := &progressTracker{total: size, report: cb.Progress}
 
-	for attempt := 0; ; attempt++ {
+	// One timestamp for every candidate, so "-2", "-3" extend the same stamp.
+	stamp := u.now()
+	for attempt := 0; attempt < maxKeyAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		key := CandidateKey(req.Prefix, name, u.now(), attempt)
+		key := CandidateKey(req.Prefix, name, stamp, attempt)
 		exists, err := s3.ObjectExists(ctx, key)
 		if err != nil {
 			return cancelOr(ctx, err)
@@ -78,6 +83,7 @@ func (u *Uploader) Upload(ctx context.Context, s3 S3, req Request, cb Callbacks)
 		progress.advance(size)
 		return nil
 	}
+	return ErrNoFreeName
 }
 
 func uploadSingle(ctx context.Context, s3 S3, key, path string, size int64, progress *progressTracker) error {
