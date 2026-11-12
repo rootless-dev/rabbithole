@@ -1,0 +1,99 @@
+name: Rabbithole
+
+options:
+  bundleIdPrefix: com.rabbithole
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+
+packages:
+  GRPCCore:
+    url: https://github.com/grpc/grpc-swift-2.git
+    from: 2.4.0
+  GRPCProtobuf:
+    url: https://github.com/grpc/grpc-swift-protobuf.git
+    from: 2.5.0
+  GRPCNIOTransportHTTP2:
+    url: https://github.com/grpc/grpc-swift-nio-transport.git
+    from: 2.12.0
+  SwiftProtobuf:
+    url: https://github.com/apple/swift-protobuf.git
+    from: 1.39.0
+
+targets:
+  Rabbithole:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Rabbithole
+      - path: Sources/Generated
+    info:
+      path: Sources/Rabbithole/Info.plist
+      properties:
+        CFBundleName: Rabbithole
+        CFBundleDisplayName: Rabbithole
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSUIElement: true
+        LSMinimumSystemVersion: "26.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rabbithole.app
+        PRODUCT_NAME: Rabbithole
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - package: GRPCCore
+        product: GRPCCore
+      - package: GRPCProtobuf
+        product: GRPCProtobuf
+      - package: GRPCNIOTransportHTTP2
+        product: GRPCNIOTransportHTTP2
+      - package: SwiftProtobuf
+        product: SwiftProtobuf
+    postCompileScripts:
+      - name: Embed and sign daemon
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          DAEMON="${SRCROOT}/../daemon/bin/rabbitholed"
+          if [ ! -x "${DAEMON}" ]; then
+            echo "error: ${DAEMON} not found; run 'make build' (builds the daemon first)" >&2
+            exit 1
+          fi
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          mkdir -p "${DEST}"
+          cp "${DAEMON}" "${DEST}/rabbitholed"
+          /usr/bin/codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "${DEST}/rabbitholed"
+
+  RabbitholeTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/RabbitholeTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rabbithole.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: Rabbithole
+
+schemes:
+  Rabbithole:
+    build:
+      targets:
+        Rabbithole: all
+        RabbitholeTests: [test]
+    test:
+      targets:
+        - RabbitholeTests
