@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/grpclog"
 
 	"rabbithole/daemon/internal/awss3"
 	pb "rabbithole/daemon/internal/gen/rabbithole/v1"
@@ -123,6 +124,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 		defer signal.Stop(sigs)
 		opts.signals = sigs
 	}
+
+	// grpc-go's default logger writes plain-text lines to stderr, which would
+	// break the JSON log contract. Discard its output before any server exists.
+	grpclog.SetLoggerV2(grpclog.NewLoggerV2(io.Discard, io.Discard, io.Discard))
 
 	ln, socketInfo, err := listenUnix(socketPath, opts.listen)
 	if err != nil {

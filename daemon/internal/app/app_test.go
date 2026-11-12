@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -439,8 +440,97 @@ func TestRunnerBuildsClientFromJobSettingsThenUploads(t *testing.T) {
 	}
 }
 
+const helperSocketEnv = "RABBITHOLE_TEST_HELPER_SOCKET"
+
+// TestHelperDaemon is not a test: when the parent test re-executes this
+// binary with helperSocketEnv set, it runs the real daemon entrypoint so the
+// parent can observe the process's real stderr.
+func TestHelperDaemon(t *testing.T) {
+	sock := os.Getenv(helperSocketEnv)
+	if sock == "" {
+		t.Skip("helper process only")
+	}
+	os.Exit(Run(context.Background(), []string{"--socket", sock}, os.Stdin, os.Stderr))
+}
+
+func TestGRPCLibraryNeverWritesNonJSONToStderr(t *testing.T) {
+	sock := filepath.Join(shortTempDir(t), "d.sock")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperDaemon$")
+	cmd.Env = append(os.Environ(),
+		helperSocketEnv+"="+sock,
+		// Make the default gRPC logger as chatty as it can be.
+		"GRPC_GO_LOG_SEVERITY_LEVEL=info",
+		"GRPC_GO_LOG_VERBOSITY_LEVEL=99",
+	)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr := &syncBuffer{}
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+	t.Cleanup(func() {
+		select {
+		case <-exited:
+		default:
+			_ = cmd.Process.Kill()
+			<-exited
+		}
+	})
+
+	deadline := time.Now().Add(waitTimeout)
+	for {
+		if c, err := net.Dial("unix", sock); err == nil {
+			c.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("daemon never listened; stderr: %s", stderr.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// Garbage instead of an HTTP/2 preface, then an abrupt disconnect.
+	if c, err := net.Dial("unix", sock); err == nil {
+		_, _ = c.Write([]byte("this is not http2 \x00\xff\x01 garbage\r\n\r\n"))
+		_ = c.Close()
+	}
+	// A truncated preface followed by a disconnect.
+	if c, err := net.Dial("unix", sock); err == nil {
+		_, _ = c.Write([]byte("PRI * HTTP/2.0\r\n\r\nSM"))
+		_ = c.Close()
+	}
+	// A real client that connects, makes a call and drops the connection.
+	conn, err := grpc.NewClient("unix://"+sock, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	_, _ = pb.NewDaemonClient(conn).Configure(ctx, &pb.ConfigureRequest{})
+	cancel()
+	conn.Close()
+	time.Sleep(200 * time.Millisecond) // let the server notice the closed connections
+
+	_ = stdin.Close()
+	select {
+	case <-exited:
+	case <-time.After(waitTimeout):
+		t.Fatal("daemon did not exit")
+	}
+
+	out := stderr.String()
+	lines := logLines(t, out) // fails on any line that is not JSON
+	if len(lines) == 0 {
+		t.Fatalf("expected the daemon's own JSON log lines, got none: %q", out)
+	}
+}
+
 const (
-	leakTestKeyID  = "AKIATESTKEYID123456"
+	leakTestKeyID = "AKIATESTKEYID123456"
 	leakTestSecret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYTESTSECRET"
 )
 
