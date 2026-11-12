@@ -63,7 +63,7 @@ struct SetupView: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 51)
-        .padding(.bottom, 12)
+        .padding(.bottom, 24)
         .frame(width: Self.sidebarWidth)
         .frame(maxHeight: .infinity)
         .overlay(alignment: .topLeading) { WindowLightsStandIn().padding(.leading, 14).padding(.top, 14) }
@@ -108,8 +108,10 @@ private struct PaneHeading: View {
             .foregroundStyle(Theme.muted)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: 400, alignment: .leading)
-            .padding(.top, 6)
-            .padding(.bottom, 22)
+            // CSS line height 1.5 puts half of the extra leading above the first line
+            // and below the last one; SwiftUI line spacing only goes between lines.
+            .padding(.top, 7.75)
+            .padding(.bottom, 23.75)
     }
 }
 
@@ -121,7 +123,7 @@ private struct SetupField<Control: View>: View {
     @ViewBuilder var control: Control
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 12) {
                 Text(label).fontWeight(.medium).frame(width: 150, alignment: .leading)
                 control.frame(maxWidth: 320)
@@ -183,7 +185,6 @@ private struct ConnectPane: View {
                 }
             }
             .padding(.leading, 162)
-            .padding(.top, 6)
             SetupMessage(text: model.message)
         }
     }
@@ -228,7 +229,7 @@ private struct ReadyPane: View {
                                 .padding(-3)
                         }
                     RoundedRectangle(cornerRadius: 3).fill(Theme.strongTrack).frame(width: 12, height: 12)
-                    Text(timeline.date.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
+                    Text(UploadText.menuBarClock(timeline.date))
                         .font(.system(size: 11.5))
                         .foregroundStyle(Theme.muted)
                 }

@@ -68,6 +68,18 @@ final class UploadTextTests: XCTestCase {
             "Failed, AWS rejected the access key")
     }
 
+    func testStoppedLinesSayHowFarTheUploadGotAndWhy() {
+        let failed = record(.failed, error: "No internet connection")
+        XCTAssertEqual(
+            UploadText.stoppedLine(failed, condition: .offline),
+            .init(text: "Stopped at 800 MB of 1.9 GB, no internet connection", tone: .warn))
+        XCTAssertEqual(
+            UploadText.stoppedLine(failed, condition: .keyRejected),
+            .init(text: "Stopped at 800 MB of 1.9 GB, access key rejected", tone: .bad))
+        XCTAssertEqual(UploadText.stoppedLine(failed, condition: .none), UploadText.progressLine(failed))
+        XCTAssertEqual(UploadText.menuBarClock(noon.addingTimeInterval(58 * 60), calendar: calendar), "Thu 12:58")
+    }
+
     func testHistoryLinesSayWhenAnUploadEnded() {
         let now = noon
         let today = noon.addingTimeInterval(-4 * 60)

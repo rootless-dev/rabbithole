@@ -119,7 +119,7 @@ private struct CategoryButton: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, 7.25)
             .background(isOn ? Theme.card : .clear, in: .rect(cornerRadius: 8))
             .overlay {
                 if isOn { RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 1) }
@@ -148,6 +148,7 @@ private struct SettingRow<Controls: View>: View {
                         .lineSpacing(1.5)
                         .foregroundStyle(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
+                        .frame(minHeight: 15.5)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -156,7 +157,8 @@ private struct SettingRow<Controls: View>: View {
                 .foregroundStyle(Theme.muted)
         }
         .padding(.top, isFirst ? 4 : 10)
-        .padding(.bottom, 10)
+        // 10 points of padding plus the 1 point rule the mockups draw below it.
+        .padding(.bottom, isLast ? 10 : 11)
         .overlay(alignment: .bottom) {
             if !isLast { Rectangle().fill(Theme.line).frame(height: 1) }
         }

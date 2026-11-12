@@ -65,6 +65,22 @@ final class UIFixture {
         tray.apply(.make("up-4", "report-q3.pdf", in: "\(Self.home)/Downloads", total: 480_000_000, sent: 310_000_000, .uploading))
         tray.apply(.make("up-5", "design-assets.zip", in: "\(Self.home)/Work/client", total: 640_000_000, .queued))
         clock.advance(120)
+        await warmThumbnails()
+    }
+
+    /// Generates the stand-in previews before drawing, as they would be on a second look.
+    private func warmThumbnails() async {
+        let sides: [CGFloat] = [26, 30, 50]
+        for _ in 0..<50 {
+            var missing = false
+            for record in tray.uploads.ledger.records where ["png", "jpg"].contains((record.fileName as NSString).pathExtension) {
+                for side in sides where thumbnails.image(for: record.localPath, side: side, scale: 2) == nil {
+                    missing = true
+                }
+            }
+            if !missing { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
     }
 
     /// Two uploads that failed for the same reason, which raises that service condition.

@@ -31,6 +31,12 @@ final class TrayPanel: NSPanel {
     }
 }
 
+/// Hosts tray content so that a click lands on its target even when the panel is not the key
+/// window yet, as the "Recent uploads" list never is until it is clicked.
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 /// Owns the menu bar icon, the window it toggles and the "Recent uploads" list beside it. The
 /// window closes when the icon is clicked again, when a menu item opens another window, or
 /// when the app quits; clicks elsewhere leave it open.
@@ -48,14 +54,14 @@ final class TrayWindowController: NSObject {
         super.init()
 
         let actions = closingTray(actions)
-        let hosting = NSHostingView(
+        let hosting = FirstMouseHostingView(
             rootView: TrayView(
                 viewModel: viewModel, menu: menu, actions: actions,
                 heightChanged: { [weak self] in self?.contentHeightChanged($0) }))
         hosting.sizingOptions = []
         panel = TrayPanel.make(width: TrayPanelPositioner.width, content: hosting)
 
-        let recentHosting = NSHostingView(
+        let recentHosting = FirstMouseHostingView(
             rootView: RecentUploadsView(
                 uploads: viewModel.uploads, actions: actions,
                 heightChanged: { [weak self] in self?.recentHeightChanged($0) }))

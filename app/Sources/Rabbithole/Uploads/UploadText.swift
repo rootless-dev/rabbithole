@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 /// The words and numbers shown for uploads, as written in the approved mockups.
 enum UploadText {
-    enum Tone: Equatable, Sendable { case normal, ok, bad }
+    enum Tone: Equatable, Sendable { case normal, ok, warn, bad }
 
     struct Line: Equatable, Sendable {
         let text: String
@@ -59,6 +59,17 @@ enum UploadText {
         }
     }
 
+    /// The line for an upload that failed because of the condition a banner is announcing:
+    /// it says how far it got, in the banner's color.
+    static func stoppedLine(_ record: UploadRecord, condition: ServiceCondition) -> Line {
+        let progress = "Stopped at \(bytes(record.bytesSent)) of \(bytes(record.bytesTotal))"
+        switch condition {
+        case .offline: return Line(text: "\(progress), no internet connection", tone: .warn)
+        case .keyRejected: return Line(text: "\(progress), access key rejected", tone: .bad)
+        case .none: return progressLine(record)
+        }
+    }
+
     /// The same line for History, where ended uploads also say when they ended.
     static func historyLine(_ record: UploadRecord, now: Date, calendar: Calendar = .current) -> Line {
         guard let endedAt = record.endedAt else { return progressLine(record) }
@@ -105,6 +116,11 @@ enum UploadText {
     /// "Today, 11:52" for the detail's Started fact.
     static func started(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
         "\(day(date, now: now, calendar: calendar, inSentence: false)), \(time(date, calendar: calendar))"
+    }
+
+    /// "Thu 12:58", as a menu bar clock writes it.
+    static func menuBarClock(_ date: Date, calendar: Calendar = .current) -> String {
+        formatted(date, "EEE HH:mm", calendar: calendar)
     }
 
     /// "2m", "1h", "Tue": the age shown beside a recent upload in the tray.

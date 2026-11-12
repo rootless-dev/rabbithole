@@ -59,13 +59,17 @@ struct MainView: View {
 /// The traffic lights of the mockups, drawn only in offscreen renders where the real window
 /// buttons do not exist.
 struct WindowLightsStandIn: View {
+    /// Small windows can only be closed: their other two buttons are grey.
+    var closeOnly = false
     @Environment(\.flatMaterials) private var flat
 
     var body: some View {
         if flat {
             HStack(spacing: 7) {
-                ForEach([0xF2605A, 0xF5BD3F, 0x5CC74B] as [UInt32], id: \.self) { hex in
-                    Circle().fill(Theme.dynamic(hex, hex)).frame(width: 11, height: 11)
+                ForEach(Array(([0xF2605A, 0xF5BD3F, 0x5CC74B] as [UInt32]).enumerated()), id: \.offset) { index, hex in
+                    Circle()
+                        .fill(closeOnly && index > 0 ? Theme.glassLine : Theme.dynamic(hex, hex))
+                        .frame(width: 11, height: 11)
                 }
             }
         }
@@ -127,7 +131,7 @@ private struct ServiceBanner: View {
                 let failed = context.uploads.failedByCondition
                 Banner(
                     tone: .warn, lead: "No internet connection.",
-                    text: "Uploads that were running have failed. Send them again when it comes back.",
+                    text: "Uploads have stopped. Use Try now to send them again when it comes back.",
                     actionTitle: failed.isEmpty ? nil : "Try now",
                     action: { context.actions.retry(failed) })
             case .keyRejected:
@@ -165,6 +169,8 @@ struct OverviewView: View {
                 .disabled(!context.tray.acceptsUploads)
             } else {
                 @Bindable var model = context.model
+                // Uploads that failed for the reason the banner is announcing.
+                let stopped = Set(ledger.failedByCondition.map(\.id))
                 ListBand(title: "Uploads") {
                     FilterTabs(
                         tabs: [.all, .inProgress, .finished, .failed].map { .init(value: $0, title: $0.title) },
@@ -172,7 +178,12 @@ struct OverviewView: View {
                 }
                 UploadList(
                     records: model.overviewQuery.apply(to: ledger.ordered), topPadding: 10,
-                    line: { UploadText.progressLine($0) },
+                    stopped: stopped,
+                    line: {
+                        stopped.contains($0.id)
+                            ? UploadText.stoppedLine($0, condition: ledger.condition)
+                            : UploadText.progressLine($0)
+                    },
                     open: { model.openDetail(id: $0.id, from: .overview) },
                     empty: {
                         EmptyState(
@@ -286,6 +297,8 @@ struct ListBand<Trailing: View>: View {
 struct UploadList<Empty: View>: View {
     let records: [UploadRecord]
     var topPadding: CGFloat = 10
+    /// Ids of uploads drawn as stopped where they were, instead of as failed.
+    var stopped: Set<String> = []
     let line: (UploadRecord) -> UploadText.Line
     let open: (UploadRecord) -> Void
     @ViewBuilder var empty: Empty
@@ -300,7 +313,8 @@ struct UploadList<Empty: View>: View {
                         Button {
                             open(record)
                         } label: {
-                            UploadRow(record: record, line: line(record))
+                            UploadRow(
+                                record: record, line: line(record), isStopped: stopped.contains(record.id))
                         }
                         .buttonStyle(.plain)
                     }
@@ -318,10 +332,15 @@ struct UploadList<Empty: View>: View {
 struct UploadRow: View {
     let record: UploadRecord
     let line: UploadText.Line
+    /// Stopped by a lost connection or a rejected key: the ring keeps how far it got.
+    var isStopped = false
 
     var body: some View {
         HStack(spacing: 12) {
-            ProgressRing(fraction: record.ringFraction, color: record.ringColor) {
+            ProgressRing(
+                fraction: isStopped ? record.fraction : record.ringFraction,
+                color: isStopped ? Theme.muted : record.ringColor
+            ) {
                 ThumbnailView(path: record.localPath, fileName: record.fileName, side: 30)
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -358,6 +377,7 @@ extension UploadText.Tone {
         switch self {
         case .normal: Theme.muted
         case .ok: Theme.ok
+        case .warn: Theme.warn
         case .bad: Theme.bad
         }
     }

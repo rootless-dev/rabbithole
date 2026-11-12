@@ -164,7 +164,7 @@ private struct TrayDropArea: View {
         .background(style == .over ? Theme.tint : Theme.card, in: .rect(cornerRadius: 7))
         .overlay {
             RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(border, style: StrokeStyle(lineWidth: 1.5, dash: style == .normal ? [3, 3] : []))
+                .strokeBorder(border, style: StrokeStyle(lineWidth: 1.5, dash: style == .normal ? [4, 2.5] : []))
         }
     }
 

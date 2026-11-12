@@ -15,7 +15,7 @@ private struct SmallWindowBody<Content: View>: View {
             .padding(.init(top: 33, leading: 24, bottom: 20, trailing: 24))
             .frame(width: width)
             .fixedSize(horizontal: false, vertical: true)
-            .overlay(alignment: .topLeading) { WindowLightsStandIn().padding(12) }
+            .overlay(alignment: .topLeading) { WindowLightsStandIn(closeOnly: true).padding(12) }
             .background(GlassBackdrop(material: .popover))
             .ignoresSafeArea()
     }
@@ -39,10 +39,12 @@ private struct WindowText: View {
     var body: some View {
         Text(text)
             .font(.system(size: 12.5))
-            .lineSpacing(2.5)
+            .lineSpacing(3)
             .foregroundStyle(Theme.smallWindowMuted)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 6)
+            // 6 points of margin plus the half leading CSS adds around a 1.45 line height.
+            .padding(.top, 7.5)
+            .padding(.bottom, 1.5)
     }
 }
 

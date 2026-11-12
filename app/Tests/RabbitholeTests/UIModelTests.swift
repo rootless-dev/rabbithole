@@ -504,6 +504,17 @@ final class SmallLogicTests: XCTestCase {
         calls = await counter.value
         XCTAssertEqual(calls, 2)
     }
+
+    func testThumbnailCacheServesTheGeneratedPreviewAtItsPointSize() async {
+        let cache = ThumbnailCache(generate: { url, side, _ in UIFixture.picture(for: url, side: side) })
+        XCTAssertNil(cache.image(for: "/tmp/a.jpg", side: 30, scale: 2), "nothing until it is generated")
+        var image: NSImage?
+        for _ in 0..<100 where image == nil {
+            try? await Task.sleep(for: .milliseconds(10))
+            image = cache.image(for: "/tmp/a.jpg", side: 30, scale: 2)
+        }
+        XCTAssertEqual(image?.size, CGSize(width: 30, height: 22.5))
+    }
 }
 
 private actor Counter {

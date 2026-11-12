@@ -217,7 +217,7 @@ private struct Fact: View {
                 .fontWeight(.semibold)
                 .monospacedDigit()
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .truncationMode(.tail)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
