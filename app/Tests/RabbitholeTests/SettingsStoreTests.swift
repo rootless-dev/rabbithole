@@ -60,7 +60,29 @@ final class SettingsStoreTests: XCTestCase {
             XCTAssertNotEqual(value as? String, sample.accessKeyID)
             XCTAssertNotEqual(value as? String, sample.secretAccessKey)
         }
-        XCTAssertEqual(Set(domain.keys), ["region", "bucket"])
+        // The quick uploads folder became a setting; it is not secret and lives here too.
+        XCTAssertEqual(Set(domain.keys), ["region", "bucket", "quickUploadsPrefix"])
+    }
+
+    func testQuickUploadsFolderIsSavedNormalizedAndDefaultsWhenMissing() throws {
+        let store = SettingsStore(credentials: InMemoryCredentialStore(), defaults: defaults)
+        var settings = sample
+        settings.uploadsPrefix = " /inbox/2026// "
+        try store.save(settings)
+        XCTAssertEqual(try store.load()?.uploadsPrefix, "inbox/2026/")
+        XCTAssertEqual(store.loadDestination().uploadsPrefix, "inbox/2026/")
+
+        defaults.removeObject(forKey: "quickUploadsPrefix")
+        XCTAssertEqual(try store.load()?.uploadsPrefix, "quick-uploads/")
+        XCTAssertEqual(AWSSettings.normalizedPrefix("  "), "quick-uploads/")
+    }
+
+    func testDestinationIsReadWithoutCredentials() {
+        defaults.set("eu-west-1", forKey: "region")
+        let store = SettingsStore(credentials: InMemoryCredentialStore(), defaults: defaults)
+        XCTAssertEqual(
+            store.loadDestination(),
+            SettingsStore.Destination(region: "eu-west-1", bucket: "", uploadsPrefix: "quick-uploads/"))
     }
 
     func testLoadReturnsNilWhenKeychainMissing() throws {

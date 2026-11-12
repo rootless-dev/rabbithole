@@ -61,7 +61,7 @@ final class GRPCDaemonClient: DaemonClient {
         request.secretAccessKey = settings.secretAccessKey
         request.region = settings.region
         request.bucket = settings.bucket
-        request.quickUploadsPrefix = AWSSettings.quickUploadsPrefix
+        request.quickUploadsPrefix = AWSSettings.normalizedPrefix(settings.uploadsPrefix)
         do {
             _ = try await stub.configure(request)
         } catch {

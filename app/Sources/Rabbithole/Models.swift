@@ -7,9 +7,20 @@ struct AWSSettings: Equatable, Sendable {
     var region: String
     var bucket: String
 
-    /// Where quick uploads land in the bucket. Fixed for this slice and sent to
-    /// the daemon with every configuration.
+    /// Where quick uploads land in the bucket, sent to the daemon with every configuration.
+    var uploadsPrefix: String = AWSSettings.quickUploadsPrefix
+
+    /// The default quick uploads folder.
     static let quickUploadsPrefix = "quick-uploads/"
+
+    /// A folder name as the daemon expects it: trimmed, no leading slash, one trailing slash.
+    /// Returns the default when nothing usable is left.
+    static func normalizedPrefix(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        while value.hasPrefix("/") { value.removeFirst() }
+        while value.hasSuffix("/") { value.removeLast() }
+        return value.isEmpty ? quickUploadsPrefix : value + "/"
+    }
 }
 
 enum UploadState: Equatable, Sendable {
