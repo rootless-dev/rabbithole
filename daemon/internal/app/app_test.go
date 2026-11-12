@@ -190,6 +190,70 @@ func TestSocketModeIs0600(t *testing.T) {
 	h.expectExit(time.Now(), 0)
 }
 
+func TestSocketIsCreatedWithMode0600FromTheStart(t *testing.T) {
+	sock := filepath.Join(shortTempDir(t), "d.sock")
+	var modeAtListen os.FileMode
+	listen := func(network, address string) (net.Listener, error) {
+		ln, err := net.Listen(network, address)
+		if err == nil {
+			if info, statErr := os.Stat(address); statErr == nil {
+				modeAtListen = info.Mode().Perm()
+			}
+		}
+		return ln, err
+	}
+	h := start(t, sock, options{listen: listen})
+	h.waitListening()
+	h.stdinW.Close()
+	h.expectExit(time.Now(), 0)
+	if modeAtListen != 0o600 {
+		t.Fatalf("socket mode right after listen = %o, want 600", modeAtListen)
+	}
+}
+
+func TestSocketDirectoryIsForcedTo0700(t *testing.T) {
+	dir := filepath.Join(shortTempDir(t), "sub")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h := start(t, filepath.Join(dir, "d.sock"), options{})
+	h.waitListening()
+	h.stdinW.Close()
+	h.expectExit(time.Now(), 0)
+
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("socket directory mode = %o, want 700", perm)
+	}
+}
+
+func TestSocketReplacedByAnotherFileIsLeftInPlaceOnExit(t *testing.T) {
+	sock := filepath.Join(shortTempDir(t), "d.sock")
+	h := start(t, sock, options{})
+	h.waitListening()
+
+	// A newer daemon takes over the path while this one is still running.
+	if err := os.Remove(sock); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sock, []byte("newer daemon"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.stdinW.Close()
+	h.expectExit(time.Now(), 0)
+
+	got, err := os.ReadFile(sock)
+	if err != nil || string(got) != "newer daemon" {
+		t.Fatalf("replacement socket was touched: %q, %v", got, err)
+	}
+}
+
 func TestSocketDirectoryIsCreated(t *testing.T) {
 	sock := filepath.Join(shortTempDir(t), "sub", "d.sock")
 	h := start(t, sock, options{})
@@ -271,7 +335,7 @@ func TestShutdownDeadlineWhenAbortHangs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
 	defer cancel()
 	if _, err := client.Configure(ctx, &pb.ConfigureRequest{
-		AccessKeyId: "id", SecretAccessKey: "secret", Region: "us-east-1", Bucket: "b",
+		AccessKeyId: "id", SecretAccessKey: "secret", Region: "us-east-1", Bucket: "b", QuickUploadsPrefix: "quick-uploads/",
 	}); err != nil {
 		t.Fatal(err)
 	}

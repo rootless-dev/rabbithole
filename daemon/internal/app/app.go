@@ -97,7 +97,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 		opts.signals = sigs
 	}
 
-	ln, err := listenUnix(socketPath, opts.listen)
+	ln, socketInfo, err := listenUnix(socketPath, opts.listen)
 	if err != nil {
 		logging.BootError(stderr, serviceName, err)
 		return exitError
@@ -158,11 +158,28 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 		log.Warn("upload did not stop before the deadline")
 	}
 
-	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Warn("could not remove socket", "error", err.Error())
-	}
+	removeOwnSocket(log, socketPath, socketInfo)
 	log.Info("stopped")
 	return code
+}
+
+// removeOwnSocket removes path only if it is still the socket file this
+// process created.
+func removeOwnSocket(log *logging.Logger, path string, created os.FileInfo) {
+	current, err := os.Lstat(path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Warn("could not inspect socket", "error", err.Error())
+		}
+		return
+	}
+	if !os.SameFile(created, current) {
+		log.Info("socket was replaced; leaving it in place")
+		return
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Warn("could not remove socket", "error", err.Error())
+	}
 }
 
 // parseArgs reads --socket from args. Flag errors are returned instead of
@@ -180,22 +197,42 @@ func parseArgs(args []string) (string, error) {
 	return *socket, nil
 }
 
-// listenUnix creates the socket directory, removes a stale file at path,
-// listens on a Unix socket and restricts it to the owner.
-func listenUnix(path string, listen func(network, address string) (net.Listener, error)) (net.Listener, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, fmt.Errorf("create socket directory: %w", err)
+// listenUnix creates the socket directory (mode 0700 even when it already
+// existed), removes a stale file at path, listens on a Unix socket created
+// with mode 0600 from the start, and returns the identity of the socket file
+// this process created. The listener does not unlink the path on close: the
+// caller removes it only if it is still the same file, so an exiting daemon
+// never deletes a socket a newer daemon created at the same path.
+func listenUnix(path string, listen func(network, address string) (net.Listener, error)) (net.Listener, os.FileInfo, error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, nil, fmt.Errorf("create socket directory: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return nil, nil, fmt.Errorf("restrict socket directory permissions: %w", err)
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("remove stale socket: %w", err)
+		return nil, nil, fmt.Errorf("remove stale socket: %w", err)
 	}
+
+	// bind creates the socket file with the umask applied: 0177 yields 0600.
+	oldMask := syscall.Umask(0o177)
 	ln, err := listen("unix", path)
+	syscall.Umask(oldMask)
 	if err != nil {
-		return nil, fmt.Errorf("listen on %s: %w", path, err)
+		return nil, nil, fmt.Errorf("listen on %s: %w", path, err)
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if unixLn, ok := ln.(*net.UnixListener); ok {
+		unixLn.SetUnlinkOnClose(false)
+	}
+	if err := os.Chmod(path, 0o600); err != nil { // backstop for listeners that ignore the umask
 		_ = ln.Close()
-		return nil, fmt.Errorf("restrict socket permissions: %w", err)
+		return nil, nil, fmt.Errorf("restrict socket permissions: %w", err)
 	}
-	return ln, nil
+	info, err := os.Stat(path)
+	if err != nil {
+		_ = ln.Close()
+		return nil, nil, fmt.Errorf("stat socket: %w", err)
+	}
+	return ln, info, nil
 }
