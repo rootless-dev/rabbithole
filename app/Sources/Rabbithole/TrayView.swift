@@ -85,7 +85,7 @@ struct TrayView: View {
 
     private var canChooseFile: Bool {
         switch viewModel.state {
-        case .notConfigured, .unavailable: false
+        case .notConfigured, .unavailable, .starting: false
         default: true
         }
     }
@@ -201,7 +201,7 @@ private struct StatusLine: View {
             return nil
         case .uploading(_, _, let fraction):
             self.fraction = fraction
-        case .unavailable, .finished, .failed:
+        case .unavailable, .starting, .finished, .failed:
             self.fraction = nil
         }
         self.text = text

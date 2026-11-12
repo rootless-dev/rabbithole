@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var tray: TrayWindowController?
     private var settingsWindow: AWSSettingsWindowController?
     private var viewModel: TrayViewModel?
+    /// Set once the app is quitting; composition that is still in progress must not start a daemon.
+    private var isShutDown = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The unit tests are hosted inside this app: do not start a daemon or a menu bar icon.
@@ -37,6 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func compose(store: SettingsStore) async {
         // The keychain read may block, so it runs off the main actor.
         let saved = await Task.detached { try? store.load() }.value
+        // The app may have been told to quit while the keychain was read.
+        guard !isShutDown else { return }
 
         let client = GRPCDaemonClient(socketPath: Self.socketURL.path)
         let supervisor = DaemonSupervisor(
@@ -47,14 +51,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             makeClient: { _ in client })
         let viewModel = TrayViewModel(
             client: client, settings: saved,
-            isRegularFile: TrayViewModel.isRegularFileOnDisk,
+            isRegularFile: TrayViewModel.isRegularFileOffMain,
             sleep: { try await Task.sleep(for: $0) })
         let settingsWindow = AWSSettingsWindowController(
             store: store,
             onSaved: { settings in Task { await viewModel.settingsSaved(settings) } })
         let forwarder = DaemonEventForwarder(
             client: client, events: supervisor.events, viewModel: viewModel,
-            loadSettings: { try? store.load() })
+            loadSettings: { try store.load() })
         let tray = TrayWindowController(
             viewModel: viewModel,
             openSettings: { settingsWindow.show() },
@@ -83,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Safe to call more than once. The daemon also exits by itself when the app dies, because
     /// its standard input closes.
     private func shutDown() {
+        isShutDown = true
         forwarder?.stop()
         supervisor?.stop()
         tray?.tearDown()
