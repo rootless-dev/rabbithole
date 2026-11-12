@@ -151,7 +151,7 @@ func TestConfigureRejectsEmptyFields(t *testing.T) {
 		{"empty secret", func(r *pb.ConfigureRequest) { r.SecretAccessKey = "" }, codes.InvalidArgument},
 		{"empty region", func(r *pb.ConfigureRequest) { r.Region = "" }, codes.InvalidArgument},
 		{"empty bucket", func(r *pb.ConfigureRequest) { r.Bucket = "" }, codes.InvalidArgument},
-		{"empty prefix is accepted", func(r *pb.ConfigureRequest) { r.QuickUploadsPrefix = "" }, codes.OK},
+		{"empty prefix", func(r *pb.ConfigureRequest) { r.QuickUploadsPrefix = "" }, codes.InvalidArgument},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

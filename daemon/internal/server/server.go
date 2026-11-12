@@ -45,6 +45,8 @@ func (s *Server) Configure(_ context.Context, req *pb.ConfigureRequest) (*pb.Con
 		return nil, status.Error(codes.InvalidArgument, "region is required")
 	case req.GetBucket() == "":
 		return nil, status.Error(codes.InvalidArgument, "bucket is required")
+	case req.GetQuickUploadsPrefix() == "":
+		return nil, status.Error(codes.InvalidArgument, "quick_uploads_prefix is required")
 	}
 
 	st := uploader.Settings{
