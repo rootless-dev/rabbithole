@@ -95,37 +95,90 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertNil(SettingsStore.validate(s))
     }
 
-    /// Talks to the real keychain under a service name unique to this run, so the
-    /// user's own entries are never read or modified. Items are removed in tearDown
-    /// even when an assertion fails.
-    func testKeychainRoundTrip() async throws {
-        let service = "com.rabbithole.app.tests.\(UUID().uuidString)"
-        addTeardownBlock { KeychainCredentialStore.deleteAll(service: service) }
-        let keychain = KeychainCredentialStore(service: service)
+    // MARK: - Real keychain (unique service per test, removed in teardown)
 
-        // Bounded: a keychain permission dialog would otherwise hang the run.
-        let outcome = await withTaskGroup(of: String.self) { group in
-            group.addTask {
-                do {
-                    XCTAssertNil(try keychain.load())
-                    try keychain.save(accessKeyID: "AKIATESTKEY", secret: "first-secret")
-                    try keychain.save(accessKeyID: "AKIATESTKEY2", secret: "second-secret")
-                    let loaded = try keychain.load()
-                    XCTAssertEqual(loaded?.accessKeyID, "AKIATESTKEY2")
-                    XCTAssertEqual(loaded?.secret, "second-secret")
-                    return "done"
-                } catch {
-                    return "error: \(error)"
-                }
-            }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(20))
-                return "timeout"
-            }
-            let first = await group.next() ?? "none"
-            group.cancelAll()
-            return first
-        }
-        XCTAssertEqual(outcome, "done")
+    private func makeServiceName() -> String {
+        let service = "com.rabbithole.app.tests.\(UUID().uuidString)"
+        // Registered before the first keychain call so it runs even if an assertion fails.
+        addTeardownBlock { KeychainCredentialStore.deleteAll(service: service) }
+        return service
     }
+
+    /// Runs synchronous keychain work on a background thread and gives up waiting after
+    /// `timeout` seconds. A call blocked by a permission dialog is abandoned, not
+    /// cancelled; the test fails instead of hanging.
+    private func runBounded<T: Sendable>(
+        timeout: TimeInterval = 20, _ work: @escaping @Sendable () throws -> T
+    ) throws -> T {
+        let result = Mutex<Result<T, Error>?>(nil)
+        let finished = expectation(description: "keychain work finished")
+        DispatchQueue.global().async {
+            result.withLock { $0 = Result { try work() } }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: timeout)
+        guard let outcome = result.withLock({ $0 }) else {
+            throw XCTSkip("unreachable")
+        }
+        return try outcome.get()
+    }
+
+    func testKeychainSaveTwiceLoadsSecondPairExactly() throws {
+        let keychain = KeychainCredentialStore(service: makeServiceName())
+        let loaded = try runBounded { () -> (String, String)? in
+            XCTAssertNil(try keychain.load())
+            try keychain.save(accessKeyID: "AKIATESTKEY", secret: "first-secret")
+            try keychain.save(accessKeyID: "AKIATESTKEY2", secret: "second-secret")
+            return try keychain.load().map { ($0.accessKeyID, $0.secret) }
+        }
+        XCTAssertEqual(loaded?.0, "AKIATESTKEY2")
+        XCTAssertEqual(loaded?.1, "second-secret")
+    }
+
+    func testFailedKeychainSaveKeepsPreviousPair() throws {
+        let service = makeServiceName()
+        let good = KeychainCredentialStore(service: service)
+        let failing = KeychainCredentialStore(
+            service: service, api: UpdateFailingKeychainAPI(base: SystemKeychainAPI()))
+        let loaded = try runBounded { () -> (String, String)? in
+            try good.save(accessKeyID: "AKIAOLD", secret: "old-secret")
+            XCTAssertThrowsError(try failing.save(accessKeyID: "AKIANEW", secret: "new-secret"))
+            return try good.load().map { ($0.accessKeyID, $0.secret) }
+        }
+        XCTAssertEqual(loaded?.0, "AKIAOLD")
+        XCTAssertEqual(loaded?.1, "old-secret")
+    }
+
+    func testUndecodableKeychainItemMakesLoadThrow() throws {
+        let service = makeServiceName()
+        let keychain = KeychainCredentialStore(service: service)
+        let status = try runBounded { () -> OSStatus in
+            SecItemAdd(
+                [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: service,
+                    kSecAttrAccount as String: KeychainCredentialStore.account,
+                    kSecValueData as String: Data("not json".utf8),
+                ] as CFDictionary, nil)
+        }
+        XCTAssertEqual(status, errSecSuccess)
+        XCTAssertThrowsError(try runBounded { try keychain.load() }) { error in
+            XCTAssertTrue(error is KeychainError)
+            XCTAssertFalse("\(error)".contains("not json"))
+        }
+    }
+}
+
+/// Delegates to the real keychain but fails every update, simulating a write error.
+private struct UpdateFailingKeychainAPI: KeychainItemAPI {
+    let base: KeychainItemAPI
+
+    func copyMatching(_ query: [String: Any]) -> (status: OSStatus, data: Data?) {
+        base.copyMatching(query)
+    }
+    func update(_ query: [String: Any], with attributes: [String: Any]) -> OSStatus {
+        errSecInteractionNotAllowed
+    }
+    func add(_ attributes: [String: Any]) -> OSStatus { base.add(attributes) }
+    func delete(_ query: [String: Any]) -> OSStatus { base.delete(query) }
 }

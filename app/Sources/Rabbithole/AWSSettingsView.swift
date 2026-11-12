@@ -62,7 +62,8 @@ struct AWSSettingsView: View {
         var candidate = AWSSettings(
             accessKeyID: accessKeyID, secretAccessKey: secret, region: region, bucket: bucket)
         if candidate.secretAccessKey.isEmpty, existingSecret {
-            // Keep the stored secret when the field was left empty.
+            // An empty field keeps the stored secret. The pair is stored as one item,
+            // so it is read once here and written back together with the other fields.
             do {
                 guard let current = try store.load() else {
                     message = "Enter the secret access key."
