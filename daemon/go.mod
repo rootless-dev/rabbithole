@@ -3,6 +3,7 @@ module rabbithole/daemon
 go 1.27.1
 
 require (
+	github.com/phuslu/log v1.0.138
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )
