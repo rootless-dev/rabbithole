@@ -19,6 +19,9 @@ var (
 	ErrWriteDenied = errors.New("write denied")
 	// ErrBucketNotFound means the bucket does not exist.
 	ErrBucketNotFound = errors.New("bucket not found")
+	// ErrWrongRegion means the bucket lives in a different region than the one
+	// configured.
+	ErrWrongRegion = errors.New("The bucket is in a different region")
 	// ErrBadCredentials means AWS rejected the access key.
 	ErrBadCredentials = errors.New("bad credentials")
 	// ErrNoNetwork means the request could not reach AWS.

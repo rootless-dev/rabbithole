@@ -9,10 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -58,27 +56,21 @@ func newClient(s uploader.Settings, httpClient s3.HTTPClient) (uploader.S3, erro
 	return &client{s3: c, bucket: s.Bucket}, nil
 }
 
+// ObjectExists lists the bucket with the key as prefix and reports whether the
+// first key returned is exactly key. HeadObject would need s3:GetObject, which
+// the access key does not have; listing needs only s3:ListBucket. Keys sort
+// lexicographically, so an exact match is always the first result for its own
+// prefix.
 func (c *client) ObjectExists(ctx context.Context, key string) (bool, error) {
-	_, err := c.s3.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(c.bucket),
-		Key:    aws.String(key),
+	out, err := c.s3.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket:  aws.String(c.bucket),
+		Prefix:  aws.String(key),
+		MaxKeys: aws.Int32(1),
 	})
-	if err == nil {
-		return true, nil
+	if err != nil {
+		return false, mapErrorWithDenial(err, uploader.ErrForbidden)
 	}
-	// HEAD responses carry no error body, so only the HTTP status is reliable.
-	var respErr *awshttp.ResponseError
-	if errors.As(err, &respErr) {
-		switch respErr.HTTPStatusCode() {
-		case http.StatusNotFound:
-			// A missing bucket also answers 404, but without a body it cannot be
-			// told apart from a missing key; the write call reports it instead.
-			return false, nil
-		case http.StatusForbidden:
-			return false, fmt.Errorf("%w: %w", uploader.ErrForbidden, err)
-		}
-	}
-	return false, mapError(err)
+	return len(out.Contents) > 0 && aws.ToString(out.Contents[0].Key) == key, nil
 }
 
 func (c *client) PutObject(ctx context.Context, key string, body io.Reader, size int64) error {
@@ -142,11 +134,16 @@ func (c *client) AbortMultipart(ctx context.Context, key, uploadID string) error
 	return mapError(err)
 }
 
-// mapError translates an SDK error into an uploader sentinel, keeping the
-// original error in the chain. AccessDenied maps to ErrWriteDenied because
-// every caller that reaches here is a write; ObjectExists handles its own 403.
+// mapError translates the error of a write call into an uploader sentinel,
+// keeping the original error in the chain. AccessDenied maps to ErrWriteDenied.
 // Errors it does not recognise are returned unchanged.
 func mapError(err error) error {
+	return mapErrorWithDenial(err, uploader.ErrWriteDenied)
+}
+
+// mapErrorWithDenial is mapError with the sentinel that AccessDenied maps to,
+// which depends on whether the call was a write or the existence check.
+func mapErrorWithDenial(err error, denied error) error {
 	if err == nil {
 		return nil
 	}
@@ -163,8 +160,10 @@ func mapError(err error) error {
 			return fmt.Errorf("%w: %w", uploader.ErrBadCredentials, err)
 		case "PreconditionFailed", "ConditionalRequestConflict":
 			return fmt.Errorf("%w: %w", uploader.ErrPreconditionFailed, err)
+		case "PermanentRedirect", "AuthorizationHeaderMalformed":
+			return fmt.Errorf("%w: %w", uploader.ErrWrongRegion, err)
 		case "AccessDenied":
-			return fmt.Errorf("%w: %w", uploader.ErrWriteDenied, err)
+			return fmt.Errorf("%w: %w", denied, err)
 		}
 	}
 	var netErr net.Error

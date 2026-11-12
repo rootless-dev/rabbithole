@@ -118,31 +118,101 @@ func newTestClient(t *testing.T, respond func(r *http.Request) *http.Response) (
 	return c, stub
 }
 
-func TestObjectExistsTreatsNotFoundAsFalse(t *testing.T) {
-	c, stub := newTestClient(t, func(r *http.Request) *http.Response { return reply(404, "", nil) })
-	exists, err := c.ObjectExists(context.Background(), "a/b.txt")
-	if err != nil || exists {
-		t.Fatalf("ObjectExists = %v, %v; want false, nil", exists, err)
-	}
-	reqs := stub.requests()
-	if len(reqs) != 1 || reqs[0].Method != http.MethodHead {
-		t.Fatalf("expected a single HEAD request, got %d", len(reqs))
-	}
+func errorXML(code string) string {
+	return `<?xml version="1.0" encoding="UTF-8"?><Error><Code>` + code + `</Code><Message>x</Message></Error>`
 }
 
-func TestObjectExistsTrueOn200(t *testing.T) {
-	c, _ := newTestClient(t, func(r *http.Request) *http.Response { return reply(200, "", nil) })
+// listXML builds a ListObjectsV2 response holding the given keys.
+func listXML(keys ...string) string {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Name>my-bucket</Name><MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated>`)
+	fmt.Fprintf(&b, "<KeyCount>%d</KeyCount>", len(keys))
+	for _, k := range keys {
+		b.WriteString("<Contents><Key>" + k + "</Key><Size>1</Size></Contents>")
+	}
+	b.WriteString("</ListBucketResult>")
+	return b.String()
+}
+
+func TestObjectExistsListsWithTheKeyAsPrefix(t *testing.T) {
+	c, stub := newTestClient(t, func(r *http.Request) *http.Response { return reply(200, listXML("a/b.txt"), nil) })
 	exists, err := c.ObjectExists(context.Background(), "a/b.txt")
 	if err != nil || !exists {
 		t.Fatalf("ObjectExists = %v, %v; want true, nil", exists, err)
 	}
+	reqs := stub.requests()
+	if len(reqs) != 1 || reqs[0].Method != http.MethodGet {
+		t.Fatalf("expected a single GET request, got %d", len(reqs))
+	}
+	q := reqs[0].URL.Query()
+	if q.Get("list-type") != "2" || q.Get("prefix") != "a/b.txt" || q.Get("max-keys") != "1" {
+		t.Fatalf("unexpected list query: %v", q)
+	}
 }
 
-func TestObjectExistsForbiddenOn403(t *testing.T) {
-	c, _ := newTestClient(t, func(r *http.Request) *http.Response { return reply(403, "", nil) })
+func TestObjectExistsFalseWhenKeyAbsent(t *testing.T) {
+	c, _ := newTestClient(t, func(r *http.Request) *http.Response { return reply(200, listXML(), nil) })
 	exists, err := c.ObjectExists(context.Background(), "a/b.txt")
-	if exists || !errors.Is(err, uploader.ErrForbidden) {
-		t.Fatalf("ObjectExists = %v, %v; want false, ErrForbidden", exists, err)
+	if err != nil || exists {
+		t.Fatalf("ObjectExists = %v, %v; want false, nil", exists, err)
+	}
+}
+
+func TestObjectExistsFalseWhenOnlyALongerKeyMatches(t *testing.T) {
+	c, _ := newTestClient(t, func(r *http.Request) *http.Response { return reply(200, listXML("a/b.txt.bak"), nil) })
+	exists, err := c.ObjectExists(context.Background(), "a/b.txt")
+	if err != nil || exists {
+		t.Fatalf("ObjectExists = %v, %v; want false, nil", exists, err)
+	}
+}
+
+func TestObjectExistsMapsErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		code   string
+		want   error
+	}{
+		{"access denied", 403, "AccessDenied", uploader.ErrForbidden},
+		{"invalid access key", 403, "InvalidAccessKeyId", uploader.ErrBadCredentials},
+		{"signature mismatch", 403, "SignatureDoesNotMatch", uploader.ErrBadCredentials},
+		{"no such bucket", 404, "NoSuchBucket", uploader.ErrBucketNotFound},
+		{"permanent redirect", 301, "PermanentRedirect", uploader.ErrWrongRegion},
+		{"authorization header malformed", 400, "AuthorizationHeaderMalformed", uploader.ErrWrongRegion},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := newTestClient(t, func(r *http.Request) *http.Response { return reply(tt.status, errorXML(tt.code), nil) })
+			exists, err := c.ObjectExists(context.Background(), "a/b.txt")
+			if exists || !errors.Is(err, tt.want) {
+				t.Fatalf("ObjectExists = %v, %v; want false, %v", exists, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestObjectExistsNeverSendsHead(t *testing.T) {
+	for _, resp := range []func() *http.Response{
+		func() *http.Response { return reply(200, listXML("k"), nil) },
+		func() *http.Response { return reply(200, listXML(), nil) },
+		func() *http.Response { return reply(403, errorXML("AccessDenied"), nil) },
+		func() *http.Response { return reply(404, errorXML("NoSuchBucket"), nil) },
+	} {
+		c, stub := newTestClient(t, func(r *http.Request) *http.Response { return resp() })
+		_, _ = c.ObjectExists(context.Background(), "k")
+		for _, r := range stub.requests() {
+			if r.Method == http.MethodHead {
+				t.Fatalf("ObjectExists sent a HEAD request: %s", r.URL)
+			}
+		}
+	}
+}
+
+func TestWrongRegionMapsOnWriteCalls(t *testing.T) {
+	c, _ := newTestClient(t, func(r *http.Request) *http.Response { return reply(301, errorXML("PermanentRedirect"), nil) })
+	err := c.PutObject(context.Background(), "k", strings.NewReader("x"), 1)
+	if !errors.Is(err, uploader.ErrWrongRegion) {
+		t.Fatalf("PutObject error = %v, want ErrWrongRegion", err)
 	}
 }
 
