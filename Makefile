@@ -34,5 +34,10 @@ test: daemon
 	xcodebuild test -project $(XCODE_PROJECT) -scheme Rabbithole -configuration Debug \
 		-destination 'platform=macOS' -derivedDataPath $(DERIVED_DATA)
 
+# Runs the app in the foreground so the daemon's JSON logs appear in this
+# terminal and the target ends when the app quits. `open` would send the logs
+# nowhere and could bring forward a stale instance, so a running one is quit first.
 run: build
-	open $(DERIVED_DATA)/Build/Products/Debug/Rabbithole.app
+	pkill -x Rabbithole || true
+	sleep 2
+	$(DERIVED_DATA)/Build/Products/Debug/Rabbithole.app/Contents/MacOS/Rabbithole
