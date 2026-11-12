@@ -254,6 +254,28 @@ The owner can veto any of these:
 - Placeholder identifiers: bundle identifier `com.rabbithole.app`, Go module path
   `rabbithole/daemon`.
 
+Decisions made during implementation that differ from the text above:
+
+- The menu has a third item, "AWS settings…", between "Choose file…" and "Quit".
+- The tray window has states beyond the ones listed in this document. Status texts:
+  "Starting…" while the daemon is coming up; "Uploads are unavailable" when the
+  daemon cannot be reached; "Uploads are unavailable. Quit and reopen Rabbithole."
+  when the restarts are used up; "Saved AWS settings could not be read" when the
+  keychain read fails; "AWS settings could not be applied" when a save succeeded but
+  the daemon rejected or missed the new settings (it keeps the older ones). Dropping
+  a file while starting is refused with "Rabbithole is still starting".
+- The key ID and the secret are stored together as one keychain item, so a save
+  replaces the pair or leaves the old one untouched.
+- `Configure` rejects an empty value in any field, including the quick uploads
+  prefix. The app always sends `quick-uploads/`.
+- The existence check lists the bucket with the key as prefix and compares the first
+  key returned, because `HeadObject` needs `s3:GetObject`, which the owner's policy
+  does not grant.
+- Transient AWS errors are not retried in this slice, and uploads carry no
+  client-side checksum.
+- The daemon's shutdown timer is 1.2 seconds from the signal, inside the 1.5 seconds
+  the app allows.
+
 ## Open question for the owner
 
 Which signing identity to use during development: ad-hoc signing (nothing to set up,
