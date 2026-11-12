@@ -21,6 +21,7 @@ type fakeS3 struct {
 	putErr      func(key string) error
 	partErr     func(number int32) error
 	completeErr error
+	abortErr    error
 
 	// Hooks run at the start of the named call.
 	onExists func()
@@ -139,7 +140,7 @@ func (f *fakeS3) AbortMultipart(ctx context.Context, key, uploadID string) error
 		f.abortHadDline = true
 		f.abortDeadline = time.Until(d)
 	}
-	return nil
+	return f.abortErr
 }
 
 var fixedNow = time.Date(2026, 3, 5, 14, 30, 9, 0, time.Local)
@@ -399,6 +400,24 @@ func TestForbiddenExistenceCheckNamesPermission(t *testing.T) {
 	}
 	if n := fake.writeCalls(); n != 0 {
 		t.Fatalf("%d write calls after a forbidden check: %v", n, fake.calls)
+	}
+}
+
+func TestFailedAbortIsReportedAndTheOriginalErrorWins(t *testing.T) {
+	path := sparseFile(t, "big.bin", 16*MiB)
+	fake := newFake()
+	fake.partErr = func(number int32) error { return ErrNoNetwork }
+	abortErr := errors.New("abort boom")
+	fake.abortErr = abortErr
+
+	var reported []error
+	err := newUploader().Upload(context.Background(), fake, Request{Prefix: "p/", LocalPath: path},
+		Callbacks{AbortFailed: func(err error) { reported = append(reported, err) }})
+	if !errors.Is(err, ErrNoNetwork) {
+		t.Fatalf("err = %v, want ErrNoNetwork", err)
+	}
+	if len(reported) != 1 || !errors.Is(reported[0], abortErr) {
+		t.Fatalf("AbortFailed calls = %v, want one with the abort error", reported)
 	}
 }
 

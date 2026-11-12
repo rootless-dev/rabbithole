@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,10 +16,14 @@ import (
 	"testing"
 	"time"
 
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	pb "rabbithole/daemon/internal/gen/rabbithole/v1"
+	"rabbithole/daemon/internal/logging"
 	"rabbithole/daemon/internal/uploader"
 )
 
@@ -416,7 +422,7 @@ func TestRunnerBuildsClientFromJobSettingsThenUploads(t *testing.T) {
 		gotSettings = s
 		return fakeS3{}, nil
 	}
-	r := &runner{uploader: uploader.New(time.Now), newS3: factory}
+	r := &runner{uploader: uploader.New(time.Now), newS3: factory, log: logging.New(io.Discard, "info", serviceName)}
 	want := uploader.Settings{AccessKeyID: "id", SecretAccessKey: "secret", Region: "r", Bucket: "b", Prefix: "p/"}
 
 	var key string
@@ -430,6 +436,161 @@ func TestRunnerBuildsClientFromJobSettingsThenUploads(t *testing.T) {
 	}
 	if !strings.HasPrefix(key, "p/") {
 		t.Fatalf("resolved key = %q, want prefix p/", key)
+	}
+}
+
+const (
+	leakTestKeyID  = "AKIATESTKEYID123456"
+	leakTestSecret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYTESTSECRET"
+)
+
+// failingS3 is a fakeS3 whose part upload and abort fail with scripted errors.
+type failingS3 struct {
+	fakeS3
+	putErr   error
+	partErr  error
+	abortErr error
+}
+
+func (f failingS3) PutObject(context.Context, string, io.Reader, int64) error { return f.putErr }
+func (f failingS3) UploadPart(context.Context, string, string, int32, io.Reader, int64) (string, error) {
+	return "", f.partErr
+}
+func (f failingS3) AbortMultipart(context.Context, string, string) error { return f.abortErr }
+
+// awsFailure is an error shaped like the SDK's: it carries an API code and an
+// HTTP status, and its text echoes the credentials the way a request dump would.
+func awsFailure(code string, status int) error {
+	api := &smithy.GenericAPIError{Code: code, Message: "request for " + leakTestKeyID + " signed with " + leakTestSecret}
+	return &awshttp.ResponseError{ResponseError: &smithyhttp.ResponseError{
+		Response: &smithyhttp.Response{Response: &http.Response{StatusCode: status}},
+		Err:      api,
+	}}
+}
+
+func logLines(t *testing.T, out string) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		if l == "" {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(l), &m); err != nil {
+			t.Fatalf("log line is not JSON: %q", l)
+		}
+		lines = append(lines, m)
+	}
+	return lines
+}
+
+func failureRunner(t *testing.T, s3 uploader.S3) (*runner, *syncBuffer, uploader.Settings) {
+	t.Helper()
+	buf := &syncBuffer{}
+	r := &runner{
+		uploader: uploader.New(time.Now),
+		newS3:    func(context.Context, uploader.Settings) (uploader.S3, error) { return s3, nil },
+		log:      logging.New(buf, "info", serviceName),
+	}
+	settings := uploader.Settings{AccessKeyID: leakTestKeyID, SecretAccessKey: leakTestSecret, Region: "r", Bucket: "b", Prefix: "p/"}
+	return r, buf, settings
+}
+
+func TestFailedUploadLogsOneJSONLineWithDiagnosticFields(t *testing.T) {
+	cause := awsFailure("SlowDown", 503)
+	r, buf, settings := failureRunner(t, failingS3{putErr: cause})
+	file := filepath.Join(shortTempDir(t), "report.pdf")
+	if err := os.WriteFile(file, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := r.Run(context.Background(), settings, uploader.Request{Prefix: "p/", LocalPath: file}, uploader.Callbacks{})
+	if err == nil {
+		t.Fatal("expected the upload to fail")
+	}
+	lines := logLines(t, buf.String())
+	if len(lines) != 1 {
+		t.Fatalf("got %d log lines, want exactly 1: %s", len(lines), buf.String())
+	}
+	line := lines[0]
+	want := map[string]any{
+		"level": "error", "msg": "upload failed", "service": serviceName,
+		"file": "report.pdf", "reason": "Upload failed", "aws_code": "SlowDown", "http_status": float64(503),
+	}
+	for k, v := range want {
+		if line[k] != v {
+			t.Errorf("field %q = %v, want %v (line: %v)", k, line[k], v, line)
+		}
+	}
+	if out := buf.String(); strings.Contains(out, leakTestKeyID) || strings.Contains(out, leakTestSecret) {
+		t.Fatalf("log output leaks credentials: %s", out)
+	}
+}
+
+func TestFailedUploadWithoutAWSDetailsOmitsThem(t *testing.T) {
+	r, buf, settings := failureRunner(t, failingS3{putErr: uploader.ErrNoNetwork})
+	file := filepath.Join(shortTempDir(t), "a.txt")
+	if err := os.WriteFile(file, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Run(context.Background(), settings, uploader.Request{Prefix: "p/", LocalPath: file}, uploader.Callbacks{})
+	lines := logLines(t, buf.String())
+	if len(lines) != 1 {
+		t.Fatalf("got %d log lines, want 1: %s", len(lines), buf.String())
+	}
+	if _, ok := lines[0]["aws_code"]; ok {
+		t.Errorf("aws_code present without an AWS error: %v", lines[0])
+	}
+	if _, ok := lines[0]["http_status"]; ok {
+		t.Errorf("http_status present without an AWS error: %v", lines[0])
+	}
+	if lines[0]["reason"] != "No internet connection" {
+		t.Errorf("reason = %v", lines[0]["reason"])
+	}
+}
+
+func TestFailedClientConstructionLogsTheUploadFailure(t *testing.T) {
+	buf := &syncBuffer{}
+	r := &runner{
+		uploader: uploader.New(time.Now),
+		newS3:    func(context.Context, uploader.Settings) (uploader.S3, error) { return nil, errors.New("bad settings") },
+		log:      logging.New(buf, "info", serviceName),
+	}
+	err := r.Run(context.Background(), uploader.Settings{}, uploader.Request{LocalPath: "/x/y.txt"}, uploader.Callbacks{})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	lines := logLines(t, buf.String())
+	if len(lines) != 1 || lines[0]["msg"] != "upload failed" || lines[0]["file"] != "y.txt" {
+		t.Fatalf("unexpected log output: %s", buf.String())
+	}
+}
+
+func TestFailedMultipartAbortIsLogged(t *testing.T) {
+	r, buf, settings := failureRunner(t, failingS3{partErr: uploader.ErrNoNetwork, abortErr: awsFailure("InternalError", 500)})
+	file := filepath.Join(shortTempDir(t), "big.bin")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(file, 16*uploader.MiB); err != nil {
+		t.Fatal(err)
+	}
+
+	_ = r.Run(context.Background(), settings, uploader.Request{Prefix: "p/", LocalPath: file}, uploader.Callbacks{})
+	lines := logLines(t, buf.String())
+	if len(lines) != 2 {
+		t.Fatalf("got %d log lines, want the abort failure and the upload failure: %s", len(lines), buf.String())
+	}
+	abort := lines[0]
+	if abort["msg"] != "multipart abort failed" || abort["file"] != "big.bin" ||
+		abort["aws_code"] != "InternalError" || abort["http_status"] != float64(500) {
+		t.Errorf("unexpected abort line: %v", abort)
+	}
+	if lines[1]["msg"] != "upload failed" {
+		t.Errorf("unexpected second line: %v", lines[1])
+	}
+	if out := buf.String(); strings.Contains(out, leakTestKeyID) || strings.Contains(out, leakTestSecret) {
+		t.Fatalf("log output leaks credentials: %s", out)
 	}
 }
 

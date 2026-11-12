@@ -29,6 +29,9 @@ type Callbacks struct {
 	// Progress is called with the bytes handed to S3 so far: non-decreasing,
 	// never above the file size, and equal to it on success.
 	Progress func(sent int64)
+	// AbortFailed is called when aborting a multipart upload after a failure
+	// itself fails. The original upload error is still the one returned.
+	AbortFailed func(err error)
 }
 
 // Uploader uploads local files to S3 with conditional writes.
@@ -70,7 +73,7 @@ func (u *Uploader) Upload(ctx context.Context, s3 S3, req Request, cb Callbacks)
 		}
 
 		if UseMultipart(size) {
-			err = uploadMultipart(ctx, s3, key, req.LocalPath, size, progress)
+			err = uploadMultipart(ctx, s3, key, req.LocalPath, size, progress, cb.AbortFailed)
 		} else {
 			err = uploadSingle(ctx, s3, key, req.LocalPath, size, progress)
 			if errors.Is(err, ErrPreconditionFailed) {
@@ -97,7 +100,7 @@ func uploadSingle(ctx context.Context, s3 S3, key, path string, size int64, prog
 	return s3.PutObject(ctx, key, body, size)
 }
 
-func uploadMultipart(ctx context.Context, s3 S3, key, path string, size int64, progress *progressTracker) (err error) {
+func uploadMultipart(ctx context.Context, s3 S3, key, path string, size int64, progress *progressTracker, abortFailed func(error)) (err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrFileUnreadable, err)
@@ -112,7 +115,10 @@ func uploadMultipart(ctx context.Context, s3 S3, key, path string, size int64, p
 		if err != nil {
 			abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), abortTimeout)
 			defer cancel()
-			_ = s3.AbortMultipart(abortCtx, key, uploadID) // best effort; the original error wins
+			// Best effort; the original error wins.
+			if abortErr := s3.AbortMultipart(abortCtx, key, uploadID); abortErr != nil && abortFailed != nil {
+				abortFailed(abortErr)
+			}
 		}
 	}()
 

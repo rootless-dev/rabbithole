@@ -11,7 +11,9 @@ import (
 	"sync"
 	"testing"
 
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 
 	"rabbithole/daemon/internal/uploader"
 )
@@ -54,6 +56,36 @@ func TestMapErrorLeavesOtherErrorsAlone(t *testing.T) {
 	}
 	if got := mapError(context.Canceled); !errors.Is(got, context.Canceled) || errors.Is(got, uploader.ErrNoNetwork) {
 		t.Fatalf("context.Canceled must pass through, got %v", got)
+	}
+}
+
+func TestErrorDetails(t *testing.T) {
+	api := &smithy.GenericAPIError{Code: "SlowDown", Message: "secret-looking text"}
+	withStatus := &awshttp.ResponseError{
+		ResponseError: &smithyhttp.ResponseError{
+			Response: &smithyhttp.Response{Response: &http.Response{StatusCode: 503}},
+			Err:      api,
+		},
+	}
+	tests := []struct {
+		name       string
+		err        error
+		wantCode   string
+		wantStatus int
+	}{
+		{"nil", nil, "", 0},
+		{"plain error", errors.New("boom"), "", 0},
+		{"api error only", fmt.Errorf("wrapped: %w", api), "SlowDown", 0},
+		{"api error with status", fmt.Errorf("wrapped: %w", withStatus), "SlowDown", 503},
+		{"mapped sentinel keeps details", mapError(withStatus), "SlowDown", 503},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, status := ErrorDetails(tt.err)
+			if code != tt.wantCode || status != tt.wantStatus {
+				t.Fatalf("ErrorDetails = %q, %d; want %q, %d", code, status, tt.wantCode, tt.wantStatus)
+			}
+		})
 	}
 }
 

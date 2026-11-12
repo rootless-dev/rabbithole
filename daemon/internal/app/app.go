@@ -48,14 +48,41 @@ type s3Factory func(ctx context.Context, s uploader.Settings) (uploader.S3, erro
 type runner struct {
 	uploader *uploader.Uploader
 	newS3    s3Factory
+	log      *logging.Logger
 }
 
+// Run performs one upload and logs one line if it fails. The line carries the
+// readable reason, the AWS error code and HTTP status when the error has them,
+// and the file name; never the error's own text, which may echo request content.
 func (r *runner) Run(ctx context.Context, s uploader.Settings, req uploader.Request, cb uploader.Callbacks) error {
-	client, err := r.newS3(ctx, s)
-	if err != nil {
-		return err
+	name := filepath.Base(req.LocalPath)
+	cb.AbortFailed = func(err error) {
+		r.logFailure(ctx, "multipart abort failed", name, err)
 	}
-	return r.uploader.Upload(ctx, client, req, cb)
+	client, err := r.newS3(ctx, s)
+	if err == nil {
+		err = r.uploader.Upload(ctx, client, req, cb)
+	}
+	if err != nil {
+		r.logFailure(ctx, "upload failed", name, err)
+	}
+	return err
+}
+
+func (r *runner) logFailure(ctx context.Context, msg, file string, err error) {
+	kv := []any{"file", file, "reason", uploader.Message(err)}
+	code, status := awss3.ErrorDetails(err)
+	if code != "" {
+		kv = append(kv, "aws_code", code)
+	}
+	if status != 0 {
+		kv = append(kv, "http_status", status)
+	}
+	if ctx.Err() != nil {
+		r.log.Warn(msg, kv...) // shutdown cancelled the work; not a defect
+		return
+	}
+	r.log.Error(msg, kv...)
 }
 
 // options holds the seams tests replace; the zero value selects production
@@ -88,7 +115,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 		opts.newS3 = awss3.New
 	}
 	if opts.runner == nil {
-		opts.runner = &runner{uploader: uploader.New(time.Now), newS3: opts.newS3}
+		opts.runner = &runner{uploader: uploader.New(time.Now), newS3: opts.newS3, log: log}
 	}
 	if opts.signals == nil {
 		sigs := make(chan os.Signal, 1)

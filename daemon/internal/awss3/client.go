@@ -11,6 +11,7 @@ import (
 	"net"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -132,6 +133,21 @@ func (c *client) AbortMultipart(ctx context.Context, key, uploadID string) error
 		UploadId: aws.String(uploadID),
 	})
 	return mapError(err)
+}
+
+// ErrorDetails returns the AWS error code and the HTTP status an error carries,
+// for diagnostics. Either is zero-valued when the error does not carry it. It
+// never returns the error's text, which may echo request content.
+func ErrorDetails(err error) (code string, httpStatus int) {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		code = apiErr.ErrorCode()
+	}
+	var respErr *awshttp.ResponseError
+	if errors.As(err, &respErr) {
+		httpStatus = respErr.HTTPStatusCode()
+	}
+	return code, httpStatus
 }
 
 // mapError translates the error of a write call into an uploader sentinel,
