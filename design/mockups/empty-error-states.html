@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbithole: empty and error states mockup</title>
+<style>
+  body { margin:0; padding:28px; background:#eef0f5; color:#161a26; }
+  #es-root { max-width:1040px; margin:0 auto; }
+  #es-root > h2 { font-size:22px; margin:0 0 6px; color:#161a26; }
+  #es-root > h3 { font-size:15px; margin:26px 0 0; color:#161a26; }
+  #es-root > .subtitle { margin:0; color:#5b6278; font-size:14px; line-height:1.5; max-width:70ch; }
+  #es-root > .es-toggle { color:#161a26; }
+  .es { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+  .es.light { --ink:#161a26; --muted:#62697e; --off:rgba(22,26,38,.36); --line:rgba(22,26,38,.11); --main:#fbfbfd; --card:#ffffff; --side:rgba(250,251,255,.58); --hot:rgba(255,255,255,.6); --track:rgba(22,26,38,.13); --accent:#4a3fd0; --on:#ffffff;
+              --warn:#8a5a00; --warnbg:#fff3d6; --bad:#b3261e; --badbg:#fde7e4; --glass:rgba(250,251,255,.58); --edge:rgba(255,255,255,.7); --shadow:rgba(20,24,60,.3);
+              --wall:radial-gradient(circle at 88% 24%, #ffb86b 0 9%, transparent 28%), radial-gradient(circle at 6% 80%, #5fd0c5 0 9%, transparent 30%), linear-gradient(150deg,#9fc4f2,#6f8fe0 55%,#8a6fd6); }
+  .es.dark  { --ink:#f1f3fa; --muted:#9aa1b8; --off:rgba(241,243,250,.32); --line:rgba(255,255,255,.1); --main:#1a1d2b; --card:#222638; --side:rgba(26,29,44,.55); --hot:rgba(255,255,255,.12); --track:rgba(255,255,255,.16); --accent:#a99bff; --on:#14162a;
+              --warn:#ffd98a; --warnbg:rgba(255,190,70,.14); --bad:#ff9b92; --badbg:rgba(255,90,80,.15); --glass:rgba(26,29,44,.55); --edge:rgba(255,255,255,.15); --shadow:rgba(0,0,0,.55);
+              --wall:radial-gradient(circle at 88% 24%, #c2542d 0 9%, transparent 28%), radial-gradient(circle at 6% 80%, #1f8f8a 0 9%, transparent 30%), linear-gradient(150deg,#1d2a52,#151a36 55%,#2a1b4d); }
+  .es-toggle { font:inherit; font-size:13px; padding:6px 14px; border-radius:8px; border:1px solid #8884; background:transparent; color:inherit; cursor:pointer; margin-top:10px; }
+  .es-toggle:focus-visible { outline:2px solid #7a6cf0; outline-offset:2px; }
+  .es-desk { border-radius:10px; padding:22px; margin:12px 0 6px; background:var(--wall); color:var(--ink); font-size:13px; }
+  .es-pair { display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:20px; align-items:start; }
+  @media (max-width:820px){ .es-pair{ grid-template-columns:1fr; } }
+  .es-win { display:grid; grid-template-columns:170px minmax(0,1fr); height:360px; border-radius:12px; overflow:hidden; box-shadow:0 18px 44px var(--shadow); border:1px solid var(--edge); }
+  .es-side { background:var(--side); backdrop-filter:blur(26px) saturate(170%); -webkit-backdrop-filter:blur(26px) saturate(170%); padding:12px 10px; border-right:1px solid var(--line); }
+  .es-lights { display:flex; gap:7px; padding:2px 4px 22px; }
+  .es-lights i { width:11px; height:11px; border-radius:50%; display:block; }
+  .es-lights i:nth-child(1){ background:#f2605a; } .es-lights i:nth-child(2){ background:#f5bd3f; } .es-lights i:nth-child(3){ background:#5cc74b; }
+  .es-nav div { padding:7px 10px; border-radius:7px; margin-bottom:3px; }
+  .es-nav div.on { background:var(--hot); font-weight:600; }
+  .es-main { background:var(--main); display:flex; flex-direction:column; min-width:0; }
+  .es-body { padding:16px 20px 0; flex:1; display:flex; flex-direction:column; min-width:0; }
+  .es-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+  .es-card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .es-card p { margin:0; color:var(--muted); font-size:12px; }
+  .es-card b { display:block; font-size:18px; font-weight:600; margin-top:3px; }
+  .es-card b.none { color:var(--off); }
+  .es-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:4px; padding-bottom:14px; }
+  .es-empty b { font-size:15px; font-weight:600; }
+  .es-empty p { margin:0 0 10px; color:var(--muted); max-width:40ch; line-height:1.45; }
+  .es-btn { display:inline-block; border:1px solid var(--line); border-radius:8px; padding:5px 13px; background:var(--card); white-space:nowrap; }
+  .es-btn.go { background:var(--accent); color:var(--on); border-color:transparent; font-weight:600; }
+  .es-top { display:flex; align-items:center; gap:14px; padding-bottom:10px; }
+  .es-top h4 { margin:0; font-size:18px; font-weight:600; color:var(--ink); }
+  .es-search { flex:1; background:var(--card); border:1px solid var(--accent); border-radius:8px; padding:6px 11px; }
+  .es-tabs { display:flex; gap:4px; font-size:12px; color:var(--muted); padding-bottom:9px; border-bottom:1px solid var(--line); }
+  .es-tabs span { padding:3px 9px; border-radius:6px; }
+  .es-tabs span.on { background:var(--track); color:var(--ink); }
+  .es-banner { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:9px 20px; font-size:12.5px; }
+  .es-banner b { font-weight:600; }
+  .es-banner.warn { background:var(--warnbg); color:var(--warn); }
+  .es-banner.bad { background:var(--badbg); color:var(--bad); }
+  .es-banner .es-btn { color:var(--ink); }
+  .es-item { background:var(--card); border:1px solid var(--line); border-radius:9px; padding:8px 12px; margin-top:8px; display:flex; align-items:center; gap:12px; }
+  .es-ring { flex:none; width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background:conic-gradient(var(--c,var(--muted)) calc(var(--p) * 1%), var(--track) 0); }
+  .es-ring > div { width:38px; height:38px; border-radius:50%; background:var(--card); display:grid; place-items:center; }
+  .es-folder { width:24px; height:17px; border-radius:3px; background:linear-gradient(#72c4f7,#3b97e3); position:relative; margin-top:4px; }
+  .es-folder::before { content:""; position:absolute; left:0; top:-4px; width:11px; height:6px; background:#58aeec; border-radius:2px 3px 0 0; }
+  .es-page { box-sizing:border-box; width:18px; height:23px; border-radius:2px; padding:3px; background:repeating-linear-gradient(#fff 0 3px,#bfc4d0 3px 4px) content-box, #fff; box-shadow:0 0 0 1px rgba(0,0,0,.2); }
+  .es-item b { font-weight:600; display:block; }
+  .es-item small { font-size:12px; }
+  .es-item small.warn { color:var(--warn); } .es-item small.bad { color:var(--bad); }
+
+  .es-pop { width:232px; margin:0 auto; border-radius:11px; font-size:12.5px; background:var(--glass); border:1px solid var(--edge); box-shadow:0 12px 30px var(--shadow);
+            backdrop-filter:blur(26px) saturate(170%); -webkit-backdrop-filter:blur(26px) saturate(170%); }
+  .es-pop .top { padding:7px 7px 6px; }
+  .es-drop { height:64px; border:1.5px dashed var(--muted); border-radius:7px; background:var(--card); display:flex; flex-direction:column; align-items:center; justify-content:center; font-weight:600; text-align:center; }
+  .es-drop small { font-weight:400; font-size:11px; color:var(--muted); }
+  .es-fix { background:var(--card); border:1.5px solid var(--line); border-radius:7px; padding:10px 10px 9px; text-align:center; }
+  .es-fix b { display:block; font-weight:600; color:var(--bad); }
+  .es-fix p { margin:2px 0 8px; color:var(--muted); font-size:11.5px; line-height:1.35; }
+  .es-fix span { display:block; background:var(--accent); color:var(--on); border-radius:6px; padding:5px 0; font-weight:600; }
+  .es-status { display:flex; justify-content:space-between; font-size:11px; margin-top:7px; padding:0 2px; color:var(--warn); font-weight:600; }
+  .es-track { height:2px; border-radius:1px; background:var(--track); margin:4px 2px 0; overflow:hidden; }
+  .es-track span { display:block; height:100%; background:var(--warn); }
+  .es-menu { border-top:1px solid var(--line); padding:4px; }
+  .es-menu div { display:flex; justify-content:space-between; padding:4px 7px; }
+  .es-menu div.off { color:var(--off); }
+  .es-menu hr { border:0; border-top:1px solid var(--line); margin:3px 7px; }
+  .es-cap { text-align:center; font-size:11px; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.4); margin:0 0 8px; }
+</style>
+</head>
+<body>
+<div class="es dark" id="es-root">
+<h2>Rabbithole empty and error states (approved mockup)</h2>
+<p class="subtitle">Four situations: nothing uploaded yet, a search with no results, the connection dropping, and AWS rejecting the access key. The two errors show the main window and the tray window side by side. The button below switches every mockup between dark and light.</p>
+<button type="button" class="es-toggle" id="es-toggle">Switch to light theme</button>
+
+<h3>1. Nothing uploaded yet (Overview)</h3>
+<div class="es-desk"><div class="es-win" data-nav="Overview"><div class="es-main"><div class="es-body">
+  <div class="es-cards">
+    <div class="es-card"><p>Uploading now</p><b class="none">Nothing</b></div>
+    <div class="es-card"><p>Stored in the cloud</p><b class="none">0 files</b></div>
+    <div class="es-card"><p>Last upload finished</p><b class="none">Not yet</b></div>
+  </div>
+  <div class="es-empty"><b>No uploads yet</b><p>Drop a file or folder on the Rabbithole icon in the menu bar, or pick one here.</p><span class="es-btn go">Choose file</span></div>
+</div></div></div></div>
+
+<h3>2. Search or filters with no results (History)</h3>
+<div class="es-desk"><div class="es-win" data-nav="History"><div class="es-main"><div class="es-body">
+  <div class="es-top"><h4>History</h4><div class="es-search">tax-report-2019</div></div>
+  <div class="es-tabs"><span>All</span><span>In progress</span><span>Waiting</span><span class="on">Finished</span><span>Failed</span></div>
+  <div class="es-empty"><b>No finished uploads match "tax-report-2019"</b><p>Check the spelling, or search across every state and file type.</p><span class="es-btn">Clear search and filters</span></div>
+</div></div></div></div>
+
+<h3>3. Connection lost</h3>
+<div class="es-desk"><div class="es-pair">
+  <div class="es-win" data-nav="Overview"><div class="es-main">
+    <div class="es-banner warn"><span><b>No internet connection.</b> Uploads are paused and will continue on their own when it comes back.</span><span class="es-btn">Try now</span></div>
+    <div class="es-body">
+      <div class="es-item"><div class="es-ring" style="--p:42"><div><div class="es-folder"></div></div></div><div><b>vacation-2026/</b><small class="warn">Paused at 800 MB of 1.9 GB, waiting for connection</small></div></div>
+      <div class="es-item"><div class="es-ring" style="--p:30"><div><div class="es-page"></div></div></div><div><b>db-dump.sql.gz</b><small class="warn">Paused at 1.3 GB of 4.2 GB, waiting for connection</small></div></div>
+    </div></div></div>
+  <div><p class="es-cap">Tray window</p><div class="es-pop"><div class="top"><div class="es-drop">Drop files or folders<small>They will wait for the connection</small></div>
+    <div class="es-status"><span>Paused, no connection</span><span>42%</span></div><div class="es-track"><span style="width:42%"></span></div></div>
+    <div class="es-menu"><div>Choose file…</div><div>Upload from clipboard</div><div>Recent uploads</div><hr><div>Open main window</div><div>Settings</div></div></div></div>
+</div></div>
+
+<h3>4. AWS rejected the access key</h3>
+<div class="es-desk"><div class="es-pair">
+  <div class="es-win" data-nav="Overview"><div class="es-main">
+    <div class="es-banner bad"><span><b>AWS rejected the access key.</b> Uploads are stopped until you update it; nothing already sent was lost.</span><span class="es-btn">Update access key</span></div>
+    <div class="es-body">
+      <div class="es-item"><div class="es-ring" style="--p:42"><div><div class="es-folder"></div></div></div><div><b>vacation-2026/</b><small class="bad">Stopped at 800 MB of 1.9 GB, access key rejected</small></div></div>
+      <div class="es-item"><div class="es-ring" style="--p:30"><div><div class="es-page"></div></div></div><div><b>db-dump.sql.gz</b><small class="bad">Stopped at 1.3 GB of 4.2 GB, access key rejected</small></div></div>
+    </div></div></div>
+  <div><p class="es-cap">Tray window</p><div class="es-pop"><div class="top"><div class="es-fix"><b>AWS rejected the access key</b><p>Uploads are stopped until you update it.</p><span>Update access key</span></div></div>
+    <div class="es-menu"><div class="off">Choose file…</div><div class="off">Upload from clipboard</div><div>Recent uploads</div><hr><div>Open main window</div><div>Settings</div></div></div></div>
+</div></div>
+</div>
+
+<script>
+  document.querySelectorAll('.es-win[data-nav]').forEach(function (win) {
+    var side = document.createElement('div');
+    side.className = 'es-side';
+    var html = '<div class="es-lights"><i></i><i></i><i></i></div><div class="es-nav">';
+    ['Overview', 'History', 'Settings'].forEach(function (name) {
+      html += '<div' + (name === win.dataset.nav ? ' class="on"' : '') + '>' + name + '</div>';
+    });
+    side.innerHTML = html + '</div>';
+    win.prepend(side);
+  });
+  document.getElementById('es-toggle').addEventListener('click', function () {
+    var root = document.getElementById('es-root');
+    var toDark = root.classList.contains('light');
+    root.classList.toggle('dark', toDark);
+    root.classList.toggle('light', !toDark);
+    this.textContent = toDark ? 'Switch to light theme' : 'Switch to dark theme';
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbithole: small windows mockup</title>
+<style>
+  body { margin:0; padding:28px; background:#eef0f5; color:#161a26; }
+  #sw-root { max-width:1040px; margin:0 auto; }
+  #sw-root > h2 { font-size:22px; margin:0 0 6px; color:#161a26; }
+  #sw-root > h3 { font-size:15px; margin:26px 0 0; color:#161a26; }
+  #sw-root > .subtitle { margin:0; color:#5b6278; font-size:14px; line-height:1.5; max-width:70ch; }
+  #sw-root > .sw-toggle { color:#161a26; }
+  .sw { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+  .sw.light { --ink:#161a26; --muted:rgba(22,26,38,.66); --line:rgba(22,26,38,.13); --field:#ffffff; --glass:rgba(250,251,255,.62); --edge:rgba(255,255,255,.75); --shadow:rgba(20,24,60,.32); --accent:#4a3fd0; --on:#ffffff; --ok:#1c8f63; --warn:#8a5a00; --warnbg:#fff3d6;
+              --wall:radial-gradient(circle at 20% 25%, #ffb86b 0 9%, transparent 28%), radial-gradient(circle at 80% 78%, #5fd0c5 0 9%, transparent 30%), radial-gradient(circle at 60% 20%, #f06a9b 0 7%, transparent 24%), linear-gradient(150deg,#9fc4f2,#6f8fe0 55%,#8a6fd6); }
+  .sw.dark  { --ink:#f1f3fa; --muted:rgba(241,243,250,.66); --line:rgba(255,255,255,.14); --field:#222638; --glass:rgba(26,29,44,.6); --edge:rgba(255,255,255,.16); --shadow:rgba(0,0,0,.55); --accent:#a99bff; --on:#14162a; --ok:#5fd0a0; --warn:#ffd98a; --warnbg:rgba(255,190,70,.14);
+              --wall:radial-gradient(circle at 20% 25%, #c2542d 0 9%, transparent 28%), radial-gradient(circle at 80% 78%, #1f8f8a 0 9%, transparent 30%), radial-gradient(circle at 60% 20%, #a02c6a 0 7%, transparent 24%), linear-gradient(150deg,#1d2a52,#151a36 55%,#2a1b4d); }
+  .sw-toggle { font:inherit; font-size:13px; padding:6px 14px; border-radius:8px; border:1px solid #8884; background:transparent; color:inherit; cursor:pointer; margin-top:10px; }
+  .sw-toggle:focus-visible { outline:2px solid #7a6cf0; outline-offset:2px; }
+  .sw-desk { border-radius:10px; padding:34px 22px; margin:12px 0 6px; background:var(--wall); color:var(--ink); font-size:13px; display:flex; flex-wrap:wrap; gap:26px; justify-content:center; align-items:flex-start; }
+  .sw-win { border-radius:12px; background:var(--glass); border:1px solid var(--edge); box-shadow:0 18px 44px var(--shadow);
+            backdrop-filter:blur(26px) saturate(170%); -webkit-backdrop-filter:blur(26px) saturate(170%); }
+  .sw-lights { display:flex; gap:7px; padding:12px 12px 0; }
+  .sw-lights i { width:11px; height:11px; border-radius:50%; display:block; background:var(--line); }
+  .sw-lights i:first-child { background:#f2605a; }
+  .sw-in { padding:10px 24px 20px; }
+  .sw-win h4 { margin:0; font-size:15px; font-weight:600; color:var(--ink); }
+  .sw-win p { margin:6px 0 0; color:var(--muted); line-height:1.45; font-size:12.5px; }
+
+  .sw-about { width:270px; text-align:center; }
+  .sw-icon { width:72px; height:72px; border-radius:17px; margin:6px auto 12px; background:radial-gradient(circle at 50% 54%, #0d0f1c 0 15%, #2b2a66 16% 30%, #4a3fd0 31% 46%, #8d7bf5 47% 63%, #cfc6ff 64%); box-shadow:0 6px 16px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.25); }
+  .sw-about h4 { font-size:18px; }
+  .sw-links { margin-top:14px; padding-top:10px; border-top:1px solid var(--line); display:flex; justify-content:center; gap:18px; color:var(--accent); font-size:12.5px; }
+  .sw-about small { display:block; margin-top:12px; color:var(--muted); font-size:11px; }
+
+  .sw-dialog { width:340px; }
+  .sw-field { margin-top:12px; }
+  .sw-field label { display:block; font-weight:500; margin-bottom:4px; font-size:12.5px; }
+  .sw-input { border:1px solid var(--line); border-radius:8px; padding:7px 11px; background:var(--field); letter-spacing:2px; }
+  .sw-input.focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .sw-hint { margin-top:4px; font-size:11.5px; color:var(--ok); }
+  .sw-warn { margin-top:12px; padding:8px 11px; border-radius:8px; background:var(--warnbg); color:var(--warn); font-size:12px; line-height:1.4; }
+  .sw-check { display:flex; align-items:center; gap:8px; margin-top:12px; font-size:12.5px; }
+  .sw-check i { width:15px; height:15px; border-radius:4px; background:var(--accent); display:grid; place-items:center; color:var(--on); font-style:normal; font-size:11px; font-weight:700; }
+  .sw-acts { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+  .sw-btn { border:1px solid var(--line); border-radius:8px; padding:6px 14px; background:var(--field); }
+  .sw-btn.go { background:var(--accent); color:var(--on); border-color:transparent; font-weight:600; }
+  .sw-cap { width:100%; text-align:center; margin:0 0 -12px; font-size:11.5px; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.4); }
+</style>
+</head>
+<body>
+<div class="sw dark" id="sw-root">
+<h2>Rabbithole small windows (approved mockup)</h2>
+<p class="subtitle">The About window, the two passphrase windows for encryption, and the result of Check for updates. They are all glass, like the tray window, with solid fields where you type. The app icon and the About footer are placeholders. The button below switches every mockup between dark and light.</p>
+<button type="button" class="sw-toggle" id="sw-toggle">Switch to light theme</button>
+
+<h3>1. About Rabbithole</h3>
+<div class="sw-desk">
+  <div class="sw-win sw-about"><div class="sw-lights"><i></i><i></i><i></i></div><div class="sw-in">
+    <div class="sw-icon"></div>
+    <h4>Rabbithole</h4>
+    <p>Version 0.1.0</p>
+    <p>Backs up your files to your own AWS account.</p>
+    <div class="sw-links"><span>Check for updates</span><span>Licenses</span></div>
+    <small>Made by Carlos, 2026</small>
+  </div></div>
+</div>
+
+<h3>2. Encryption passphrase</h3>
+<div class="sw-desk">
+  <p class="sw-cap">Left: turning encryption on in Settings. Right: the app needs the passphrase again, for example on a new Mac.</p>
+  <div class="sw-win sw-dialog"><div class="sw-lights"><i></i><i></i><i></i></div><div class="sw-in">
+    <h4>Create an encryption passphrase</h4>
+    <p>Files are locked with it before they leave this Mac. AWS only stores the locked copy.</p>
+    <div class="sw-field"><label>Passphrase</label><div class="sw-input focus">••••••••••••••••</div><div class="sw-hint">Strong passphrase</div></div>
+    <div class="sw-field"><label>Repeat passphrase</label><div class="sw-input">••••••••••••••••</div></div>
+    <div class="sw-warn">Rabbithole cannot recover this passphrase. If you lose it, encrypted files cannot be opened.</div>
+    <div class="sw-check"><i>✓</i><span>Save it in the system keychain</span></div>
+    <div class="sw-acts"><span class="sw-btn">Cancel</span><span class="sw-btn go">Turn on encryption</span></div>
+  </div></div>
+  <div class="sw-win sw-dialog"><div class="sw-lights"><i></i><i></i><i></i></div><div class="sw-in">
+    <h4>Enter your encryption passphrase</h4>
+    <p>Rabbithole needs it to encrypt new uploads and to open files you sent before.</p>
+    <div class="sw-field"><label>Passphrase</label><div class="sw-input focus">••••••••</div></div>
+    <div class="sw-check"><i>✓</i><span>Save it in the system keychain</span></div>
+    <div class="sw-acts"><span class="sw-btn">Cancel</span><span class="sw-btn go">Unlock</span></div>
+  </div></div>
+</div>
+
+<h3>3. Check for updates</h3>
+<div class="sw-desk">
+  <div class="sw-win sw-dialog"><div class="sw-lights"><i></i><i></i><i></i></div><div class="sw-in">
+    <h4>Rabbithole is up to date</h4>
+    <p>Version 0.1.0 is the newest one.</p>
+    <div class="sw-acts"><span class="sw-btn go">OK</span></div>
+  </div></div>
+  <div class="sw-win sw-dialog"><div class="sw-lights"><i></i><i></i><i></i></div><div class="sw-in">
+    <h4>Rabbithole 0.2.0 is available</h4>
+    <p>You have version 0.1.0. Uploads in progress continue after the restart.</p>
+    <div class="sw-acts"><span class="sw-btn">Later</span><span class="sw-btn go">Install and restart</span></div>
+  </div></div>
+</div>
+</div>
+
+<script>
+  document.getElementById('sw-toggle').addEventListener('click', function () {
+    var root = document.getElementById('sw-root');
+    var toDark = root.classList.contains('light');
+    root.classList.toggle('dark', toDark);
+    root.classList.toggle('light', !toDark);
+    this.textContent = toDark ? 'Switch to light theme' : 'Switch to dark theme';
+  });
+</script>
+</body>
+</html>

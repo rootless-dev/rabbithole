@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbithole: tray popover mockup</title>
+<style>
+  body { margin:0; padding:28px; background:#eef0f5; color:#161a26; }
+  .tg { max-width:960px; margin:0 auto; }
+  .tg h2 { font-size:22px; margin:0 0 6px; }
+  .tg h3 { font-size:15px; margin:26px 0 0; }
+  .tg .subtitle { margin:0; color:#5b6278; font-size:14px; line-height:1.5; max-width:70ch; }
+  .tg { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+  .tg-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; margin:14px 0 8px; }
+  @media (max-width:700px){ .tg-row{ grid-template-columns:1fr; } }
+  .tg-desk { border-radius:10px; overflow:hidden; padding-bottom:26px; position:relative; }
+  .tg-desk.light { background:
+      radial-gradient(circle at 78% 30%, #ffb86b 0 14%, transparent 34%),
+      radial-gradient(circle at 60% 78%, #5fd0c5 0 12%, transparent 36%),
+      radial-gradient(circle at 92% 70%, #f06a9b 0 10%, transparent 30%),
+      linear-gradient(150deg,#9fc4f2,#6f8fe0 55%,#8a6fd6); }
+  .tg-desk.dark { background:
+      radial-gradient(circle at 78% 30%, #c2542d 0 13%, transparent 34%),
+      radial-gradient(circle at 60% 78%, #1f8f8a 0 12%, transparent 36%),
+      radial-gradient(circle at 92% 70%, #a02c6a 0 10%, transparent 30%),
+      linear-gradient(150deg,#1d2a52,#151a36 55%,#2a1b4d); }
+  .tg-bar { height:24px; display:flex; justify-content:flex-end; align-items:center; gap:12px; padding:0 14px; font-size:11px; color:#fff; background:rgba(255,255,255,.18); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
+  .tg-desk.dark .tg-bar { background:rgba(0,0,0,.28); }
+  .tg-bar i { width:12px; height:12px; border-radius:3px; background:rgba(255,255,255,.6); display:block; }
+  .tg-bar i.me { background:#fff; outline:3px solid rgba(255,255,255,.28); border-radius:4px; }
+  .tg-state { position:absolute; left:14px; bottom:8px; font-size:11px; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.35); }
+
+  .tg-pop { width:232px; margin:3px 30px 0 auto; border-radius:11px; font-size:12.5px;
+            backdrop-filter:blur(26px) saturate(170%); -webkit-backdrop-filter:blur(26px) saturate(170%); }
+  .light .tg-pop { --ink:#161a26; --muted:rgba(22,26,38,.62); --line:rgba(22,26,38,.12); --hot:rgba(255,255,255,.55); --track:rgba(22,26,38,.14); --accent:#4a3fd0;
+                   background:rgba(250,251,255,.58); border:1px solid rgba(255,255,255,.7); box-shadow:0 12px 30px rgba(20,24,60,.28); color:var(--ink); }
+  .dark .tg-pop  { --ink:#f1f3fa; --muted:rgba(241,243,250,.62); --line:rgba(255,255,255,.13); --hot:rgba(255,255,255,.13); --track:rgba(255,255,255,.16); --accent:#a99bff;
+                   background:rgba(26,29,44,.55); border:1px solid rgba(255,255,255,.16); box-shadow:0 12px 30px rgba(0,0,0,.5); color:var(--ink); }
+  .tg-top { padding:7px 7px 6px; }
+  .light .tg-drop { background:#ffffff; }
+  .dark .tg-drop { background:#222638; }
+  .tg-drop { height:64px; border:1.5px dashed var(--muted); border-radius:7px; display:flex; align-items:center; justify-content:center; font-weight:600; }
+  .tg-status { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:7px; padding:0 2px; }
+  .tg-status b { color:var(--ink); font-weight:600; }
+  .tg-track { height:2px; border-radius:1px; background:var(--track); margin:4px 2px 0; overflow:hidden; }
+  .tg-track span { display:block; height:100%; background:var(--accent); }
+  .tg-menu { border-top:1px solid var(--line); padding:4px; }
+  .tg-menu div { display:flex; justify-content:space-between; padding:4px 7px; border-radius:5px; }
+  .tg-menu div.hot { background:var(--hot); }
+  .tg-menu kbd { font:inherit; font-size:11px; color:var(--muted); }
+  .tg-menu hr { border:0; border-top:1px solid var(--line); margin:3px 7px; }
+  .tg-row.one { grid-template-columns:1fr; }
+  .tg-wrap { display:flex; justify-content:flex-end; align-items:flex-start; gap:3px; margin:3px 30px 0 0; }
+  .tg-wrap .tg-pop { margin:0; flex:none; }
+  .tg-wrap .tg-pop.tg-sub { width:196px; margin-top:126px; }
+  .tg-sub .tg-menu { border-top:0; }
+  .tg-sub .tg-menu span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tg-sub .tg-menu kbd { flex:none; padding-left:10px; }
+</style>
+</head>
+<body>
+<div class="tg">
+<h2>Rabbithole tray popover (approved mockup)</h2>
+<p class="subtitle">A 232 px glass window anchored 3 px under the menu bar icon, with a solid drop area, a thin overall progress bar, and a native-style menu. Hovering Recent uploads opens a list beside the menu with the last 5 files or folders, then a separate History item that opens the main window on the upload history tab. Folders end with a slash.</p>
+
+<h3>Recent uploads open</h3>
+<div class="tg-row one">
+  <div class="tg-desk light"><div class="tg-bar"><i></i><i class="me"></i><i></i><span>Thu 12:04</span></div><div class="tg-state">Light</div>
+    <div class="tg-wrap">
+      <div class="tg-pop tg-sub"><div class="tg-menu"><div><span>invoice-october.pdf</span><kbd>2m</kbd></div><div><span>vacation-2026/</span><kbd>1h</kbd></div><div><span>db-dump.sql.gz</span><kbd>3h</kbd></div><div><span>design-assets/</span><kbd>Tue</kbd></div><div><span>contract-signed.pdf</span><kbd>Mon</kbd></div><hr><div><span>History</span></div></div></div>
+      <div class="tg-pop"><div class="tg-top"><div class="tg-drop">Drop files or folders</div></div>
+      <div class="tg-menu"><div><span>Choose file…</span><kbd>⌘O</kbd></div><div><span>Upload from clipboard</span><kbd>⌘V</kbd></div><div class="hot"><span>Recent uploads</span><kbd>›</kbd></div><hr><div><span>Open main window</span><kbd>⌘D</kbd></div><div><span>Settings</span><kbd>⌘,</kbd></div><hr><div><span>About Rabbithole…</span></div><div><span>Check for updates</span></div><div><span>Quit</span><kbd>⌘Q</kbd></div></div></div>
+    </div>
+  </div>
+  <div class="tg-desk dark"><div class="tg-bar"><i></i><i class="me"></i><i></i><span>Thu 12:04</span></div><div class="tg-state">Dark</div>
+    <div class="tg-wrap">
+      <div class="tg-pop tg-sub"><div class="tg-menu"><div><span>invoice-october.pdf</span><kbd>2m</kbd></div><div><span>vacation-2026/</span><kbd>1h</kbd></div><div><span>db-dump.sql.gz</span><kbd>3h</kbd></div><div><span>design-assets/</span><kbd>Tue</kbd></div><div><span>contract-signed.pdf</span><kbd>Mon</kbd></div><hr><div><span>History</span></div></div></div>
+      <div class="tg-pop"><div class="tg-top"><div class="tg-drop">Drop files or folders</div></div>
+      <div class="tg-menu"><div><span>Choose file…</span><kbd>⌘O</kbd></div><div><span>Upload from clipboard</span><kbd>⌘V</kbd></div><div class="hot"><span>Recent uploads</span><kbd>›</kbd></div><hr><div><span>Open main window</span><kbd>⌘D</kbd></div><div><span>Settings</span><kbd>⌘,</kbd></div><hr><div><span>About Rabbithole…</span></div><div><span>Check for updates</span></div><div><span>Quit</span><kbd>⌘Q</kbd></div></div></div>
+    </div>
+  </div>
+</div>
+
+<h3>Light theme</h3>
+<div class="tg-row">
+  <div class="tg-desk light"><div class="tg-bar"><i></i><i class="me"></i><i></i><span>Thu 11:58</span></div><div class="tg-state">Idle</div>
+    <div class="tg-pop"><div class="tg-top"><div class="tg-drop">Drop files or folders</div></div>
+    <div class="tg-menu"><div class="hot"><span>Choose file…</span><kbd>⌘O</kbd></div><div><span>Upload from clipboard</span><kbd>⌘V</kbd></div><div><span>Recent uploads</span><kbd>›</kbd></div><hr><div><span>Open main window</span><kbd>⌘D</kbd></div><div><span>Settings</span><kbd>⌘,</kbd></div><hr><div><span>About Rabbithole…</span></div><div><span>Check for updates</span></div><div><span>Quit</span><kbd>⌘Q</kbd></div></div></div>
+  </div>
+  <div class="tg-desk light"><div class="tg-bar"><i></i><i class="me"></i><i></i><span>Thu 11:59</span></div><div class="tg-state">Uploading</div>
+    <div class="tg-pop"><div class="tg-top"><div class="tg-drop">Drop more to queue</div>
+      <div class="tg-status"><b>7 of 12 files left</b><span>42%</span></div><div class="tg-track"><span style="width:42%"></span></div></div>
+    <div class="tg-menu"><div><span>Choose file…</span><kbd>⌘O</kbd></div><div><span>Upload from clipboard</span><kbd>⌘V</kbd></div><div><span>Recent uploads</span><kbd>›</kbd></div><hr><div><span>Open main window</span><kbd>⌘D</kbd></div><div><span>Settings</span><kbd>⌘,</kbd></div><hr><div><span>About Rabbithole…</span></div><div><span>Check for updates</span></div><div><span>Quit</span><kbd>⌘Q</kbd></div></div></div>
+  </div>
+</div>
+
+<h3>Dark theme</h3>
+<div class="tg-row">
+  <div class="tg-desk dark"><div class="tg-bar"><i></i><i class="me"></i><i></i><span>Thu 11:58</span></div><div class="tg-state">Idle</div>
+    <div class="tg-pop"><div class="tg-top"><div class="tg-drop">Drop files or folders</div></div>
+    <div class="tg-menu"><div class="hot"><span>Choose file…</span><kbd>⌘O</kbd></div><div><span>Upload from clipboard</span><kbd>⌘V</kbd></div><div><span>Recent uploads</span><kbd>›</kbd></div><hr><div><span>Open main window</span><kbd>⌘D</kbd></div><div><span>Settings</span><kbd>⌘,</kbd></div><hr><div><span>About Rabbithole…</span></div><div><span>Check for updates</span></div><div><span>Quit</span><kbd>⌘Q</kbd></div></div></div>
+  </div>
+  <div class="tg-desk dark"><div class="tg-bar"><i></i><i class="me"></i><i></i><span>Thu 11:59</span></div><div class="tg-state">Uploading</div>
+    <div class="tg-pop"><div class="tg-top"><div class="tg-drop">Drop more to queue</div>
+      <div class="tg-status"><b>7 of 12 files left</b><span>42%</span></div><div class="tg-track"><span style="width:42%"></span></div></div>
+    <div class="tg-menu"><div><span>Choose file…</span><kbd>⌘O</kbd></div><div><span>Upload from clipboard</span><kbd>⌘V</kbd></div><div><span>Recent uploads</span><kbd>›</kbd></div><hr><div><span>Open main window</span><kbd>⌘D</kbd></div><div><span>Settings</span><kbd>⌘,</kbd></div><hr><div><span>About Rabbithole…</span></div><div><span>Check for updates</span></div><div><span>Quit</span><kbd>⌘Q</kbd></div></div></div>
+  </div>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbithole: first launch mockup</title>
+<style>
+  body { margin:0; padding:28px; background:#eef0f5; color:#161a26; }
+  .fr { max-width:1040px; margin:0 auto; }
+  .fr h2 { font-size:22px; margin:0 0 6px; }
+  .fr h3 { font-size:15px; margin:26px 0 0; }
+  .fr .subtitle { margin:0; color:#5b6278; font-size:14px; line-height:1.5; max-width:70ch; }
+  .fr { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+  .fr-desk { border-radius:10px; padding:26px; margin:14px 0 26px; }
+  .fr-desk.light { background:
+      radial-gradient(circle at 12% 20%, #ffb86b 0 10%, transparent 30%),
+      radial-gradient(circle at 8% 70%, #5fd0c5 0 10%, transparent 32%),
+      linear-gradient(150deg,#9fc4f2,#6f8fe0 55%,#8a6fd6); }
+  .fr-desk.dark { background:
+      radial-gradient(circle at 12% 20%, #c2542d 0 10%, transparent 30%),
+      radial-gradient(circle at 8% 70%, #1f8f8a 0 10%, transparent 32%),
+      linear-gradient(150deg,#1d2a52,#151a36 55%,#2a1b4d); }
+  .fr-win { display:grid; grid-template-columns:210px minmax(0,1fr); height:500px; border-radius:12px; overflow:hidden; font-size:13px; color:var(--ink); }
+  .light .fr-win { --ink:#161a26; --muted:#62697e; --line:rgba(22,26,38,.11); --main:#fbfbfd; --card:#ffffff; --side:rgba(250,251,255,.58); --hot:rgba(255,255,255,.6); --track:rgba(22,26,38,.16); --accent:#4a3fd0; --on:#ffffff; --ok:#1c8f63;
+                   box-shadow:0 18px 44px rgba(20,24,60,.32); border:1px solid rgba(255,255,255,.7); }
+  .dark .fr-win  { --ink:#f1f3fa; --muted:#9aa1b8; --line:rgba(255,255,255,.1); --main:#1a1d2b; --card:#222638; --side:rgba(26,29,44,.55); --hot:rgba(255,255,255,.12); --track:rgba(255,255,255,.18); --accent:#a99bff; --on:#14162a; --ok:#5fd0a0;
+                   box-shadow:0 18px 44px rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.14); }
+  .fr-side { background:var(--side); backdrop-filter:blur(26px) saturate(170%); -webkit-backdrop-filter:blur(26px) saturate(170%); padding:12px 12px; border-right:1px solid var(--line); display:flex; flex-direction:column; }
+  .fr-lights { display:flex; gap:7px; padding:2px 2px 26px; }
+  .fr-lights i { width:11px; height:11px; border-radius:50%; display:block; }
+  .fr-lights i:nth-child(1){ background:#f2605a; } .fr-lights i:nth-child(2){ background:#f5bd3f; } .fr-lights i:nth-child(3){ background:#5cc74b; }
+  .fr-brand { font-size:17px; font-weight:600; padding:0 4px 18px; }
+  .fr-steps { list-style:none; margin:0; padding:0; counter-reset:step; }
+  .fr-steps li { counter-increment:step; display:flex; align-items:center; gap:10px; padding:8px 6px; border-radius:8px; color:var(--muted); }
+  .fr-steps li::before { content:counter(step); flex:none; width:20px; height:20px; border-radius:50%; border:1.5px solid currentColor; display:grid; place-items:center; font-size:11px; font-weight:600; box-sizing:border-box; }
+  .fr-steps li.on { background:var(--hot); color:var(--ink); font-weight:600; }
+  .fr-steps li.done { color:var(--ok); }
+  .fr-steps li.done::before { content:"✓"; }
+  .fr-foot { margin-top:auto; color:var(--muted); font-size:11.5px; line-height:1.4; padding:0 4px; }
+  .fr-main { background:var(--main); padding:44px 44px 22px; display:flex; flex-direction:column; min-width:0; }
+  .fr-pane { display:none; flex:1; }
+  .fr-pane.on { display:block; }
+  .fr-pane h4 { margin:0; font-size:22px; font-weight:600; color:var(--ink); }
+  .fr-pane > p { margin:6px 0 22px; color:var(--muted); line-height:1.5; max-width:52ch; }
+  .fr-field { display:grid; grid-template-columns:150px minmax(0,320px); align-items:center; gap:12px; margin-bottom:12px; }
+  .fr-field label { font-weight:500; }
+  .fr-in, .fr-sel { border:1px solid var(--line); border-radius:8px; padding:7px 11px; background:var(--card); color:var(--ink); }
+  .fr-in.empty { color:var(--muted); }
+  .fr-sel { display:flex; justify-content:space-between; }
+  .fr-sel::after { content:"▾"; color:var(--muted); }
+  .fr-note { grid-column:2; margin:-6px 0 0; color:var(--muted); font-size:11.5px; }
+  .fr-test { display:flex; align-items:center; gap:12px; margin:6px 0 0 162px; }
+  .fr-ok { color:var(--ok); }
+  .fr-btn { display:inline-block; border:1px solid var(--line); border-radius:8px; padding:6px 14px; background:var(--card); cursor:pointer; }
+  .fr-btn.go { background:var(--accent); color:var(--on); border-color:transparent; font-weight:600; }
+  .fr-acts { display:flex; justify-content:space-between; padding-top:16px; border-top:1px solid var(--line); }
+  .fr-acts .ghost { visibility:hidden; }
+  .fr-menubar { display:flex; justify-content:flex-end; align-items:center; gap:12px; height:26px; padding:0 14px; border-radius:8px; background:var(--card); border:1px solid var(--line); max-width:472px; margin-bottom:18px; color:var(--muted); font-size:11.5px; }
+  .fr-menubar i { width:12px; height:12px; border-radius:3px; background:var(--track); display:block; }
+  .fr-menubar i.me { background:var(--accent); outline:3px solid var(--track); border-radius:4px; }
+  .fr-opt { display:flex; justify-content:space-between; align-items:center; max-width:472px; padding:10px 0; border-top:1px solid var(--line); }
+  .fr-sw { width:34px; height:20px; border-radius:10px; background:var(--accent); position:relative; flex:none; }
+  .fr-sw::after { content:""; position:absolute; top:2px; left:16px; width:16px; height:16px; border-radius:50%; background:#fff; }
+</style>
+</head>
+<body>
+<div class="fr">
+<h2>Rabbithole first launch (approved mockup)</h2>
+<p class="subtitle">With no credentials saved, the main window opens on a three-step setup instead of the dashboard. The left column lists the steps where the navigation will later be. Click Continue and Back to walk through it.</p>
+
+<template id="fr-tpl">
+<div class="fr-win">
+  <div class="fr-side"><div class="fr-lights"><i></i><i></i><i></i></div>
+    <div class="fr-brand">Rabbithole</div>
+    <ol class="fr-steps"><li class="on">Connect AWS</li><li>Choose a bucket</li><li>Start uploading</li></ol>
+    <p class="fr-foot">You can change all of this later in Settings.</p></div>
+  <div class="fr-main">
+    <div class="fr-pane on">
+      <h4>Connect your AWS account</h4>
+      <p>Rabbithole sends your files to your own AWS account. Paste an access key that can write to the bucket you want to use.</p>
+      <div class="fr-field"><label>Access key ID</label><div class="fr-in">AKIAIOSFODNN7EXAMPLE</div></div>
+      <div class="fr-field"><label>Secret access key</label><div class="fr-in">••••••••••••••••••••••••</div><p class="fr-note">Saved in the system keychain, never in a file.</p></div>
+      <div class="fr-field"><label>Region</label><div class="fr-sel">sa-east-1, São Paulo</div></div>
+      <div class="fr-test"><span class="fr-btn">Test connection</span><span class="fr-ok">Connected</span></div>
+    </div>
+    <div class="fr-pane">
+      <h4>Choose where your files go</h4>
+      <p>Pick one of the buckets in your account. Files dropped on the menu bar window go into the quick uploads folder inside it.</p>
+      <div class="fr-field"><label>Bucket</label><div class="fr-sel">carlos-backups</div><p class="fr-note">3 buckets found in this account.</p></div>
+      <div class="fr-field"><label>Quick uploads folder</label><div class="fr-in">quick-uploads/</div></div>
+    </div>
+    <div class="fr-pane">
+      <h4>Rabbithole is ready</h4>
+      <p>It lives in the menu bar. Click its icon and drop a file or folder to send it; open this window whenever you want to follow uploads or change settings.</p>
+      <div class="fr-menubar"><i></i><i class="me"></i><i></i><span>Thu 12:58</span></div>
+      <div class="fr-opt"><b style="font-weight:500">Open at login</b><span class="fr-sw"></span></div>
+      <div class="fr-opt"><b style="font-weight:500">Notify when an upload finishes or fails</b><span class="fr-sw"></span></div>
+    </div>
+    <div class="fr-acts"><span class="fr-btn ghost" data-go="-1">Back</span><span class="fr-btn go" data-go="1">Continue</span></div>
+  </div>
+</div>
+</template>
+
+<h3>Light theme</h3>
+<div class="fr-desk light" data-fr></div>
+<h3>Dark theme</h3>
+<div class="fr-desk dark" data-fr></div>
+</div>
+
+<script>
+  document.querySelectorAll('[data-fr]').forEach(function (desk) {
+    desk.appendChild(document.getElementById('fr-tpl').content.cloneNode(true));
+    var step = 0;
+    var panes = desk.querySelectorAll('.fr-pane');
+    var steps = desk.querySelectorAll('.fr-steps li');
+    var back = desk.querySelector('[data-go="-1"]');
+    var next = desk.querySelector('[data-go="1"]');
+    function show() {
+      panes.forEach(function (el, i) { el.classList.toggle('on', i === step); });
+      steps.forEach(function (el, i) { el.classList.toggle('on', i === step); el.classList.toggle('done', i < step); });
+      back.classList.toggle('ghost', step === 0);
+      next.textContent = step === panes.length - 1 ? 'Open dashboard' : 'Continue';
+    }
+    desk.addEventListener('click', function (event) {
+      var btn = event.target.closest('[data-go]');
+      if (!btn) return;
+      step = Math.max(0, Math.min(panes.length - 1, step + Number(btn.dataset.go)));
+      show();
+    });
+  });
+</script>
+</body>
+</html>

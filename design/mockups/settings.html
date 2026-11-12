@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbithole: settings mockup</title>
+<style>
+  body { margin:0; padding:28px; background:#eef0f5; color:#161a26; }
+  .sv { max-width:1040px; margin:0 auto; }
+  .sv h2 { font-size:22px; margin:0 0 6px; }
+  .sv h3 { font-size:15px; margin:26px 0 0; }
+  .sv .subtitle { margin:0; color:#5b6278; font-size:14px; line-height:1.5; max-width:70ch; }
+  .sv { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+  .sv-desk { border-radius:10px; padding:26px; margin:14px 0 26px; }
+  .sv-desk.light { background:
+      radial-gradient(circle at 12% 20%, #ffb86b 0 10%, transparent 30%),
+      radial-gradient(circle at 8% 70%, #5fd0c5 0 10%, transparent 32%),
+      linear-gradient(150deg,#9fc4f2,#6f8fe0 55%,#8a6fd6); }
+  .sv-desk.dark { background:
+      radial-gradient(circle at 12% 20%, #c2542d 0 10%, transparent 30%),
+      radial-gradient(circle at 8% 70%, #1f8f8a 0 10%, transparent 32%),
+      linear-gradient(150deg,#1d2a52,#151a36 55%,#2a1b4d); }
+  .sv-win { display:grid; grid-template-columns:190px minmax(0,1fr); height:520px; border-radius:12px; overflow:hidden; font-size:13px; color:var(--ink); }
+  .light .sv-win { --ink:#161a26; --muted:#62697e; --line:rgba(22,26,38,.11); --main:#fbfbfd; --card:#ffffff; --side:rgba(250,251,255,.58); --hot:rgba(255,255,255,.6); --track:rgba(22,26,38,.16); --accent:#4a3fd0; --on:#ffffff; --ok:#1c8f63;
+                   box-shadow:0 18px 44px rgba(20,24,60,.32); border:1px solid rgba(255,255,255,.7); }
+  .dark .sv-win  { --ink:#f1f3fa; --muted:#9aa1b8; --line:rgba(255,255,255,.1); --main:#1a1d2b; --card:#222638; --side:rgba(26,29,44,.55); --hot:rgba(255,255,255,.12); --track:rgba(255,255,255,.18); --accent:#a99bff; --on:#14162a; --ok:#5fd0a0;
+                   box-shadow:0 18px 44px rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.14); }
+  .sv-side { background:var(--side); backdrop-filter:blur(26px) saturate(170%); -webkit-backdrop-filter:blur(26px) saturate(170%); padding:12px 10px; border-right:1px solid var(--line); }
+  .sv-lights { display:flex; gap:7px; padding:2px 4px 22px; }
+  .sv-lights i { width:11px; height:11px; border-radius:50%; display:block; }
+  .sv-lights i:nth-child(1){ background:#f2605a; } .sv-lights i:nth-child(2){ background:#f5bd3f; } .sv-lights i:nth-child(3){ background:#5cc74b; }
+  .sv-nav div { padding:7px 10px; border-radius:7px; margin-bottom:3px; }
+  .sv-nav div.on { background:var(--hot); font-weight:600; }
+  .sv-main { background:var(--main); padding:18px 22px 20px; min-width:0; }
+  .sv-main > h4 { margin:0; font-size:19px; font-weight:600; color:var(--ink); }
+  .sv-two { display:grid; grid-template-columns:160px minmax(0,1fr); gap:22px; margin-top:14px; }
+  .sv-cats div { padding:8px 10px; border-radius:8px; color:var(--muted); cursor:pointer; margin-bottom:2px; }
+  .sv-cats div.on { background:var(--card); color:var(--ink); font-weight:600; box-shadow:0 0 0 1px var(--line); }
+  .sv-cats small { display:block; font-weight:400; font-size:11px; color:var(--muted); pointer-events:none; }
+  .sv-pane { display:none; }
+  .sv-pane.on { display:block; }
+  .sv-row { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .sv-row:first-child { padding-top:4px; }
+  .sv-row:last-child { border-bottom:0; }
+  .sv-row b { font-weight:500; }
+  .sv-row p { margin:1px 0 0; color:var(--muted); font-size:11.5px; line-height:1.35; }
+  .sv-ctl { flex:none; display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12.5px; }
+  .sv-in, .sv-sel, .sv-btn { border:1px solid var(--line); border-radius:7px; padding:3px 9px; background:var(--card); color:var(--ink); font-size:12.5px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .sv-sel::after { content:"▾"; padding-left:8px; color:var(--muted); }
+  .sv-ok { color:var(--ok); }
+  .sv-sw { width:34px; height:20px; border-radius:10px; background:var(--track); position:relative; flex:none; }
+  .sv-sw::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.3); }
+  .sv-sw.on { background:var(--accent); } .sv-sw.on::after { left:16px; }
+  .sv-seg { display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; font-size:12.5px; color:var(--ink); }
+  .sv-seg span { padding:3px 11px; } .sv-seg span + span { border-left:1px solid var(--line); }
+  .sv-seg span.on { background:var(--accent); color:var(--on); }
+</style>
+</head>
+<body>
+<div class="sv">
+<h2>Rabbithole settings (approved mockup)</h2>
+<p class="subtitle">Categories sit in a second column, in this order: App, Uploads, Destination, AWS account, Security. Click a category to see its options; each one shows its current state under the name.</p>
+
+<template id="sv-tpl">
+<div class="sv-win">
+  <div class="sv-side"><div class="sv-lights"><i></i><i></i><i></i></div>
+    <div class="sv-nav"><div>Overview</div><div>History</div><div class="on">Settings</div></div></div>
+  <div class="sv-main"><h4>Settings</h4>
+    <div class="sv-two">
+      <div class="sv-cats">
+        <div class="on" data-pane="app">App<small>Match system</small></div>
+        <div data-pane="uploads">Uploads<small>4 at a time</small></div>
+        <div data-pane="destination">Destination<small>carlos-backups</small></div>
+        <div data-pane="aws">AWS account<small>Connected</small></div>
+        <div data-pane="security">Security<small>Encryption off</small></div>
+      </div>
+      <div>
+        <div class="sv-pane on" data-name="app">
+          <div class="sv-row"><div><b>Theme</b></div><div class="sv-ctl"><div class="sv-seg"><span>Light</span><span>Dark</span><span class="on">Match system</span></div></div></div>
+          <div class="sv-row"><div><b>Open at login</b></div><div class="sv-ctl"><span class="sv-sw on"></span></div></div>
+          <div class="sv-row"><div><b>Notify when an upload finishes or fails</b></div><div class="sv-ctl"><span class="sv-sw on"></span></div></div>
+          <div class="sv-row"><div><b>Shortcut to open the tray window</b></div><div class="sv-ctl"><span class="sv-in">⌥⌘U</span></div></div>
+        </div>
+        <div class="sv-pane" data-name="uploads">
+          <div class="sv-row"><div><b>Resume uploads automatically</b><p>Picks up where it stopped after a restart or a lost connection.</p></div><div class="sv-ctl"><span class="sv-sw on"></span></div></div>
+          <div class="sv-row"><div><b>Retry failed uploads</b><p>Tries again on its own before marking an upload as failed.</p></div><div class="sv-ctl"><span class="sv-in">3</span>times<span class="sv-sw on"></span></div></div>
+          <div class="sv-row"><div><b>Uploads at the same time</b></div><div class="sv-ctl"><span class="sv-in">4</span></div></div>
+          <div class="sv-row"><div><b>Limit upload speed</b><p>Leaves room for calls and browsing while a big upload runs.</p></div><div class="sv-ctl"><span class="sv-in">10</span>MB/s<span class="sv-sw"></span></div></div>
+          <div class="sv-row"><div><b>Pause on battery power</b></div><div class="sv-ctl"><span class="sv-sw"></span></div></div>
+          <div class="sv-row"><div><b>Check files after sending</b><p>Confirms the copy in the cloud matches the original.</p></div><div class="sv-ctl"><span class="sv-sw on"></span></div></div>
+          <div class="sv-row"><div><b>Skip these files</b><p>Patterns ignored inside folders.</p></div><div class="sv-ctl"><span class="sv-in">.DS_Store, node_modules, *.tmp</span></div></div>
+        </div>
+        <div class="sv-pane" data-name="destination">
+          <div class="sv-row"><div><b>Bucket</b></div><div class="sv-ctl"><span class="sv-sel">carlos-backups</span></div></div>
+          <div class="sv-row"><div><b>Quick uploads folder</b><p>Where files dropped on the tray window go.</p></div><div class="sv-ctl"><span class="sv-in">quick-uploads/</span></div></div>
+          <div class="sv-row"><div><b>Storage class</b><p>Cheaper classes cost less per month but more to read back.</p></div><div class="sv-ctl"><span class="sv-sel">Standard</span></div></div>
+          <div class="sv-row"><div><b>When a file already exists</b></div><div class="sv-ctl"><span class="sv-sel">Keep both</span></div></div>
+        </div>
+        <div class="sv-pane" data-name="aws">
+          <div class="sv-row"><div><b>Access key ID</b></div><div class="sv-ctl"><span class="sv-in">AKIA••••••••••••7Q2F</span></div></div>
+          <div class="sv-row"><div><b>Secret access key</b><p>Stored in the system keychain, never in a file.</p></div><div class="sv-ctl"><span class="sv-in">••••••••••••••••</span><span class="sv-btn">Replace</span></div></div>
+          <div class="sv-row"><div><b>Region</b></div><div class="sv-ctl"><span class="sv-sel">sa-east-1, São Paulo</span></div></div>
+          <div class="sv-row"><div><b>Connection</b><p>Checks that the keys work and the bucket accepts uploads.</p></div><div class="sv-ctl"><span class="sv-ok">Connected</span><span class="sv-btn">Test connection</span></div></div>
+        </div>
+        <div class="sv-pane" data-name="security">
+          <div class="sv-row"><div><b>Encrypt files before sending</b><p>Files are locked on this Mac with your own passphrase; AWS only stores the locked copy.</p></div><div class="sv-ctl"><span class="sv-sw"></span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</template>
+
+<h3>Light theme</h3>
+<div class="sv-desk light" data-sv></div>
+<h3>Dark theme</h3>
+<div class="sv-desk dark" data-sv></div>
+</div>
+
+<script>
+  document.querySelectorAll('[data-sv]').forEach(function (desk) {
+    desk.appendChild(document.getElementById('sv-tpl').content.cloneNode(true));
+    desk.addEventListener('click', function (event) {
+      var cat = event.target.closest('[data-pane]');
+      if (!cat) return;
+      desk.querySelectorAll('[data-pane]').forEach(function (el) { el.classList.toggle('on', el === cat); });
+      desk.querySelectorAll('.sv-pane').forEach(function (el) { el.classList.toggle('on', el.dataset.name === cat.dataset.pane); });
+    });
+  });
+</script>
+</body>
+</html>

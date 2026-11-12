@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbithole: tray while dragging mockup</title>
+<style>
+  body { margin:0; padding:28px; background:#eef0f5; color:#161a26; }
+  .td { max-width:960px; margin:0 auto; }
+  .td h2 { font-size:22px; margin:0 0 6px; }
+  .td h3 { font-size:15px; margin:26px 0 0; }
+  .td .subtitle { margin:0; color:#5b6278; font-size:14px; line-height:1.5; max-width:70ch; }
+  .td { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+  .td-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; margin:14px 0 8px; }
+  @media (max-width:700px){ .td-row{ grid-template-columns:1fr; } }
+  .td-desk { border-radius:10px; overflow:hidden; padding-bottom:26px; position:relative; }
+  .td-desk.light { background:
+      radial-gradient(circle at 78% 30%, #ffb86b 0 14%, transparent 34%),
+      radial-gradient(circle at 60% 78%, #5fd0c5 0 12%, transparent 36%),
+      radial-gradient(circle at 92% 70%, #f06a9b 0 10%, transparent 30%),
+      linear-gradient(150deg,#9fc4f2,#6f8fe0 55%,#8a6fd6); }
+  .td-desk.dark { background:
+      radial-gradient(circle at 78% 30%, #c2542d 0 13%, transparent 34%),
+      radial-gradient(circle at 60% 78%, #1f8f8a 0 12%, transparent 36%),
+      radial-gradient(circle at 92% 70%, #a02c6a 0 10%, transparent 30%),
+      linear-gradient(150deg,#1d2a52,#151a36 55%,#2a1b4d); }
+  .td-bar { height:24px; display:flex; justify-content:flex-end; align-items:center; gap:12px; padding:0 14px; font-size:11px; color:#fff; background:rgba(255,255,255,.18); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
+  .td-desk.dark .td-bar { background:rgba(0,0,0,.28); }
+  .td-bar i { width:12px; height:12px; border-radius:3px; background:rgba(255,255,255,.6); display:block; }
+  .td-bar i.me { background:#fff; outline:3px solid rgba(255,255,255,.28); border-radius:4px; }
+  .td-state { position:absolute; left:14px; bottom:8px; font-size:11px; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.35); }
+  .td-pop { width:232px; margin:3px 30px 0 auto; border-radius:11px; font-size:12.5px; color:var(--ink); position:relative;
+            backdrop-filter:blur(26px) saturate(170%); -webkit-backdrop-filter:blur(26px) saturate(170%); }
+  .light .td-pop { --ink:#161a26; --muted:rgba(22,26,38,.62); --off:rgba(22,26,38,.34); --line:rgba(22,26,38,.12); --solid:#ffffff; --tint:#eceafd; --track:rgba(22,26,38,.14); --accent:#4a3fd0; --ok:#1c8f63;
+                   background:rgba(250,251,255,.58); border:1px solid rgba(255,255,255,.7); box-shadow:0 12px 30px rgba(20,24,60,.28); }
+  .dark .td-pop  { --ink:#f1f3fa; --muted:rgba(241,243,250,.62); --off:rgba(241,243,250,.32); --line:rgba(255,255,255,.13); --solid:#222638; --tint:#2f2b55; --track:rgba(255,255,255,.16); --accent:#a99bff; --ok:#5fd0a0;
+                   background:rgba(26,29,44,.55); border:1px solid rgba(255,255,255,.16); box-shadow:0 12px 30px rgba(0,0,0,.5); }
+  .td-pop.over { box-shadow:0 0 0 2px var(--accent), 0 12px 30px rgba(0,0,0,.4); }
+  .td-top { padding:7px 7px 6px; }
+  .td-drop { height:64px; border:1.5px dashed var(--muted); border-radius:7px; background:var(--solid); display:flex; flex-direction:column; align-items:center; justify-content:center; font-weight:600; }
+  .td-drop small { font-weight:400; font-size:11px; color:var(--muted); }
+  .td-drop.over { border:1.5px solid var(--accent); background:var(--tint); color:var(--accent); }
+  .td-drop.over small { color:var(--accent); opacity:.8; }
+  .td-drop.done { border-style:solid; border-color:var(--ok); color:var(--ok); }
+  .td-status { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:7px; padding:0 2px; }
+  .td-status b { color:var(--ink); font-weight:600; }
+  .td-track { height:2px; border-radius:1px; background:var(--track); margin:4px 2px 0; overflow:hidden; }
+  .td-track span { display:block; height:100%; background:var(--accent); }
+  .td-menu { border-top:1px solid var(--line); padding:4px; }
+  .td-menu div { display:flex; justify-content:space-between; padding:4px 7px; border-radius:5px; }
+  .td-menu kbd { font:inherit; font-size:11px; color:var(--muted); }
+  .td-menu hr { border:0; border-top:1px solid var(--line); margin:3px 7px; }
+  .td-menu.off div, .td-menu.off kbd { color:var(--off); }
+  .td-ghost { position:absolute; left:128px; top:38px; width:44px; height:40px; transform:rotate(-5deg); pointer-events:none; }
+  .td-ghost span { position:absolute; width:24px; height:30px; border-radius:2px; background:repeating-linear-gradient(#fff 0 3px,#bfc4d0 3px 4px) content-box, #fff; padding:4px 3px; box-sizing:border-box; box-shadow:0 0 0 1px rgba(0,0,0,.2), 0 4px 10px rgba(0,0,0,.35); opacity:.92; }
+  .td-ghost span:nth-child(1) { left:0; top:6px; transform:rotate(-9deg); }
+  .td-ghost span:nth-child(2) { left:8px; top:2px; }
+  .td-ghost em { position:absolute; right:0; top:-4px; min-width:16px; height:16px; border-radius:8px; background:#e5484d; color:#fff; font-style:normal; font-size:10.5px; font-weight:700; display:grid; place-items:center; box-shadow:0 1px 3px rgba(0,0,0,.4); }
+  .td-ghost::after { content:""; position:absolute; left:26px; top:24px; border:7px solid transparent; border-top:13px solid #111; border-left-width:5px; border-right-width:5px; transform:rotate(-38deg); filter:drop-shadow(0 0 1px #fff); }
+</style>
+</head>
+<body>
+<div class="td">
+<h2>Rabbithole tray window while dragging (approved mockup)</h2>
+<p class="subtitle">Left: files are held over the window. The drop area lights up and says what will happen, the whole window gets an outline because dropping anywhere on it counts, and the menu fades so nothing competes. Right: the moment after letting go. The green confirmation is temporary: after about 2 seconds the drop area returns to its normal uploading state ("Drop more to queue") while the counter and the thin bar keep tracking the upload.</p>
+
+<template id="td-over">
+  <div class="td-bar"><i></i><i class="me"></i><i></i><span>Thu 13:10</span></div>
+  <div class="td-pop over"><div class="td-top"><div class="td-drop over">Release to upload<small>3 items to Quick uploads</small></div></div>
+  <div class="td-menu off"><div><span>Choose file…</span><kbd>⌘O</kbd></div><div><span>Upload from clipboard</span><kbd>⌘V</kbd></div><div><span>Recent uploads</span><kbd>›</kbd></div><hr><div><span>Open main window</span><kbd>⌘D</kbd></div><div><span>Settings</span><kbd>⌘,</kbd></div><hr><div><span>About Rabbithole…</span></div><div><span>Check for updates</span></div><div><span>Quit</span><kbd>⌘Q</kbd></div></div>
+  <div class="td-ghost"><span></span><span></span><em>3</em></div></div>
+</template>
+
+<template id="td-done">
+  <div class="td-bar"><i></i><i class="me"></i><i></i><span>Thu 13:10</span></div>
+  <div class="td-pop"><div class="td-top"><div class="td-drop done">3 items added<small>Upload started</small></div>
+    <div class="td-status"><b>3 of 3 files left</b><span>0%</span></div><div class="td-track"><span style="width:2%"></span></div></div>
+  <div class="td-menu"><div><span>Choose file…</span><kbd>⌘O</kbd></div><div><span>Upload from clipboard</span><kbd>⌘V</kbd></div><div><span>Recent uploads</span><kbd>›</kbd></div><hr><div><span>Open main window</span><kbd>⌘D</kbd></div><div><span>Settings</span><kbd>⌘,</kbd></div><hr><div><span>About Rabbithole…</span></div><div><span>Check for updates</span></div><div><span>Quit</span><kbd>⌘Q</kbd></div></div></div>
+</template>
+
+<h3>Light theme</h3>
+<div class="td-row">
+  <div class="td-desk light" data-td="td-over"><div class="td-state">Dragging over the window</div></div>
+  <div class="td-desk light" data-td="td-done"><div class="td-state">Just dropped</div></div>
+</div>
+<h3>Dark theme</h3>
+<div class="td-row">
+  <div class="td-desk dark" data-td="td-over"><div class="td-state">Dragging over the window</div></div>
+  <div class="td-desk dark" data-td="td-done"><div class="td-state">Just dropped</div></div>
+</div>
+</div>
+
+<script>
+  document.querySelectorAll('[data-td]').forEach(function (desk) {
+    desk.prepend(document.getElementById(desk.dataset.td).content.cloneNode(true));
+  });
+</script>
+</body>
+</html>

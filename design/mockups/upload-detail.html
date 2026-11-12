@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbithole: upload detail mockup</title>
+<style>
+  body { margin:0; padding:28px; background:#eef0f5; color:#161a26; }
+  .ud { max-width:1040px; margin:0 auto; }
+  .ud h2 { font-size:22px; margin:0 0 6px; }
+  .ud h3 { font-size:15px; margin:26px 0 0; }
+  .ud .subtitle { margin:0; color:#5b6278; font-size:14px; line-height:1.5; max-width:70ch; }
+  .ud { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+  .ud-desk { border-radius:10px; padding:26px; margin:14px 0 26px; }
+  .ud-desk.light { background:
+      radial-gradient(circle at 12% 30%, #ffb86b 0 10%, transparent 30%),
+      radial-gradient(circle at 8% 80%, #5fd0c5 0 10%, transparent 32%),
+      linear-gradient(150deg,#9fc4f2,#6f8fe0 55%,#8a6fd6); }
+  .ud-desk.dark { background:
+      radial-gradient(circle at 12% 30%, #c2542d 0 10%, transparent 30%),
+      radial-gradient(circle at 8% 80%, #1f8f8a 0 10%, transparent 32%),
+      linear-gradient(150deg,#1d2a52,#151a36 55%,#2a1b4d); }
+  .ud-win { display:grid; grid-template-columns:190px minmax(0,1fr); height:640px; border-radius:12px; overflow:hidden; font-size:13px; color:var(--ink); }
+  .light .ud-win { --ink:#161a26; --muted:#62697e; --line:rgba(22,26,38,.11); --main:#fbfbfd; --card:#ffffff; --side:rgba(250,251,255,.58); --hot:rgba(255,255,255,.6); --track:rgba(22,26,38,.12); --accent:#4a3fd0; --ok:#1c8f63; --bad:#c2372f;
+                   box-shadow:0 18px 44px rgba(20,24,60,.32); border:1px solid rgba(255,255,255,.7); }
+  .dark .ud-win  { --ink:#f1f3fa; --muted:#9aa1b8; --line:rgba(255,255,255,.1); --main:#1a1d2b; --card:#222638; --side:rgba(26,29,44,.55); --hot:rgba(255,255,255,.12); --track:rgba(255,255,255,.14); --accent:#a99bff; --ok:#5fd0a0; --bad:#ff8a80;
+                   box-shadow:0 18px 44px rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.14); }
+  .ud-side { background:var(--side); backdrop-filter:blur(26px) saturate(170%); -webkit-backdrop-filter:blur(26px) saturate(170%); padding:12px 10px; border-right:1px solid var(--line); }
+  .ud-lights { display:flex; gap:7px; padding:2px 4px 22px; }
+  .ud-lights i { width:11px; height:11px; border-radius:50%; display:block; }
+  .ud-lights i:nth-child(1){ background:#f2605a; } .ud-lights i:nth-child(2){ background:#f5bd3f; } .ud-lights i:nth-child(3){ background:#5cc74b; }
+  .ud-nav div { padding:7px 10px; border-radius:7px; margin-bottom:3px; }
+  .ud-nav div.on { background:var(--hot); font-weight:600; }
+  .ud-main { background:var(--main); padding:14px 20px 0; display:flex; flex-direction:column; min-width:0; }
+  .ud-back { color:var(--accent); font-size:12.5px; }
+  .ud-head { display:flex; align-items:center; gap:18px; padding:16px 0 4px; }
+  .ud-ring { flex:none; width:92px; height:92px; border-radius:50%; display:grid; place-items:center; background:conic-gradient(var(--accent) 42%, var(--track) 0); }
+  .ud-hole { width:84px; height:84px; border-radius:50%; background:var(--main); display:grid; place-items:center; }
+  .ud-folder { width:50px; height:35px; border-radius:5px; background:linear-gradient(#72c4f7,#3b97e3); position:relative; margin-top:8px; }
+  .ud-folder::before { content:""; position:absolute; left:0; top:-7px; width:22px; height:12px; background:#58aeec; border-radius:3px 5px 0 0; }
+  .ud-title { flex:1; min-width:0; }
+  .ud-title h4 { margin:0; font-size:19px; font-weight:600; color:var(--ink); }
+  .ud-title p { margin:3px 0 0; color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ud-title p.prog { color:var(--ink); font-size:13px; margin-top:8px; font-variant-numeric:tabular-nums; }
+  .ud-acts { display:flex; gap:8px; flex:none; align-self:flex-start; }
+  .ud-btn { padding:5px 13px; border-radius:7px; border:1px solid var(--line); background:var(--card); font-size:12.5px; }
+  .ud-btn.bad { color:var(--bad); }
+  .ud-facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin:14px 0 0; padding:12px 0; border-top:1px solid var(--line); }
+  .ud-facts dt { color:var(--muted); font-size:11.5px; }
+  .ud-facts dd { margin:2px 0 0; font-weight:600; font-variant-numeric:tabular-nums; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ud-band { display:flex; justify-content:space-between; align-items:flex-end; padding:12px 0 10px; border-bottom:1px solid var(--line); }
+  .ud-band h4 { margin:0; font-size:15px; font-weight:600; color:var(--ink); }
+  .ud-tabs { display:flex; gap:4px; font-size:12px; color:var(--muted); }
+  .ud-tabs span { padding:3px 9px; border-radius:6px; }
+  .ud-tabs span.on { background:var(--track); color:var(--ink); }
+  .ud-list { flex:1; overflow:hidden; padding:4px 14px 0 0; position:relative; }
+  .ud-list::after { content:""; position:absolute; right:2px; top:8px; width:5px; height:80px; border-radius:3px; background:var(--track); }
+  .ud-file { display:flex; align-items:center; gap:12px; padding:7px 4px; border-bottom:1px solid var(--line); }
+  .ud-mini { flex:none; width:30px; height:26px; display:grid; place-items:center; }
+  .ud-ft { flex:1; min-width:0; }
+  .ud-fl { display:flex; align-items:baseline; gap:12px; }
+  .ud-bar { height:2px; border-radius:1px; background:var(--track); overflow:hidden; margin-top:6px; }
+  .ud-bar span { display:block; height:100%; background:var(--accent); }
+  .ud-bar.ok span { background:var(--ok); } .ud-bar.bad span { background:var(--bad); }
+  .ud-pic { width:28px; height:20px; border-radius:2px; box-shadow:0 0 0 1px rgba(0,0,0,.2); }
+  .ud-pic.a { background:linear-gradient(165deg,#ffc76b,#ee6f57 55%,#4b3f8f); }
+  .ud-pic.b { background:linear-gradient(180deg,#8fd3ff 0 55%,#2e8f6a 55%); }
+  .ud-pic.c { background:linear-gradient(200deg,#2a2f55,#c05a8a); }
+  .ud-pic.v { background:#15171f; }
+  .ud-file b { flex:1; min-width:0; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ud-file span { color:var(--muted); font-size:12px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .ud-file span.ok { color:var(--ok); } .ud-file span.bad { color:var(--bad); }
+  .ud-file u { text-decoration:none; color:var(--accent); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="ud">
+<h2>Rabbithole upload detail (approved mockup)</h2>
+<p class="subtitle">The ring stays only on the big thumbnail at the top. Each file inside the upload now shows a plain thumbnail and a thin straight progress line under its name.</p>
+
+<template id="ud-tpl">
+<div class="ud-win">
+  <div class="ud-side"><div class="ud-lights"><i></i><i></i><i></i></div>
+    <div class="ud-nav"><div>Overview</div><div class="on">History</div><div>Settings</div></div></div>
+  <div class="ud-main">
+    <div class="ud-back">‹ History</div>
+    <div class="ud-head">
+      <div class="ud-ring"><div class="ud-hole"><div class="ud-folder"></div></div></div>
+      <div class="ud-title"><h4>vacation-2026/</h4><p>~/Pictures/vacation-2026</p><p class="prog">800 MB of 1.9 GB sent, 1.1 GB left, about 3 min</p></div>
+      <div class="ud-acts"><span class="ud-btn">Pause</span><span class="ud-btn bad">Cancel upload</span></div>
+    </div>
+    <dl class="ud-facts">
+      <div><dt>Files</dt><dd>5 of 12 sent</dd></div>
+      <div><dt>Speed</dt><dd>6.2 MB/s</dd></div>
+      <div><dt>Started</dt><dd>Today, 11:52</dd></div>
+      <div><dt>Goes to</dt><dd>Quick uploads/vacation-2026</dd></div>
+    </dl>
+    <div class="ud-band"><h4>Files in this upload</h4><div class="ud-tabs"><span class="on">All</span><span>Sending</span><span>Waiting</span><span>Finished</span><span>Failed</span></div></div>
+    <div class="ud-list">
+      <div class="ud-file"><div class="ud-mini"><div class="ud-pic a"></div></div><div class="ud-ft"><div class="ud-fl"><b>IMG_4410.jpg</b><span>5.1 MB of 8.0 MB</span></div><div class="ud-bar"><span style="width:64%"></span></div></div></div>
+      <div class="ud-file"><div class="ud-mini"><div class="ud-pic v"></div></div><div class="ud-ft"><div class="ud-fl"><b>beach-day.mp4</b><span>180 MB of 860 MB</span></div><div class="ud-bar"><span style="width:21%"></span></div></div></div>
+      <div class="ud-file"><div class="ud-mini"><div class="ud-pic b"></div></div><div class="ud-ft"><div class="ud-fl"><b>IMG_4407.jpg</b><span class="bad">Failed, connection lost</span><u>Try again</u></div><div class="ud-bar bad"><span style="width:38%"></span></div></div></div>
+      <div class="ud-file"><div class="ud-mini"><div class="ud-pic c"></div></div><div class="ud-ft"><div class="ud-fl"><b>IMG_4412.jpg</b><span>Waiting, 7.4 MB</span></div><div class="ud-bar"><span style="width:0"></span></div></div></div>
+      <div class="ud-file"><div class="ud-mini"><div class="ud-pic b"></div></div><div class="ud-ft"><div class="ud-fl"><b>IMG_4413.jpg</b><span>Waiting, 6.9 MB</span></div><div class="ud-bar"><span style="width:0"></span></div></div></div>
+      <div class="ud-file"><div class="ud-mini"><div class="ud-pic a"></div></div><div class="ud-ft"><div class="ud-fl"><b>IMG_4401.jpg</b><span class="ok">Finished, 7.8 MB</span></div><div class="ud-bar ok"><span style="width:100%"></span></div></div></div>
+      <div class="ud-file"><div class="ud-mini"><div class="ud-pic c"></div></div><div class="ud-ft"><div class="ud-fl"><b>IMG_4402.jpg</b><span class="ok">Finished, 8.3 MB</span></div><div class="ud-bar ok"><span style="width:100%"></span></div></div></div>
+      <div class="ud-file"><div class="ud-mini"><div class="ud-pic b"></div></div><div class="ud-ft"><div class="ud-fl"><b>IMG_4403.jpg</b><span class="ok">Finished, 6.6 MB</span></div><div class="ud-bar ok"><span style="width:100%"></span></div></div></div>
+    </div>
+  </div>
+</div>
+</template>
+
+<h3>Light theme</h3>
+<div class="ud-desk light" data-ud></div>
+<h3>Dark theme</h3>
+<div class="ud-desk dark" data-ud></div>
+</div>
+
+<script>
+  document.querySelectorAll('[data-ud]').forEach(function (desk) {
+    desk.appendChild(document.getElementById('ud-tpl').content.cloneNode(true));
+  });
+</script>
+</body>
+</html>

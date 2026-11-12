@@ -1,0 +1,15 @@
+# Brainstorming drafts (every mockup iteration); approved mockups live in design/mockups
+.superpowers/
+
+# macOS
+.DS_Store
+
+# Xcode and Swift build output
+build/
+DerivedData/
+.build/
+xcuserdata/
+*.xcodeproj/
+
+# Go build output
+daemon/bin/

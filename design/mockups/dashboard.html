@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbithole: dashboard mockup</title>
+<style>
+  body { margin:0; padding:28px; background:#eef0f5; color:#161a26; }
+  .db { max-width:1040px; margin:0 auto; }
+  .db h2 { font-size:22px; margin:0 0 6px; }
+  .db h3 { font-size:15px; margin:26px 0 0; }
+  .db .subtitle { margin:0; color:#5b6278; font-size:14px; line-height:1.5; max-width:70ch; }
+  .db { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+  .db-desk { border-radius:10px; padding:26px; margin:14px 0 26px; }
+  .db-desk.light { background:
+      radial-gradient(circle at 12% 30%, #ffb86b 0 10%, transparent 30%),
+      radial-gradient(circle at 8% 80%, #5fd0c5 0 10%, transparent 32%),
+      linear-gradient(150deg,#9fc4f2,#6f8fe0 55%,#8a6fd6); }
+  .db-desk.dark { background:
+      radial-gradient(circle at 12% 30%, #c2542d 0 10%, transparent 30%),
+      radial-gradient(circle at 8% 80%, #1f8f8a 0 10%, transparent 32%),
+      linear-gradient(150deg,#1d2a52,#151a36 55%,#2a1b4d); }
+  .db-win { display:grid; grid-template-columns:190px minmax(0,1fr); height:640px; border-radius:12px; overflow:hidden; font-size:13px; color:var(--ink); }
+  .light .db-win { --ink:#161a26; --muted:#62697e; --line:rgba(22,26,38,.11); --main:#fbfbfd; --card:#ffffff; --side:rgba(250,251,255,.58); --hot:rgba(255,255,255,.6); --track:rgba(22,26,38,.12); --accent:#4a3fd0; --ok:#1c8f63;
+                   box-shadow:0 18px 44px rgba(20,24,60,.32); border:1px solid rgba(255,255,255,.7); }
+  .dark .db-win  { --ink:#f1f3fa; --muted:#9aa1b8; --line:rgba(255,255,255,.1); --main:#1a1d2b; --card:#222638; --side:rgba(26,29,44,.55); --hot:rgba(255,255,255,.12); --track:rgba(255,255,255,.14); --accent:#a99bff; --ok:#5fd0a0;
+                   box-shadow:0 18px 44px rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.14); }
+  .db-side { background:var(--side); backdrop-filter:blur(26px) saturate(170%); -webkit-backdrop-filter:blur(26px) saturate(170%); padding:12px 10px; border-right:1px solid var(--line); }
+  .db-lights { display:flex; gap:7px; padding:2px 4px 22px; }
+  .db-lights i { width:11px; height:11px; border-radius:50%; display:block; }
+  .db-lights i:nth-child(1){ background:#f2605a; } .db-lights i:nth-child(2){ background:#f5bd3f; } .db-lights i:nth-child(3){ background:#5cc74b; }
+  .db-nav div { padding:7px 10px; border-radius:7px; margin-bottom:3px; }
+  .db-nav div.on { background:var(--hot); font-weight:600; }
+  .db-main { background:var(--main); padding:18px 20px 0; display:flex; flex-direction:column; min-width:0; }
+  .db-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+  .db-card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .db-card p { margin:0; color:var(--muted); font-size:12px; }
+  .db-card b { display:block; font-size:20px; font-weight:600; margin:4px 0 2px; font-variant-numeric:tabular-nums; }
+  .db-track { height:2px; border-radius:1px; background:var(--track); overflow:hidden; margin-top:8px; }
+  .db-track span { display:block; height:100%; background:var(--accent); }
+  .db-band { display:flex; justify-content:space-between; align-items:flex-end; padding:24px 0 10px; border-bottom:1px solid var(--line); }
+  .db-band h4 { margin:0; font-size:15px; font-weight:600; color:var(--ink); }
+  .db-tabs { display:flex; gap:4px; font-size:12px; color:var(--muted); }
+  .db-tabs span { padding:3px 9px; border-radius:6px; }
+  .db-tabs span.on { background:var(--track); color:var(--ink); }
+  .db-list { flex:1; overflow:hidden; padding:10px 14px 0 0; position:relative; }
+  .db-list::after { content:""; position:absolute; right:2px; top:12px; width:5px; height:90px; border-radius:3px; background:var(--track); }
+  .db-item { background:var(--card); border:1px solid var(--line); border-radius:9px; padding:8px 12px; margin-bottom:8px; display:flex; align-items:center; gap:12px; }
+  .th-page, .th-gen { box-sizing:border-box; width:22px; height:28px; border-radius:2px; box-shadow:0 0 0 1px rgba(0,0,0,.2), 0 1px 3px rgba(0,0,0,.25); }
+  .th-page { padding:4px 3px; background:repeating-linear-gradient(#fff 0 3px,#bfc4d0 3px 4px) content-box, #fff; }
+  .th-gen { background:#f4f5f8; color:#7a8094; font-size:6px; font-weight:700; line-height:1; display:grid; place-items:end center; padding-bottom:3px; }
+  .th-img { width:30px; height:22px; border-radius:2px; background:radial-gradient(circle at 70% 35%,#fff3b0 0 12%,transparent 13%), linear-gradient(165deg,#ffc76b,#ee6f57 55%,#4b3f8f); box-shadow:0 0 0 1px rgba(0,0,0,.2), 0 1px 3px rgba(0,0,0,.25); }
+  .th-folder { width:30px; height:21px; border-radius:3px; background:linear-gradient(#72c4f7,#3b97e3); position:relative; margin-top:5px; }
+  .th-folder::before { content:""; position:absolute; left:0; top:-4px; width:13px; height:7px; background:#58aeec; border-radius:2px 3px 0 0; }
+  .th-stack { display:grid; place-items:center; }
+  .th-stack > * { grid-area:1 / 1; }
+  .th-stack > :nth-child(1) { transform:translate(-7px,-1px) rotate(-11deg); }
+  .th-stack > :nth-child(2) { transform:translate(7px,1px) rotate(9deg); }
+  .db-ring { flex:none; width:54px; height:54px; border-radius:50%; display:grid; place-items:center;
+             background:conic-gradient(var(--c,var(--accent)) calc(var(--p) * 1%), var(--track) 0); }
+  .db-ring.ok { --c:var(--ok); }
+  .db-ico { width:48px; height:48px; border-radius:50%; background:var(--card); display:grid; place-items:center; }
+  .db-file { box-sizing:border-box; width:16px; height:20px; border:1.5px solid var(--ink); border-radius:2px 6px 2px 2px; font-size:5.5px; font-weight:700; line-height:1; display:grid; place-items:end center; padding-bottom:2px; }
+  .db-folder { box-sizing:border-box; width:20px; height:13px; border:1.5px solid var(--ink); border-radius:0 3px 3px 3px; position:relative; margin-top:4px; }
+  .db-folder::before { content:""; box-sizing:border-box; position:absolute; left:-1.5px; top:-5px; width:9px; height:5px; border:1.5px solid var(--ink); border-bottom:0; border-radius:2px 2px 0 0; }
+  .db-txt { flex:1; min-width:0; }
+  .db-l1 { display:flex; justify-content:space-between; align-items:baseline; gap:16px; }
+  .db-l1 b { font-weight:600; white-space:nowrap; }
+  .db-path { color:var(--muted); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .db-prog { color:var(--muted); font-size:12px; margin-top:2px; font-variant-numeric:tabular-nums; }
+  .db-prog.ok { color:var(--ok); }
+</style>
+</head>
+<body>
+<div class="db">
+<h2>Rabbithole dashboard, overview (approved mockup)</h2>
+<p class="subtitle">The ring now surrounds a thumbnail of the file itself, like the previews Finder shows. Several files dropped together are one upload: a stack of thumbnails, named after the first file plus how many more. The thumbnails here are drawn stand-ins; the app would use the real system previews.</p>
+
+<h3>Light theme</h3>
+<div class="db-desk light"><div class="db-win">
+  <div class="db-side"><div class="db-lights"><i></i><i></i><i></i></div>
+    <div class="db-nav"><div class="on">Overview</div><div>History</div><div>Settings</div></div></div>
+  <div class="db-main">
+    <div class="db-cards">
+      <div class="db-card"><p>Uploading now</p><b>7 of 12 files left</b><div class="db-track"><span style="width:42%"></span></div></div>
+      <div class="db-card"><p>Stored in the cloud</p><b>48.2 GB</b><p>1,304 files</p></div>
+      <div class="db-card"><p>Last upload finished</p><b>2 minutes ago</b><p>invoice-october.pdf</p></div>
+    </div>
+    <div class="db-band"><h4>Uploads</h4><div class="db-tabs"><span class="on">All</span><span>In progress</span><span>Finished</span><span>Failed</span></div></div>
+    <div class="db-list">
+      <div class="db-item"><div class="db-ring" style="--p:42"><div class="db-ico"><div class="th-folder"></div></div></div><div class="db-txt"><div class="db-l1"><b>vacation-2026/</b><span class="db-path">~/Pictures/vacation-2026</span></div><div class="db-prog">800 MB of 1.9 GB sent, 1.1 GB left, about 3 min</div></div></div>
+      <div class="db-item"><div class="db-ring" style="--p:30"><div class="db-ico"><div class="th-gen">GZ</div></div></div><div class="db-txt"><div class="db-l1"><b>db-dump.sql.gz</b><span class="db-path">~/Work/backups/db-dump.sql.gz</span></div><div class="db-prog">1.3 GB of 4.2 GB sent, 2.9 GB left, about 8 min</div></div></div>
+      <div class="db-item"><div class="db-ring" style="--p:65"><div class="db-ico"><div class="th-stack"><div class="th-page"></div><div class="th-img"></div><div class="th-page"></div></div></div></div><div class="db-txt"><div class="db-l1"><b>report-q3.pdf and 7 more</b><span class="db-path">~/Downloads</span></div><div class="db-prog">310 MB of 480 MB sent, 170 MB left, about 1 min</div></div></div>
+      <div class="db-item"><div class="db-ring" style="--p:0"><div class="db-ico"><div class="th-folder"></div></div></div><div class="db-txt"><div class="db-l1"><b>design-assets/</b><span class="db-path">~/Work/client/design-assets</span></div><div class="db-prog">Waiting, 640 MB to send</div></div></div>
+      <div class="db-item"><div class="db-ring ok" style="--p:100"><div class="db-ico"><div class="th-page"></div></div></div><div class="db-txt"><div class="db-l1"><b>invoice-october.pdf</b><span class="db-path">~/Documents/finance/invoice-october.pdf</span></div><div class="db-prog ok">Finished, 184 KB sent</div></div></div>
+      <div class="db-item"><div class="db-ring ok" style="--p:100"><div class="db-ico"><div class="th-page"></div></div></div><div class="db-txt"><div class="db-l1"><b>contract-signed.pdf</b><span class="db-path">~/Documents/legal/contract-signed.pdf</span></div><div class="db-prog ok">Finished, 2.1 MB sent</div></div></div>
+    </div>
+  </div>
+</div></div>
+
+<h3>Dark theme</h3>
+<div class="db-desk dark"><div class="db-win">
+  <div class="db-side"><div class="db-lights"><i></i><i></i><i></i></div>
+    <div class="db-nav"><div class="on">Overview</div><div>History</div><div>Settings</div></div></div>
+  <div class="db-main">
+    <div class="db-cards">
+      <div class="db-card"><p>Uploading now</p><b>7 of 12 files left</b><div class="db-track"><span style="width:42%"></span></div></div>
+      <div class="db-card"><p>Stored in the cloud</p><b>48.2 GB</b><p>1,304 files</p></div>
+      <div class="db-card"><p>Last upload finished</p><b>2 minutes ago</b><p>invoice-october.pdf</p></div>
+    </div>
+    <div class="db-band"><h4>Uploads</h4><div class="db-tabs"><span class="on">All</span><span>In progress</span><span>Finished</span><span>Failed</span></div></div>
+    <div class="db-list">
+      <div class="db-item"><div class="db-ring" style="--p:42"><div class="db-ico"><div class="th-folder"></div></div></div><div class="db-txt"><div class="db-l1"><b>vacation-2026/</b><span class="db-path">~/Pictures/vacation-2026</span></div><div class="db-prog">800 MB of 1.9 GB sent, 1.1 GB left, about 3 min</div></div></div>
+      <div class="db-item"><div class="db-ring" style="--p:30"><div class="db-ico"><div class="th-gen">GZ</div></div></div><div class="db-txt"><div class="db-l1"><b>db-dump.sql.gz</b><span class="db-path">~/Work/backups/db-dump.sql.gz</span></div><div class="db-prog">1.3 GB of 4.2 GB sent, 2.9 GB left, about 8 min</div></div></div>
+      <div class="db-item"><div class="db-ring" style="--p:65"><div class="db-ico"><div class="th-stack"><div class="th-page"></div><div class="th-img"></div><div class="th-page"></div></div></div></div><div class="db-txt"><div class="db-l1"><b>report-q3.pdf and 7 more</b><span class="db-path">~/Downloads</span></div><div class="db-prog">310 MB of 480 MB sent, 170 MB left, about 1 min</div></div></div>
+      <div class="db-item"><div class="db-ring" style="--p:0"><div class="db-ico"><div class="th-folder"></div></div></div><div class="db-txt"><div class="db-l1"><b>design-assets/</b><span class="db-path">~/Work/client/design-assets</span></div><div class="db-prog">Waiting, 640 MB to send</div></div></div>
+      <div class="db-item"><div class="db-ring ok" style="--p:100"><div class="db-ico"><div class="th-page"></div></div></div><div class="db-txt"><div class="db-l1"><b>invoice-october.pdf</b><span class="db-path">~/Documents/finance/invoice-october.pdf</span></div><div class="db-prog ok">Finished, 184 KB sent</div></div></div>
+      <div class="db-item"><div class="db-ring ok" style="--p:100"><div class="db-ico"><div class="th-page"></div></div></div><div class="db-txt"><div class="db-l1"><b>contract-signed.pdf</b><span class="db-path">~/Documents/legal/contract-signed.pdf</span></div><div class="db-prog ok">Finished, 2.1 MB sent</div></div></div>
+    </div>
+  </div>
+</div></div>
+</div>
+</body>
+</html>
