@@ -1,0 +1,16 @@
+version: v2
+modules:
+  - path: .
+lint:
+  use:
+    - STANDARD
+  except:
+    # The contract keeps short UploadState value names (QUEUED, ...) so Go
+    # exposes UploadState_QUEUED instead of UploadState_UPLOAD_STATE_QUEUED.
+    - ENUM_VALUE_PREFIX
+    # The contract names the service "Daemon" and streams "UploadSnapshot".
+    - SERVICE_SUFFIX
+    - RPC_RESPONSE_STANDARD_NAME
+breaking:
+  use:
+    - FILE

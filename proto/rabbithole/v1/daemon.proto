@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package rabbithole.v1;
+
+option go_package = "rabbithole/daemon/internal/gen/rabbithole/v1;rabbitholev1";
+
+// Daemon is the upload daemon API consumed by the menu bar app over a Unix socket.
+service Daemon {
+  // Configure supplies S3 credentials and destination settings.
+  rpc Configure(ConfigureRequest) returns (ConfigureResponse);
+  // EnqueueUpload queues a local file for upload.
+  rpc EnqueueUpload(EnqueueUploadRequest) returns (EnqueueUploadResponse);
+  // WatchUploads streams a snapshot whenever an upload changes state or progresses.
+  rpc WatchUploads(WatchUploadsRequest) returns (stream UploadSnapshot);
+}
+
+message ConfigureRequest {
+  string access_key_id = 1;
+  string secret_access_key = 2;
+  string region = 3;
+  string bucket = 4;
+  string quick_uploads_prefix = 5;
+}
+
+message ConfigureResponse {}
+
+message EnqueueUploadRequest {
+  string local_path = 1;
+}
+
+message EnqueueUploadResponse {
+  string upload_id = 1;
+}
+
+message WatchUploadsRequest {}
+
+enum UploadState {
+  UPLOAD_STATE_UNSPECIFIED = 0;
+  QUEUED = 1;
+  UPLOADING = 2;
+  FINISHED = 3;
+  FAILED = 4;
+}
+
+message UploadSnapshot {
+  string upload_id = 1;
+  string file_name = 2;
+  string local_path = 3;
+  string object_key = 4;
+  int64 bytes_total = 5;
+  int64 bytes_sent = 6;
+  UploadState state = 7;
+  string error_message = 8;
+}
