@@ -26,7 +26,6 @@ struct BatchTracker {
     private var order: [String] = []
     private var entries: [String: Entry] = [:]
     private var held: [String: UploadSnapshot] = [:]
-    private var peakFraction = 0.0
 
     /// Number of snapshots waiting for their id to be registered.
     var heldCount: Int { held.count }
@@ -37,8 +36,14 @@ struct BatchTracker {
 
     var isActive: Bool { remaining > 0 }
 
-    /// Bytes sent over total bytes for the batch, in 0...1, never decreasing within a batch.
-    var fraction: Double { peakFraction }
+    /// Bytes sent over total bytes for the batch, clamped to 0...1. It may drop when a file joins
+    /// the batch; per-upload bytes sent never decrease, so it is otherwise monotonic.
+    var fraction: Double {
+        let totalBytes = entries.values.reduce(Int64(0)) { $0 + $1.bytesTotal }
+        guard totalBytes > 0 else { return 0 }
+        let sent = entries.values.reduce(Int64(0)) { $0 + $1.countedBytesSent }
+        return min(Double(sent) / Double(totalBytes), 1)
+    }
 
     /// The error of the first failed upload, in registration order.
     var firstError: String? {
@@ -58,7 +63,6 @@ struct BatchTracker {
         if let snapshot = claimed {
             update(id, with: snapshot)
         }
-        updatePeak()
     }
 
     /// Returns true when the snapshot changed the current batch.
@@ -68,9 +72,7 @@ struct BatchTracker {
             held[snapshot.id] = snapshot
             return false
         }
-        let changed = update(snapshot.id, with: snapshot)
-        updatePeak()
-        return changed
+        return update(snapshot.id, with: snapshot)
     }
 
     /// The daemon restarted: uploads that were queued or in progress are lost.
@@ -80,13 +82,11 @@ struct BatchTracker {
             entries[id]?.errorMessage = Self.interruptedMessage
         }
         held = held.filter { $0.value.state == .finished || $0.value.state == .failed }
-        updatePeak()
     }
 
     private mutating func startNewBatch() {
         order = []
         entries = [:]
-        peakFraction = 0
         held = held.filter { $0.value.state != .finished && $0.value.state != .failed }
     }
 
@@ -94,7 +94,7 @@ struct BatchTracker {
     private mutating func update(_ id: String, with snapshot: UploadSnapshot) -> Bool {
         guard var entry = entries[id], !entry.isDone else { return false }
         entry.bytesTotal = max(snapshot.bytesTotal, 0)
-        entry.bytesSent = snapshot.bytesSent
+        entry.bytesSent = max(entry.bytesSent, snapshot.bytesSent)
         switch snapshot.state {
         case .queued, .uploading:
             break
@@ -106,12 +106,5 @@ struct BatchTracker {
         }
         entries[id] = entry
         return true
-    }
-
-    private mutating func updatePeak() {
-        let totalBytes = entries.values.reduce(Int64(0)) { $0 + $1.bytesTotal }
-        guard totalBytes > 0 else { return }
-        let sent = entries.values.reduce(Int64(0)) { $0 + $1.countedBytesSent }
-        peakFraction = max(peakFraction, min(Double(sent) / Double(totalBytes), 1))
     }
 }

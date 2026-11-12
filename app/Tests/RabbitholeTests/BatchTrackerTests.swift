@@ -40,15 +40,30 @@ final class BatchTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.fraction, 0.25, accuracy: 0.0001)
     }
 
-    func testFractionNeverGoesBackwardsWithinBatch() {
+    func testFractionIsRawRatioWhenFileJoinsBatch() {
         var tracker = BatchTracker()
+        // B joins while A is still unfinished, so both belong to the same batch.
         tracker.register(id: "a")
-        tracker.apply(snapshot("a", .uploading, sent: 100, total: 100))
+        tracker.apply(snapshot("a", .uploading, sent: 50, total: 100))
         tracker.register(id: "b")
+        tracker.apply(snapshot("a", .finished, sent: 100, total: 100))
         tracker.apply(snapshot("b", .queued, sent: 0, total: 900))
 
-        // The raw ratio dropped to 100/1000, but the batch fraction holds its peak.
-        XCTAssertEqual(tracker.fraction, 1, accuracy: 0.0001)
+        XCTAssertEqual(tracker.fraction, 0.1, accuracy: 0.0001)
+        XCTAssertEqual(tracker.remaining, 1)
+        XCTAssertEqual(tracker.total, 2)
+
+        tracker.apply(snapshot("b", .uploading, sent: 450, total: 900))
+        XCTAssertEqual(tracker.fraction, 0.55, accuracy: 0.0001)
+    }
+
+    func testPerUploadBytesNeverDecrease() {
+        var tracker = BatchTracker()
+        tracker.register(id: "a")
+        tracker.apply(snapshot("a", .uploading, sent: 500, total: 1000))
+        tracker.apply(snapshot("a", .uploading, sent: 300, total: 1000))
+
+        XCTAssertEqual(tracker.fraction, 0.5, accuracy: 0.0001)
     }
 
     func testFractionNeverExceedsOne() {

@@ -154,6 +154,7 @@ final class TrayViewModel {
                 refreshState()
             }
         case .unavailable:
+            tracker.interrupted()
             state = .unavailable
         }
     }

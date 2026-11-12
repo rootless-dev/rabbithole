@@ -325,6 +325,16 @@ final class TrayViewModelTests: XCTestCase {
         XCTAssertEqual(model.dropFeedback, .refused("Uploads are unavailable"))
     }
 
+    func testUnavailableInterruptsUploadsSoSettingsSavedDoesNotShowStaleUploading() async {
+        let model = makeViewModel()
+        await model.drop([file])
+        model.apply(snapshot("up-1", .uploading, sent: 10))
+        model.handle(.unavailable)
+        await model.settingsSaved(settings)
+
+        XCTAssertEqual(model.state, .failed("Upload interrupted"))
+    }
+
     func testReadyClearsUnavailable() {
         let model = makeViewModel()
         model.handle(.unavailable)
