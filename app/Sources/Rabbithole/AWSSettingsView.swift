@@ -13,6 +13,8 @@ struct AWSSettingsView: View {
     @State private var bucket = ""
     @State private var existingSecret = false
     @State private var message: String?
+    /// True while the keychain is being read on open or a save is in flight.
+    @State private var isBusy = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -36,18 +38,21 @@ struct AWSSettingsView: View {
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
-                Button("Save", action: save)
+                Button("Save") { Task { await save() } }
                     .keyboardShortcut(.defaultAction)
+                    .disabled(isBusy)
             }
         }
         .padding(20)
         .frame(width: 420)
-        .onAppear(perform: loadExisting)
+        .task { await loadExisting() }
     }
 
-    private func loadExisting() {
+    /// The keychain is read off the main actor; the form stays disabled until it returns.
+    private func loadExisting() async {
+        defer { isBusy = false }
         do {
-            if let current = try store.load() {
+            if let current = try await AWSSettingsForm.load(store: store) {
                 accessKeyID = current.accessKeyID
                 region = current.region
                 bucket = current.bucket
@@ -58,33 +63,16 @@ struct AWSSettingsView: View {
         }
     }
 
-    private func save() {
-        var candidate = AWSSettings(
+    private func save() async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        message = nil
+        let candidate = AWSSettings(
             accessKeyID: accessKeyID, secretAccessKey: secret, region: region, bucket: bucket)
-        if candidate.secretAccessKey.isEmpty, existingSecret {
-            // An empty field keeps the stored secret. The pair is stored as one item,
-            // so it is read once here and written back together with the other fields.
-            do {
-                guard let current = try store.load() else {
-                    message = "Enter the secret access key."
-                    return
-                }
-                candidate.secretAccessKey = current.secretAccessKey
-            } catch {
-                message = "Could not read the saved secret."
-                return
-            }
+        switch await AWSSettingsForm.save(candidate, keepStoredSecret: existingSecret, store: store) {
+        case .saved(let saved): onSaved(saved)
+        case .failed(let problem): message = problem
         }
-        if let problem = SettingsStore.validate(candidate) {
-            message = problem
-            return
-        }
-        do {
-            try store.save(candidate)
-        } catch {
-            message = "Could not save the settings."
-            return
-        }
-        onSaved(candidate)
     }
 }
