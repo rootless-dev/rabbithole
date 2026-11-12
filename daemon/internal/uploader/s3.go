@@ -1,0 +1,65 @@
+package uploader
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+)
+
+// Sentinel errors an S3 implementation returns (possibly wrapped) so the
+// uploader can react to them and Message can describe them to the user.
+var (
+	// ErrPreconditionFailed means a conditional write (If-None-Match) was rejected
+	// because an object with that key already exists.
+	ErrPreconditionFailed = errors.New("conditional write rejected: object already exists")
+	// ErrForbidden means the existence check was denied (missing s3:ListBucket).
+	ErrForbidden = errors.New("existence check denied")
+	// ErrWriteDenied means a write call was denied.
+	ErrWriteDenied = errors.New("write denied")
+	// ErrBucketNotFound means the bucket does not exist.
+	ErrBucketNotFound = errors.New("bucket not found")
+	// ErrBadCredentials means AWS rejected the access key.
+	ErrBadCredentials = errors.New("bad credentials")
+	// ErrNoNetwork means the request could not reach AWS.
+	ErrNoNetwork = errors.New("no network")
+	// ErrFileUnreadable means the local file vanished, could not be opened, or
+	// ended before the size recorded at the start of the upload.
+	ErrFileUnreadable = errors.New("file unreadable")
+)
+
+// Settings holds the S3 destination and the credentials used to reach it.
+type Settings struct {
+	AccessKeyID     string
+	SecretAccessKey string
+	Region          string
+	Bucket          string
+	Prefix          string
+}
+
+// String redacts the credentials so a Settings value is safe to log or print.
+func (s Settings) String() string {
+	return fmt.Sprintf("Settings{AccessKeyID:[redacted] SecretAccessKey:[redacted] Region:%s Bucket:%s Prefix:%s}",
+		s.Region, s.Bucket, s.Prefix)
+}
+
+// GoString keeps the credentials redacted under the %#v verb as well.
+func (s Settings) GoString() string { return s.String() }
+
+// CompletedPart identifies one uploaded part of a multipart upload.
+type CompletedPart struct {
+	Number int32
+	ETag   string
+}
+
+// S3 is the subset of S3 the uploader needs. Writes are conditional: an
+// implementation sends If-None-Match and reports a rejection as
+// ErrPreconditionFailed.
+type S3 interface {
+	ObjectExists(ctx context.Context, key string) (bool, error)
+	PutObject(ctx context.Context, key string, body io.Reader, size int64) error
+	CreateMultipart(ctx context.Context, key string) (uploadID string, err error)
+	UploadPart(ctx context.Context, key, uploadID string, number int32, body io.Reader, size int64) (etag string, err error)
+	CompleteMultipart(ctx context.Context, key, uploadID string, parts []CompletedPart) error
+	AbortMultipart(ctx context.Context, key, uploadID string) error
+}
