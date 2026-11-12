@@ -10,6 +10,66 @@ enum AWSSettingsForm {
         case failed(String)
     }
 
+    /// What the settings screens show about the saved account. It never carries the secret,
+    /// and the key ID only in masked form.
+    struct Summary: Equatable, Sendable {
+        var maskedKeyID = ""
+        var hasCredentials = false
+        /// The keychain item exists but could not be read.
+        var credentialsUnreadable = false
+        var destination = SettingsStore.Destination(
+            region: "", bucket: "", uploadsPrefix: AWSSettings.quickUploadsPrefix)
+    }
+
+    /// Reads the summary. The keychain read happens here, off the main actor.
+    static func summary(store: SettingsStore) async -> Summary {
+        var summary = Summary(destination: store.loadDestination())
+        do {
+            if let keyID = try store.loadAccessKeyID() {
+                summary.maskedKeyID = maskedKeyID(keyID)
+                summary.hasCredentials = true
+            }
+        } catch {
+            summary.credentialsUnreadable = true
+        }
+        return summary
+    }
+
+    /// "AKIA••••••••••••7Q2F": the first and last four characters around twelve dots. Short
+    /// values are hidden entirely.
+    static func maskedKeyID(_ keyID: String) -> String {
+        let dots = String(repeating: "•", count: 12)
+        guard keyID.count >= 12 else { return dots }
+        return keyID.prefix(4) + dots + keyID.suffix(4)
+    }
+
+    /// Changes part of the saved settings (region, bucket, folder) and saves the result. The
+    /// stored credentials are read and written back here, off the main actor.
+    static func update(
+        store: SettingsStore, _ change: @Sendable (inout AWSSettings) -> Void
+    ) async -> SaveResult {
+        let current: AWSSettings
+        do {
+            guard let saved = try store.load() else {
+                return .failed("Connect your AWS account first.")
+            }
+            current = saved
+        } catch {
+            return .failed("Could not read the saved settings.")
+        }
+        var candidate = current
+        change(&candidate)
+        if let problem = SettingsStore.validate(candidate) {
+            return .failed(problem)
+        }
+        do {
+            try store.save(candidate)
+        } catch {
+            return .failed("Could not save the settings.")
+        }
+        return .saved(candidate)
+    }
+
     /// Reads the saved settings for the form. Throws when the keychain cannot be read.
     static func load(store: SettingsStore) async throws -> AWSSettings? {
         try store.load()

@@ -1,0 +1,77 @@
+import Foundation
+
+enum UploadStateFilter: CaseIterable, Sendable {
+    case all, inProgress, waiting, finished, failed
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .inProgress: "In progress"
+        case .waiting: "Waiting"
+        case .finished: "Finished"
+        case .failed: "Failed"
+        }
+    }
+}
+
+/// The search text and filters of an upload list. State is one at a time, file kinds are
+/// several at once, and no kind selected means every kind.
+struct UploadQuery: Equatable, Sendable {
+    var text = ""
+    var state: UploadStateFilter = .all
+    var kinds: Set<FileKind> = []
+    /// Overview has no Waiting tab: there, waiting uploads count as in progress.
+    var waitingCountsAsInProgress = false
+
+    var isFiltering: Bool { !trimmedText.isEmpty || state != .all || !kinds.isEmpty }
+
+    func apply(to records: [UploadRecord]) -> [UploadRecord] {
+        records.filter { matchesTextAndKind($0) && matches($0.state, filter: state) }
+    }
+
+    /// How many uploads each state tab would show with the current text and kinds.
+    func count(_ filter: UploadStateFilter, in records: [UploadRecord]) -> Int {
+        records.filter { matchesTextAndKind($0) && matches($0.state, filter: filter) }.count
+    }
+
+    /// The headline shown when the filters leave nothing: `No finished uploads match "x"`.
+    var emptyTitle: String {
+        let subject: String
+        switch state {
+        case .all: subject = "No uploads"
+        case .inProgress: subject = "No uploads in progress"
+        case .waiting: subject = "No waiting uploads"
+        case .finished: subject = "No finished uploads"
+        case .failed: subject = "No failed uploads"
+        }
+        if !trimmedText.isEmpty { return "\(subject) match \"\(trimmedText)\"" }
+        if !kinds.isEmpty { return "\(subject) match these file types" }
+        return subject
+    }
+
+    mutating func clear() {
+        text = ""
+        state = .all
+        kinds = []
+    }
+
+    private var trimmedText: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private func matchesTextAndKind(_ record: UploadRecord) -> Bool {
+        if !kinds.isEmpty, !kinds.contains(FileKind.of(fileName: record.fileName)) { return false }
+        let needle = trimmedText
+        guard !needle.isEmpty else { return true }
+        return record.fileName.localizedCaseInsensitiveContains(needle)
+            || record.localPath.localizedCaseInsensitiveContains(needle)
+    }
+
+    private func matches(_ state: UploadState, filter: UploadStateFilter) -> Bool {
+        switch filter {
+        case .all: true
+        case .inProgress: state == .uploading || (waitingCountsAsInProgress && state == .queued)
+        case .waiting: state == .queued
+        case .finished: state == .finished
+        case .failed: state == .failed
+        }
+    }
+}

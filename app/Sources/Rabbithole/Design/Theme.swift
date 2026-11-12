@@ -1,0 +1,91 @@
+import AppKit
+import SwiftUI
+
+/// Colors from the approved mockups (`design/mockups`). Every color has a light and a dark
+/// value and follows the effective appearance of the view that draws it.
+enum Theme {
+    // Text
+    static let ink = dynamic(0x161A26, 0xF1F3FA)
+    /// Secondary text on solid surfaces (main window).
+    static let muted = dynamic(0x62697E, 0x9AA1B8)
+    /// Secondary text on glass (tray window, small windows).
+    static let glassMuted = dynamic(0x161A26, 0xF1F3FA, 0.62, 0.62)
+    static let smallWindowMuted = dynamic(0x161A26, 0xF1F3FA, 0.66, 0.66)
+    /// Disabled text.
+    static let off = dynamic(0x161A26, 0xF1F3FA, 0.34, 0.32)
+
+    // Surfaces
+    static let main = dynamic(0xFBFBFD, 0x1A1D2B)
+    static let card = dynamic(0xFFFFFF, 0x222638)
+    /// Tint laid over the blurred backdrop of glass surfaces.
+    static let glass = dynamic(0xFAFBFF, 0x1A1D2C, 0.58, 0.55)
+    static let glassEdge = dynamic(0xFFFFFF, 0xFFFFFF, 0.7, 0.16)
+    /// Highlight of the selected sidebar row.
+    static let hot = dynamic(0xFFFFFF, 0xFFFFFF, 0.6, 0.12)
+    /// Highlight of the hovered tray menu row.
+    static let glassHot = dynamic(0xFFFFFF, 0xFFFFFF, 0.55, 0.13)
+    /// Drop area background while a file is held over the tray window.
+    static let tint = dynamic(0xECEAFD, 0x2F2B55)
+
+    // Lines and tracks
+    static let line = dynamic(0x161A26, 0xFFFFFF, 0.11, 0.10)
+    static let glassLine = dynamic(0x161A26, 0xFFFFFF, 0.12, 0.13)
+    static let track = dynamic(0x161A26, 0xFFFFFF, 0.12, 0.14)
+    static let glassTrack = dynamic(0x161A26, 0xFFFFFF, 0.14, 0.16)
+    /// Track of switches and the first-launch menu bar picture.
+    static let strongTrack = dynamic(0x161A26, 0xFFFFFF, 0.16, 0.18)
+
+    // Meaning
+    static let accent = dynamic(0x4A3FD0, 0xA99BFF)
+    /// Text on an accent background.
+    static let onAccent = dynamic(0xFFFFFF, 0x14162A)
+    static let ok = dynamic(0x1C8F63, 0x5FD0A0)
+    static let bad = dynamic(0xC2372F, 0xFF8A80)
+    static let bannerBad = dynamic(0xB3261E, 0xFF9B92)
+    static let bannerBadBackground = dynamic(0xFDE7E4, 0xFF5A50, 1, 0.15)
+    static let warn = dynamic(0x8A5A00, 0xFFD98A)
+    static let warnBackground = dynamic(0xFFF3D6, 0xFFBE46, 1, 0.14)
+
+    static func dynamic(
+        _ light: UInt32, _ dark: UInt32, _ lightAlpha: Double = 1, _ darkAlpha: Double = 1
+    ) -> Color {
+        Color(
+            nsColor: NSColor(name: nil) { appearance in
+                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                let hex = isDark ? dark : light
+                return NSColor(
+                    srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                    green: CGFloat((hex >> 8) & 0xFF) / 255,
+                    blue: CGFloat(hex & 0xFF) / 255,
+                    alpha: isDark ? darkAlpha : lightAlpha)
+            })
+    }
+}
+
+/// The app's light, dark or system appearance choice.
+enum ThemeChoice: String, CaseIterable, Sendable {
+    case light, dark, system
+
+    var title: String {
+        switch self {
+        case .light: "Light"
+        case .dark: "Dark"
+        case .system: "Match system"
+        }
+    }
+
+    /// The appearance to force on the app, or nil to follow the system.
+    var appearance: NSAppearance? {
+        switch self {
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        case .system: nil
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// True when views are drawn offscreen for comparison with the mockups. System blur
+    /// materials do not render there, so glass surfaces draw a flat stand-in instead.
+    @Entry var flatMaterials = false
+}

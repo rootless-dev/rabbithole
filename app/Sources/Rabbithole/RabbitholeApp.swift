@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 
 @main
 enum RabbitholeMain {
@@ -13,15 +14,19 @@ enum RabbitholeMain {
     }
 }
 
-/// Composes the app: settings, daemon supervisor, view model, tray window and the forwarder
-/// that connects them.
+/// Composes the app: settings, daemon supervisor, view models, the tray window, the main
+/// window, the small windows and the forwarder that connects the daemon to them.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var supervisor: DaemonSupervisor?
     private var forwarder: DaemonEventForwarder?
     private var tray: TrayWindowController?
-    private var settingsWindow: AWSSettingsWindowController?
+    private var mainWindow: MainWindowController?
     private var viewModel: TrayViewModel?
+    private var preferences: AppPreferences?
+    private var loginItem: LoginItemModel?
+    private var hotKey: GlobalHotKey?
+    private let smallWindows = SmallWindowPresenter()
     /// Set once the app is quitting; composition that is still in progress must not start a daemon.
     private var isShutDown = false
 
@@ -38,6 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Nothing here blocks: the keychain is read by the forwarder, off the main actor.
     private func compose(store: SettingsStore) {
+        let preferences = AppPreferences(defaults: .standard)
+        NSApp.appearance = preferences.theme.appearance
+        NSApp.mainMenu = MainMenu.make()
+
         let client = GRPCDaemonClient(socketPath: Self.socketURL.path)
         let supervisor = DaemonSupervisor(
             executable: Bundle.main.url(forResource: "rabbitholed", withExtension: nil),
@@ -52,25 +61,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let forwarder = DaemonEventForwarder(
             client: client, events: supervisor.events, viewModel: viewModel,
             loadSettings: { try store.load() })
-        let settingsWindow = AWSSettingsWindowController(
-            store: store, onSaved: { settings in forwarder.settingsChanged(settings) })
-        let tray = TrayWindowController(
-            viewModel: viewModel,
-            openSettings: { settingsWindow.show() },
-            chooseFile: {
-                Task {
-                    if let url = await FilePicker.chooseFile() { await viewModel.drop([url]) }
-                }
-            },
-            quit: { [weak self] in self?.quit() })
+
+        let notifier = UploadNotifier()
+        viewModel.uploads.onEnded = { record in
+            if preferences.notifyWhenUploadsEnd { notifier.notify(record) }
+        }
+
+        let actions = makeActions()
+        let account = AccountModel(store: store, onSaved: { forwarder.settingsChanged($0) })
+        let loginItem = LoginItemModel(service: SystemLoginItemService())
+        let context = MainContext(
+            model: MainWindowModel(), tray: viewModel, account: account, preferences: preferences,
+            loginItem: loginItem, actions: actions)
+        let mainWindow = MainWindowController(
+            context: context, thumbnails: ThumbnailCache(),
+            makeSetup: { [weak self] in
+                SetupModel(
+                    store: store,
+                    onSaved: { settings in
+                        forwarder.settingsChanged(settings)
+                        Task { await account.reload() }
+                    },
+                    onFinished: { openAtLogin, notify in
+                        preferences.notifyWhenUploadsEnd = notify
+                        Task { await loginItem.set(openAtLogin) }
+                        self?.mainWindow?.finishSetup()
+                    })
+            })
+        let tray = TrayWindowController(viewModel: viewModel, actions: actions)
+        let hotKey = GlobalHotKey(action: { [weak tray] in tray?.toggle() })
+        hotKey.register(preferences.trayShortcut)
 
         self.supervisor = supervisor
         self.forwarder = forwarder
         self.tray = tray
-        self.settingsWindow = settingsWindow
+        self.mainWindow = mainWindow
         self.viewModel = viewModel
+        self.preferences = preferences
+        self.loginItem = loginItem
+        self.hotKey = hotKey
 
         forwarder.start()
+        openSetupOnFirstLaunch(viewModel)
         Task {
             // A quit that lands before this runs must not leave a daemon behind.
             guard !isShutDown else { return }
@@ -78,9 +110,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func quit() {
-        shutDown()
-        NSApp.terminate(nil)
+    /// The first state after "starting" tells whether an account is saved. With none, the
+    /// main window opens by itself on the setup, as a first launch should.
+    private func openSetupOnFirstLaunch(_ viewModel: TrayViewModel) {
+        withObservationTracking {
+            _ = viewModel.state
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self, !self.isShutDown else { return }
+                switch viewModel.state {
+                case .starting: self.openSetupOnFirstLaunch(viewModel)
+                case .notConfigured: self.mainWindow?.startSetup()
+                default: break
+                }
+            }
+        }
+    }
+
+    private func makeActions() -> AppActions {
+        var actions = AppActions()
+        actions.chooseFile = { [weak self] in
+            Task {
+                guard let url = await FilePicker.chooseFile() else { return }
+                await self?.viewModel?.drop([url])
+            }
+        }
+        actions.uploadFromClipboard = { [weak self] in
+            let urls = FilePicker.clipboardFiles()
+            Task { await self?.viewModel?.uploadFromClipboard(urls) }
+        }
+        actions.openMainWindow = { [weak self] section in self?.mainWindow?.show(section: section) }
+        actions.openSettingsPane = { [weak self] pane in self?.mainWindow?.show(pane: pane) }
+        actions.openUpload = { [weak self] id in self?.mainWindow?.showUpload(id: id) }
+        actions.startSetup = { [weak self] in self?.mainWindow?.startSetup() }
+        actions.showAbout = { [weak self] in self?.showAbout() }
+        actions.checkForUpdates = { [weak self] in self?.showUpdateCheck() }
+        actions.showCreatePassphrase = { [weak self] in
+            self?.smallWindows.show(.createPassphrase, title: "Encryption passphrase") { close in
+                CreatePassphraseView(close: close)
+            }
+        }
+        actions.retry = { [weak self] records in
+            Task { await self?.viewModel?.retry(records) }
+        }
+        actions.applyTheme = { theme in NSApp.appearance = theme.appearance }
+        actions.registerShortcut = { [weak self] shortcut in self?.hotKey?.register(shortcut) ?? false }
+        actions.quit = { NSApp.terminate(nil) }
+        return actions
+    }
+
+    private func showAbout() {
+        smallWindows.show(.about, title: "About Rabbithole") { [weak self] _ in
+            AboutView(version: Self.version, checkForUpdates: { self?.showUpdateCheck() })
+        }
+    }
+
+    /// The app has no update check yet, so the window says exactly that.
+    private func showUpdateCheck() {
+        smallWindows.show(.updates, title: "Check for updates") { close in
+            UpdateResultView(result: .unavailable, currentVersion: Self.version, close: close)
+        }
     }
 
     /// Safe to call more than once. The daemon also exits by itself when the app dies, because
@@ -89,12 +178,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isShutDown = true
         forwarder?.stop()
         supervisor?.stop()
+        hotKey?.unregister()
+        smallWindows.closeAll()
+        mainWindow?.close()
         tray?.tearDown()
+    }
+
+    private static var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
     }
 
     private static var socketURL: URL {
         URL.applicationSupportDirectory
             .appending(path: "Rabbithole", directoryHint: .isDirectory)
             .appending(path: "daemon.sock", directoryHint: .notDirectory)
+    }
+}
+
+/// The app has no menu bar of its own (it lives in the system menu bar as an icon), but
+/// text fields get Copy, Paste and the rest from the main menu's key equivalents, and
+/// windows get Close. This menu is never visible; it exists for those shortcuts.
+@MainActor
+enum MainMenu {
+    static func make() -> NSMenu {
+        let main = NSMenu()
+
+        let app = NSMenu()
+        app.addItem(withTitle: "Quit Rabbithole", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        add(app, to: main, title: "Rabbithole")
+
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        add(edit, to: main, title: "Edit")
+
+        let window = NSMenu(title: "Window")
+        window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        add(window, to: main, title: "Window")
+
+        return main
+    }
+
+    private static func add(_ submenu: NSMenu, to main: NSMenu, title: String) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        main.addItem(item)
     }
 }

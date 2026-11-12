@@ -31,6 +31,13 @@ enum DropFeedback: Equatable {
 final class TrayViewModel {
     private(set) var state: TrayState
     private(set) var dropFeedback: DropFeedback = .none
+    /// How many items are being held over the window while `dropFeedback` is `.hovering`.
+    private(set) var hoverItemCount = 1
+    /// Every upload seen in this run; the main window and "Recent uploads" read it.
+    let uploads: UploadStore
+
+    /// True when dropping or choosing a file can start an upload right now.
+    var acceptsUploads: Bool { refusalForState() == nil }
 
     var statusText: String {
         switch state {
@@ -62,8 +69,10 @@ final class TrayViewModel {
     init(
         client: DaemonClient?,
         isRegularFile: @escaping @Sendable (URL) async -> Bool,
-        sleep: @escaping (Duration) async throws -> Void
+        sleep: @escaping (Duration) async throws -> Void,
+        uploads: UploadStore? = nil
     ) {
+        self.uploads = uploads ?? UploadStore()
         self.client = client
         self.isRegularFile = isRegularFile
         self.sleep = sleep
@@ -85,8 +94,9 @@ final class TrayViewModel {
         await Task.detached { isRegularFileOnDisk(url) }.value
     }
 
-    func setHovering(_ over: Bool) {
+    func setHovering(_ over: Bool, itemCount: Int = 1) {
         if over {
+            hoverItemCount = max(itemCount, 1)
             setFeedback(.hovering)
         } else if dropFeedback == .hovering {
             setFeedback(.none)
@@ -135,12 +145,46 @@ final class TrayViewModel {
         await confirm()
     }
 
+    /// "Upload from clipboard": uploads the file copied in Finder, if there is one. Clipboard
+    /// contents that are not a file (text, an image) cannot be uploaded yet and are refused.
+    func uploadFromClipboard(_ urls: [URL]) async {
+        guard !urls.isEmpty else {
+            refuse("The clipboard has no file to upload")
+            return
+        }
+        await drop(urls)
+    }
+
+    /// Sends failed uploads again: each local file is enqueued as a new upload. Returns how
+    /// many were enqueued.
+    @discardableResult
+    func retry(_ records: [UploadRecord]) async -> Int {
+        uploads.clearCondition()
+        guard refusalForState() == nil, let client else { return 0 }
+        var enqueued = 0
+        for record in records {
+            do {
+                let id = try await client.enqueue(localPath: record.localPath)
+                tracker.register(id: id)
+                refreshState()
+                enqueued += 1
+            } catch {
+                if refusalForState() == nil, !tracker.isActive {
+                    state = .failed(Self.message(forEnqueueError: error))
+                }
+            }
+        }
+        return enqueued
+    }
+
     /// The forwarder's outcome after it configured the daemon (or found nothing to configure):
     /// `nil` means no AWS settings are saved. An upload's `.failed` message and a running batch
     /// are left alone.
     func configured(with settings: AWSSettings?) {
         if state == .restartRequired { return }
         settingsNotApplied = false
+        // New settings (or a fresh daemon) get a new chance: a rejected key is forgotten.
+        uploads.clearCondition()
         switch state {
         case .failed(Self.settingsNotAppliedMessage):
             break
@@ -183,6 +227,7 @@ final class TrayViewModel {
             }
         } else {
             tracker.interrupted()
+            uploads.interrupt()
             settingsNotApplied = false
             state = .unavailable
         }
@@ -196,12 +241,16 @@ final class TrayViewModel {
         case .settingsUnreadable: Self.settingsUnreadableMessage
         case .notConfigured: "Connect your AWS account first"
         case .starting: "Rabbithole is still starting"
-        default: nil
+        default:
+            // AWS refused the key on the last upload: nothing new is sent until new settings
+            // are saved, which clears the condition.
+            uploads.ledger.condition == .keyRejected ? ServiceCondition.keyRejectedMessage : nil
         }
     }
 
-    /// Feeds one snapshot from the daemon's stream to the batch tracker.
+    /// Feeds one snapshot from the daemon's stream to the upload ledger and the batch tracker.
     func apply(_ snapshot: UploadSnapshot) {
+        uploads.apply(snapshot)
         if tracker.apply(snapshot) {
             refreshState()
         }
@@ -215,6 +264,7 @@ final class TrayViewModel {
         case .restarted:
             // The new daemon has no settings until `configured(with:)` is called.
             tracker.interrupted()
+            uploads.interrupt()
             settingsNotApplied = false
             switch state {
             case .notConfigured, .settingsUnreadable, .restartRequired: break
@@ -222,6 +272,7 @@ final class TrayViewModel {
             }
         case .unavailable:
             tracker.interrupted()
+            uploads.interrupt()
             settingsNotApplied = false
             state = .restartRequired
         }
