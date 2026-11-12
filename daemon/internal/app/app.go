@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -101,6 +102,19 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer) 
 	return run(ctx, args, stdin, stderr, options{})
 }
 
+var grpcLogOnce sync.Once
+
+// silenceGRPCLog discards grpc-go's own log output. Its default logger writes
+// plain-text lines to stderr, which would break the JSON log contract. The
+// logger is a process-wide global that is unsafe to replace while gRPC is in
+// use, so it is set once per process, by the first run, before that run
+// creates any gRPC server.
+func silenceGRPCLog() {
+	grpcLogOnce.Do(func() {
+		grpclog.SetLoggerV2(grpclog.NewLoggerV2(io.Discard, io.Discard, io.Discard))
+	})
+}
+
 func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, opts options) int {
 	socketPath, err := parseArgs(args)
 	if err != nil {
@@ -125,9 +139,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 		opts.signals = sigs
 	}
 
-	// grpc-go's default logger writes plain-text lines to stderr, which would
-	// break the JSON log contract. Discard its output before any server exists.
-	grpclog.SetLoggerV2(grpclog.NewLoggerV2(io.Discard, io.Discard, io.Discard))
+	silenceGRPCLog()
 
 	ln, socketInfo, err := listenUnix(socketPath, opts.listen)
 	if err != nil {

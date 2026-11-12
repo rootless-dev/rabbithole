@@ -29,7 +29,7 @@ build: daemon
 		-derivedDataPath $(DERIVED_DATA) build
 
 test: daemon
-	cd daemon && go test ./...
+	cd daemon && go test -race ./...
 	cd app && xcodegen generate
 	xcodebuild test -project $(XCODE_PROJECT) -scheme Rabbithole -configuration Debug \
 		-destination 'platform=macOS' -derivedDataPath $(DERIVED_DATA)
