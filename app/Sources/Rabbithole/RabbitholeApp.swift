@@ -29,19 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The unit tests are hosted inside this app: do not start a daemon or a menu bar icon.
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
         let store = SettingsStore(credentials: KeychainCredentialStore(), defaults: .standard)
-        Task { await compose(store: store) }
+        compose(store: store)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         shutDown()
     }
 
-    private func compose(store: SettingsStore) async {
-        // The keychain read may block, so it runs off the main actor.
-        let saved = await Task.detached { try? store.load() }.value
-        // The app may have been told to quit while the keychain was read.
-        guard !isShutDown else { return }
-
+    /// Nothing here blocks: the keychain is read by the forwarder, off the main actor.
+    private func compose(store: SettingsStore) {
         let client = GRPCDaemonClient(socketPath: Self.socketURL.path)
         let supervisor = DaemonSupervisor(
             executable: Bundle.main.url(forResource: "rabbitholed", withExtension: nil),
@@ -50,15 +46,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             socketProbe: { await UnixSocketProbe.waitUntilAccepting(path: Self.socketURL.path) },
             makeClient: { _ in client })
         let viewModel = TrayViewModel(
-            client: client, settings: saved,
+            client: client,
             isRegularFile: TrayViewModel.isRegularFileOffMain,
             sleep: { try await Task.sleep(for: $0) })
-        let settingsWindow = AWSSettingsWindowController(
-            store: store,
-            onSaved: { settings in Task { await viewModel.settingsSaved(settings) } })
         let forwarder = DaemonEventForwarder(
             client: client, events: supervisor.events, viewModel: viewModel,
             loadSettings: { try store.load() })
+        let settingsWindow = AWSSettingsWindowController(
+            store: store, onSaved: { settings in forwarder.settingsChanged(settings) })
         let tray = TrayWindowController(
             viewModel: viewModel,
             openSettings: { settingsWindow.show() },
@@ -76,7 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.viewModel = viewModel
 
         forwarder.start()
-        await supervisor.start()
+        Task {
+            // A quit that lands before this runs must not leave a daemon behind.
+            guard !isShutDown else { return }
+            await supervisor.start()
+        }
     }
 
     private func quit() {

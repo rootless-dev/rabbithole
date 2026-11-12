@@ -39,6 +39,11 @@ private final class FakeDaemonClient: DaemonClient, Sendable {
     }
 }
 
+@MainActor
+private final class ModelBox: Sendable {
+    var model: TrayViewModel?
+}
+
 private final class SleepRecorder: Sendable {
     private let recorded = Mutex<[Duration]>([])
     var durations: [Duration] { recorded.withLock { $0 } }
@@ -67,16 +72,15 @@ final class TrayViewModelTests: XCTestCase {
     ) -> TrayViewModel {
         let model = TrayViewModel(
             client: client,
-            settings: settings,
             isRegularFile: isRegularFile,
             sleep: { try await recorder.sleep($0) }
         )
-        // With saved settings the model starts in `starting`; most tests want a ready daemon.
-        if ready, settings != nil { model.handle(.ready) }
+        // The model always starts in `starting`; most tests want a configured daemon.
+        if ready { model.configured(with: settings) }
         return model
     }
 
-    func testStartingWhenSettingsExistUntilTheDaemonIsConfigured() {
+    func testStartsInStartingUntilTheDaemonIsConfigured() {
         let model = makeViewModel(ready: false)
 
         XCTAssertEqual(model.state, .starting)
@@ -93,14 +97,66 @@ final class TrayViewModelTests: XCTestCase {
         XCTAssertEqual(model.state, .starting)
     }
 
-    func testReadyAndConfiguredBothLeaveStarting() {
-        let ready = makeViewModel(ready: false)
-        ready.handle(.ready)
-        XCTAssertEqual(ready.state, .idle)
+    func testConfiguredWithSettingsGoesIdleAndWithNilGoesNotConfigured() {
+        let withSettings = makeViewModel(ready: false)
+        withSettings.configured(with: settings)
+        XCTAssertEqual(withSettings.state, .idle)
 
-        let configured = makeViewModel(ready: false)
-        configured.configured()
-        XCTAssertEqual(configured.state, .idle)
+        let withoutSettings = makeViewModel(ready: false)
+        withoutSettings.configured(with: nil)
+        XCTAssertEqual(withoutSettings.state, .notConfigured)
+    }
+
+    func testConfiguredKeepsAnActiveBatch() async {
+        let model = makeViewModel()
+        await model.drop([file])
+        model.apply(snapshot("up-1", .uploading, sent: 25))
+        model.configured(with: settings)
+
+        XCTAssertEqual(model.state, .uploading(remaining: 1, total: 1, fraction: 0.25))
+    }
+
+    func testUnreadableSettingsShowFailedAndASaveRecovers() {
+        let model = makeViewModel(ready: false)
+        model.settingsUnreadable()
+        XCTAssertEqual(model.state, .failed("Saved AWS settings could not be read"))
+
+        model.configured(with: settings)
+        XCTAssertEqual(model.state, .idle)
+    }
+
+    func testDropIsRefusedWhenTheStateChangesDuringTheFileCheck() async {
+        let client = FakeDaemonClient()
+        let box = ModelBox()
+        let model = makeViewModel(
+            client: client,
+            isRegularFile: { _ in
+                await box.model?.handle(.restarted)
+                return true
+            })
+        box.model = model
+        await model.drop([file])
+
+        XCTAssertEqual(client.enqueued, [])
+        XCTAssertEqual(model.dropFeedback, .refused("Rabbithole is still starting"))
+    }
+
+    func testUnavailableDuringFileCheckStaysUnavailableAndSkipsEnqueue() async {
+        let client = FakeDaemonClient()
+        client.failEnqueue(with: .unavailable)
+        let box = ModelBox()
+        let model = makeViewModel(
+            client: client,
+            isRegularFile: { _ in
+                await box.model?.handle(.unavailable)
+                return true
+            })
+        box.model = model
+        model.configured(with: settings)
+        // The state flips to unavailable during the file check, so enqueue is never reached.
+        await model.drop([file])
+
+        XCTAssertEqual(model.state, .unavailable)
     }
 
     func testRestartGoesBackToStartingAndRefusesDrops() async {
@@ -117,7 +173,7 @@ final class TrayViewModelTests: XCTestCase {
         let model = makeViewModel()
         await model.drop([file])
         model.apply(snapshot("up-1", .failed, sent: 10, error: "access denied"))
-        model.handle(.ready)
+        model.configured(with: settings)
 
         XCTAssertEqual(model.state, .failed("access denied"))
     }
@@ -349,11 +405,11 @@ final class TrayViewModelTests: XCTestCase {
         var observed: DropFeedback?
         var modelRef: TrayViewModel?
         let model = TrayViewModel(
-            client: client, settings: settings, isRegularFile: { _ in true },
+            client: client, isRegularFile: { _ in true },
             sleep: { _ in observed = modelRef?.dropFeedback }
         )
         modelRef = model
-        model.handle(.ready)
+        model.configured(with: settings)
         await model.drop([file])
 
         XCTAssertEqual(observed, .confirmed)
@@ -375,7 +431,7 @@ final class TrayViewModelTests: XCTestCase {
         model.handle(.restarted)
         XCTAssertEqual(model.state, .starting)
 
-        model.configured()
+        model.configured(with: settings)
 
         XCTAssertEqual(model.state, .failed("Upload interrupted"))
         XCTAssertEqual(model.statusText, "Upload interrupted")
@@ -384,7 +440,7 @@ final class TrayViewModelTests: XCTestCase {
     func testRestartWithNothingInFlightReturnsToIdleOnceConfigured() {
         let model = makeViewModel()
         model.handle(.restarted)
-        model.configured()
+        model.configured(with: settings)
 
         XCTAssertEqual(model.state, .idle)
     }
@@ -407,35 +463,34 @@ final class TrayViewModelTests: XCTestCase {
         await model.drop([file])
         model.apply(snapshot("up-1", .uploading, sent: 10))
         model.handle(.unavailable)
-        await model.settingsSaved(settings)
+        model.configured(with: settings)
 
         XCTAssertEqual(model.state, .failed("Upload interrupted"))
     }
 
-    func testReadyClearsUnavailable() {
+    func testConfiguredClearsUnavailable() {
         let model = makeViewModel()
         model.handle(.unavailable)
-        model.handle(.ready)
+        model.configured(with: settings)
 
         XCTAssertEqual(model.state, .idle)
     }
 
-    func testReadyClearsUnavailableToNotConfiguredWithoutSettings() {
+    func testConfiguredWithNilClearsUnavailableToNotConfigured() {
         let model = makeViewModel(settings: .none)
         model.handle(.unavailable)
-        model.handle(.ready)
+        model.configured(with: nil)
 
         XCTAssertEqual(model.state, .notConfigured)
     }
 
-    func testSettingsSavedConfiguresClientThenEnablesDrops() async {
+    func testConfiguredAfterSaveEnablesDrops() async {
         let client = FakeDaemonClient()
         let model = makeViewModel(client: client, settings: .none)
         XCTAssertEqual(model.state, .notConfigured)
 
-        await model.settingsSaved(settings)
+        model.configured(with: settings)
 
-        XCTAssertEqual(client.configured, [settings])
         XCTAssertEqual(model.state, .idle)
         await model.drop([file])
         XCTAssertEqual(client.enqueued, [file.path])

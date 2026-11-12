@@ -40,7 +40,8 @@ final class TrayViewModel {
     }
 
     @ObservationIgnored private let client: DaemonClient?
-    @ObservationIgnored private var settings: AWSSettings?
+    /// True while `.failed` shows the unreadable-settings message rather than an upload error.
+    @ObservationIgnored private var settingsUnreadableShown = false
     @ObservationIgnored private let isRegularFile: @Sendable (URL) async -> Bool
     @ObservationIgnored private let sleep: (Duration) async throws -> Void
     @ObservationIgnored private var tracker = BatchTracker()
@@ -48,18 +49,16 @@ final class TrayViewModel {
 
     init(
         client: DaemonClient?,
-        settings: AWSSettings?,
         isRegularFile: @escaping @Sendable (URL) async -> Bool,
         sleep: @escaping (Duration) async throws -> Void
     ) {
         self.client = client
-        self.settings = settings
         self.isRegularFile = isRegularFile
         self.sleep = sleep
         if client == nil {
             state = .unavailable
         } else {
-            state = settings == nil ? .notConfigured : .starting
+            state = .starting
         }
     }
 
@@ -87,18 +86,9 @@ final class TrayViewModel {
             setFeedback(.none)
             return
         }
-        switch state {
-        case .unavailable:
-            refuse("Uploads are unavailable")
+        if let message = refusalForState() {
+            refuse(message)
             return
-        case .notConfigured:
-            refuse("Connect your AWS account first")
-            return
-        case .starting:
-            refuse("Rabbithole is still starting")
-            return
-        default:
-            break
         }
         guard urls.count == 1 else {
             refuse("Drop one file at a time")
@@ -106,6 +96,11 @@ final class TrayViewModel {
         }
         guard await isRegularFile(url) else {
             refuse("Folders are not supported yet")
+            return
+        }
+        // The check may have taken a while: the daemon can have changed state meanwhile.
+        if let message = refusalForState() {
+            refuse(message)
             return
         }
         guard let client else {
@@ -118,7 +113,10 @@ final class TrayViewModel {
             id = try await client.enqueue(localPath: url.path)
         } catch {
             setFeedback(.none)
-            state = .failed(Self.message(forEnqueueError: error))
+            if refusalForState() == nil {
+                settingsUnreadableShown = false
+                state = .failed(Self.message(forEnqueueError: error))
+            }
             return
         }
         tracker.register(id: id)
@@ -126,30 +124,37 @@ final class TrayViewModel {
         await confirm()
     }
 
-    func settingsSaved(_ s: AWSSettings) async {
-        guard let client else { return }
-        do {
-            try await client.configure(s)
-        } catch {
-            if case DaemonError.unavailable = error {
-                state = .unavailable
-            } else {
-                state = .failed("Settings could not be saved")
-            }
+    /// The forwarder's outcome after it configured the daemon (or found nothing to configure):
+    /// `nil` means no AWS settings are saved. An upload's `.failed` message and a running batch
+    /// are left alone.
+    func configured(with settings: AWSSettings?) {
+        switch state {
+        case .failed where settingsUnreadableShown:
+            settingsUnreadableShown = false
+        case .starting, .unavailable, .notConfigured, .idle:
+            break
+        case .failed, .uploading, .finished:
             return
         }
-        settings = s
-        if state == .notConfigured || state == .unavailable || state == .starting {
-            state = .idle
-            refreshState()
-        }
-    }
-
-    /// The daemon accepted the saved settings after a launch or restart: leave `starting`.
-    func configured() {
-        guard state == .starting || state == .unavailable else { return }
         state = settings == nil ? .notConfigured : .idle
         refreshState()
+    }
+
+    /// The saved settings could not be read; the window offers the settings form instead of
+    /// pretending nothing is saved.
+    func settingsUnreadable() {
+        settingsUnreadableShown = true
+        state = .failed("Saved AWS settings could not be read")
+    }
+
+    /// Why a drop cannot be accepted in the current state, or nil when it can.
+    private func refusalForState() -> String? {
+        switch state {
+        case .unavailable: "Uploads are unavailable"
+        case .notConfigured: "Connect your AWS account first"
+        case .starting: "Rabbithole is still starting"
+        default: nil
+        }
     }
 
     /// Feeds one snapshot from the daemon's stream to the batch tracker.
@@ -162,16 +167,19 @@ final class TrayViewModel {
     func handle(_ e: DaemonEvent) {
         switch e {
         case .ready:
-            // Leaves `starting` and `unavailable`; an upload's `.failed` message stays.
-            configured()
+            // Readiness is reported through `configured(with:)`, once the daemon has its settings.
+            break
         case .restarted:
-            // The new daemon has no settings until `configured()` is called.
+            // The new daemon has no settings until `configured(with:)` is called.
             tracker.interrupted()
-            if settings != nil {
-                state = .starting
+            switch state {
+            case .notConfigured: break
+            case .failed where settingsUnreadableShown: break
+            default: state = .starting
             }
         case .unavailable:
             tracker.interrupted()
+            settingsUnreadableShown = false
             state = .unavailable
         }
     }

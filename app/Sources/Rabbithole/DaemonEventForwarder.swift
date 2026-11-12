@@ -1,28 +1,41 @@
 import Foundation
 import Synchronization
 
-/// Connects the daemon to the view model: forwards supervisor events, re-sends the saved
-/// settings to every fresh daemon and keeps one `watch()` subscription alive, forwarding each
-/// snapshot to the view model on the main actor.
+/// The one owner of the daemon's configuration, and the bridge to the view model.
 ///
-/// The view model hears that the daemon is usable only after `configure` has returned, so the
-/// window never offers uploads over an unconfigured daemon.
+/// Supervisor events and saves from the settings window arrive on one queue and are handled
+/// strictly in arrival order, so two configure sequences never run at the same time. The
+/// saved settings live in memory here: read once when the forwarder starts, replaced on every
+/// save. The view model hears that the daemon is usable only after `configure` has returned.
 final class DaemonEventForwarder: Sendable {
-    /// Attempts to configure a fresh daemon before giving up and reporting it unavailable.
-    private static let configureAttempts = 5
-    private static let retryDelay: Duration = .milliseconds(500)
+    private enum Command: Sendable {
+        case event(DaemonEvent)
+        case settingsChanged(AWSSettings)
+    }
+
+    /// What is saved, as far as the forwarder knows.
+    private enum Saved {
+        case nothing
+        case value(AWSSettings)
+        /// Reading failed: not the same as nothing saved, and the daemon stays unconfigured.
+        case unreadable
+    }
 
     private let client: DaemonClient
     private let events: AsyncStream<DaemonEvent>
     private let loadSettings: @Sendable () throws -> AWSSettings?
     private let sleep: @Sendable (Duration) async throws -> Void
+    private let configurator: DaemonConfigurator
     private let viewModel: TrayViewModel
-    private let tasks = Mutex<(loop: Task<Void, Never>?, watch: Task<Void, Never>?)>((nil, nil))
+    private let commands: AsyncStream<Command>
+    private let commandSink: AsyncStream<Command>.Continuation
+    private let tasks = Mutex<(pump: Task<Void, Never>?, loop: Task<Void, Never>?, watch: Task<Void, Never>?)>(
+        (nil, nil, nil))
 
     /// - Parameters:
     ///   - loadSettings: may block (keychain) and is only called off the main actor. Returning
     ///     nil means nothing is saved; throwing means the saved settings could not be read.
-    ///   - sleep: the pause between retries, injected so tests do not wait.
+    ///   - sleep: the pause between retries and the attempt timeout, injected so tests do not wait.
     @MainActor
     init(
         client: DaemonClient,
@@ -36,80 +49,96 @@ final class DaemonEventForwarder: Sendable {
         self.viewModel = viewModel
         self.loadSettings = loadSettings
         self.sleep = sleep
+        configurator = DaemonConfigurator(client: client, sleep: sleep)
+        (commands, commandSink) = AsyncStream<Command>.makeStream()
     }
 
     func start() {
-        let loop = Task { [self] in
-            for await event in events {
-                if Task.isCancelled { return }
-                await handle(event)
-            }
+        let pump = Task { [self] in
+            for await event in events { commandSink.yield(.event(event)) }
         }
-        tasks.withLock { $0.loop = loop }
+        let loop = Task { [self] in await run() }
+        tasks.withLock { $0.pump = pump; $0.loop = loop }
+    }
+
+    /// The user saved new settings in the settings window.
+    func settingsChanged(_ settings: AWSSettings) {
+        commandSink.yield(.settingsChanged(settings))
     }
 
     func stop() {
-        let (loop, watch) = tasks.withLock { state -> (Task<Void, Never>?, Task<Void, Never>?) in
-            defer { state = (nil, nil) }
+        let (pump, loop, watch) = tasks.withLock { state in
+            defer { state = (nil, nil, nil) }
             return state
         }
+        commandSink.finish()
+        pump?.cancel()
         loop?.cancel()
         watch?.cancel()
     }
 
-    private func handle(_ event: DaemonEvent) async {
-        switch event {
-        case .ready:
-            let configured = await configureWithSavedSettings()
-            // A stop() that landed during configure must not leave a subscription behind.
+    // MARK: - Serialized command loop
+
+    private func run() async {
+        var saved: Saved
+        do {
+            saved = try loadSettings().map(Saved.value) ?? .nothing
+        } catch {
+            saved = .unreadable
+            await viewModel.settingsUnreadable()
+        }
+        // True from the supervisor's ready or restarted until it reports unavailable.
+        var daemonUp = false
+
+        for await command in commands {
             if Task.isCancelled { return }
-            if configured {
-                await viewModel.handle(.ready)
-                replaceWatch(with: startWatching())
-            } else {
+            switch command {
+            case .event(.ready):
+                daemonUp = true
+                await bringUp(saved, replacingWatch: true)
+            case .event(.restarted):
+                daemonUp = true
+                // Uploads are interrupted and the new daemon has no settings: say so first.
+                await viewModel.handle(.restarted)
+                replaceWatch(with: nil)
+                await bringUp(saved, replacingWatch: true)
+            case .event(.unavailable):
+                daemonUp = false
                 await viewModel.handle(.unavailable)
                 replaceWatch(with: nil)
+            case .settingsChanged(let settings):
+                saved = .value(settings)
+                if daemonUp { await bringUp(saved, replacingWatch: false) }
             }
-        case .restarted:
-            // Uploads are interrupted and the new daemon has no settings: say so first.
-            await viewModel.handle(.restarted)
-            replaceWatch(with: nil)
-            let configured = await configureWithSavedSettings()
-            if Task.isCancelled { return }
-            if configured {
-                await viewModel.configured()
-                replaceWatch(with: startWatching())
-            } else {
-                await viewModel.handle(.unavailable)
-            }
-        case .unavailable:
-            await viewModel.handle(.unavailable)
-            replaceWatch(with: nil)
         }
     }
 
-    /// True when the daemon is ready for uploads: configured, or nothing is saved to configure.
-    /// False when the saved settings cannot be read or `configure` keeps failing.
-    private func configureWithSavedSettings() async -> Bool {
+    /// Configures the daemon with `saved` and reports the outcome to the view model.
+    private func bringUp(_ saved: Saved, replacingWatch: Bool) async {
         let settings: AWSSettings?
-        do {
-            settings = try loadSettings()
-        } catch {
-            return false
-        }
-        guard let settings else { return true }
-
-        for attempt in 1...Self.configureAttempts {
-            do {
-                try await client.configure(settings)
-                return true
-            } catch {
-                if Task.isCancelled || attempt == Self.configureAttempts { break }
-                try? await sleep(Self.retryDelay)
+        switch saved {
+        case .unreadable:
+            return
+        case .nothing:
+            settings = nil
+        case .value(let value):
+            guard await configurator.configure(value) else {
+                if Task.isCancelled { return }
+                await viewModel.handle(.unavailable)
+                return
             }
+            settings = value
         }
-        return false
+        // A stop() during configure or the hop to the main actor must not leave a watch behind.
+        if Task.isCancelled { return }
+        await viewModel.configured(with: settings)
+        if Task.isCancelled { return }
+        if replacingWatch || tasks.withLock({ $0.watch == nil }) {
+            replaceWatch(with: startWatching())
+        }
     }
+
+    // MARK: - Watch subscription
 
     private func replaceWatch(with new: Task<Void, Never>?) {
         let old = tasks.withLock { state -> Task<Void, Never>? in
@@ -131,7 +160,7 @@ final class DaemonEventForwarder: Sendable {
                 } catch {
                     // The daemon is gone or restarting; try again below.
                 }
-                try? await sleep(Self.retryDelay)
+                try? await sleep(DaemonConfigurator.retryDelay)
             }
         }
     }

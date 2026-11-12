@@ -54,6 +54,7 @@ struct TrayView: View {
                 MenuRow(title: "Choose file…", shortcut: "⌘O", action: chooseFile)
                     .keyboardShortcut("o", modifiers: .command)
                     .disabled(!canChooseFile)
+                MenuRow(title: "AWS settings…", shortcut: nil, action: openSettings)
                 MenuRow(title: "Quit", shortcut: "⌘Q", action: quit)
                     .keyboardShortcut("q", modifiers: .command)
             }
@@ -242,7 +243,7 @@ private struct StatusLine: View {
 
 private struct MenuRow: View {
     let title: String
-    let shortcut: String
+    let shortcut: String?
     let action: () -> Void
     @State private var hovered = false
     @Environment(\.isEnabled) private var isEnabled
@@ -252,9 +253,11 @@ private struct MenuRow: View {
             HStack {
                 Text(title)
                 Spacer()
-                Text(shortcut)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                if let shortcut {
+                    Text(shortcut)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
             }
             .foregroundStyle(isEnabled ? .primary : .tertiary)
             .padding(.horizontal, 7)
