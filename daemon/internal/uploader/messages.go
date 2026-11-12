@@ -9,6 +9,8 @@ func Message(err error) string {
 		return "AWS rejected the access key"
 	case errors.Is(err, ErrBucketNotFound):
 		return "Bucket not found"
+	case errors.Is(err, ErrBucketInaccessible):
+		return "AWS blocked access to this bucket: check that the bucket name is yours"
 	case errors.Is(err, ErrWrongRegion):
 		return "The bucket is in a different region"
 	case errors.Is(err, ErrNoNetwork):

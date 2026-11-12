@@ -178,6 +178,8 @@ func mapErrorWithDenial(err error, denied error) error {
 			return fmt.Errorf("%w: %w", uploader.ErrPreconditionFailed, err)
 		case "PermanentRedirect", "AuthorizationHeaderMalformed":
 			return fmt.Errorf("%w: %w", uploader.ErrWrongRegion, err)
+		case "AllAccessDisabled":
+			return fmt.Errorf("%w: %w", uploader.ErrBucketInaccessible, err)
 		case "AccessDenied":
 			return fmt.Errorf("%w: %w", denied, err)
 		}

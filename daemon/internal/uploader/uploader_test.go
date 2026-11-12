@@ -579,6 +579,7 @@ func TestMessageMapping(t *testing.T) {
 		{ErrNoNetwork, "No internet connection"},
 		{ErrWriteDenied, "AWS denied permission to write to the bucket"},
 		{ErrWrongRegion, "The bucket is in a different region"},
+		{ErrBucketInaccessible, "AWS blocked access to this bucket: check that the bucket name is yours"},
 		{fmt.Errorf("wrapped: %w", ErrNoNetwork), "No internet connection"},
 		{errors.New("boom"), "Upload failed"},
 	}

@@ -17,6 +17,9 @@ var (
 	ErrForbidden = errors.New("existence check denied")
 	// ErrWriteDenied means a write call was denied.
 	ErrWriteDenied = errors.New("write denied")
+	// ErrBucketInaccessible means AWS has disabled all access to the bucket,
+	// which is what a bucket name owned by another account usually answers.
+	ErrBucketInaccessible = errors.New("bucket inaccessible")
 	// ErrBucketNotFound means the bucket does not exist.
 	ErrBucketNotFound = errors.New("bucket not found")
 	// ErrWrongRegion means the bucket lives in a different region than the one

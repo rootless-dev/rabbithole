@@ -33,6 +33,7 @@ func TestMapError(t *testing.T) {
 		{"precondition failed", api("PreconditionFailed"), uploader.ErrPreconditionFailed},
 		{"conditional request conflict", api("ConditionalRequestConflict"), uploader.ErrPreconditionFailed},
 		{"access denied on a write", api("AccessDenied"), uploader.ErrWriteDenied},
+		{"all access disabled", api("AllAccessDisabled"), uploader.ErrBucketInaccessible},
 		{"network error", &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}, uploader.ErrNoNetwork},
 		{"wrapped api error", fmt.Errorf("operation error S3: PutObject: %w", api("NoSuchBucket")), uploader.ErrBucketNotFound},
 	}
