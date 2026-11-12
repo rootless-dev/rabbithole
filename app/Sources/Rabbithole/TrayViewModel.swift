@@ -2,8 +2,13 @@ import Foundation
 import Observation
 
 enum TrayState: Equatable {
+    /// The daemon is up (or was) but could not be configured; a later save or restart retries.
     case unavailable
+    /// The supervisor gave up for good: nothing will recover until the app is reopened.
+    case restartRequired
     case notConfigured
+    /// Saved settings exist but could not be read. Only a successful configure clears it.
+    case settingsUnreadable
     /// Saved settings exist but the daemon is not up and configured yet (launch or restart).
     case starting
     case idle
@@ -30,7 +35,9 @@ final class TrayViewModel {
     var statusText: String {
         switch state {
         case .unavailable: "Uploads are unavailable"
+        case .restartRequired: Self.restartRequiredMessage
         case .notConfigured: "Connect your AWS account first"
+        case .settingsUnreadable: Self.settingsUnreadableMessage
         case .starting: "Starting…"
         case .idle: "Ready"
         case .uploading(let remaining, let total, _): "\(remaining) of \(total) files left"
@@ -39,9 +46,14 @@ final class TrayViewModel {
         }
     }
 
+    private static let restartRequiredMessage = "Uploads are unavailable. Quit and reopen Rabbithole."
+    private static let settingsUnreadableMessage = "Saved AWS settings could not be read"
+    private static let settingsNotAppliedMessage = "AWS settings could not be applied"
+
     @ObservationIgnored private let client: DaemonClient?
-    /// True while `.failed` shows the unreadable-settings message rather than an upload error.
-    @ObservationIgnored private var settingsUnreadableShown = false
+    /// True from a failed save-triggered configure (the daemon keeps its older settings) until
+    /// a configure succeeds. The message waits for an active batch to end.
+    @ObservationIgnored private var settingsNotApplied = false
     @ObservationIgnored private let isRegularFile: @Sendable (URL) async -> Bool
     @ObservationIgnored private let sleep: (Duration) async throws -> Void
     @ObservationIgnored private var tracker = BatchTracker()
@@ -56,7 +68,7 @@ final class TrayViewModel {
         self.isRegularFile = isRegularFile
         self.sleep = sleep
         if client == nil {
-            state = .unavailable
+            state = .restartRequired
         } else {
             state = .starting
         }
@@ -104,7 +116,7 @@ final class TrayViewModel {
             return
         }
         guard let client else {
-            refuse("Uploads are unavailable")
+            refuse(Self.restartRequiredMessage)
             return
         }
 
@@ -114,7 +126,6 @@ final class TrayViewModel {
         } catch {
             setFeedback(.none)
             if refusalForState() == nil {
-                settingsUnreadableShown = false
                 state = .failed(Self.message(forEnqueueError: error))
             }
             return
@@ -128,12 +139,14 @@ final class TrayViewModel {
     /// `nil` means no AWS settings are saved. An upload's `.failed` message and a running batch
     /// are left alone.
     func configured(with settings: AWSSettings?) {
+        if state == .restartRequired { return }
+        settingsNotApplied = false
         switch state {
-        case .failed where settingsUnreadableShown:
-            settingsUnreadableShown = false
-        case .starting, .unavailable, .notConfigured, .idle:
+        case .failed(Self.settingsNotAppliedMessage):
             break
-        case .failed, .uploading, .finished:
+        case .starting, .unavailable, .notConfigured, .settingsUnreadable, .idle:
+            break
+        case .failed, .uploading, .finished, .restartRequired:
             return
         }
         state = settings == nil ? .notConfigured : .idle
@@ -143,14 +156,44 @@ final class TrayViewModel {
     /// The saved settings could not be read; the window offers the settings form instead of
     /// pretending nothing is saved.
     func settingsUnreadable() {
-        settingsUnreadableShown = true
-        state = .failed("Saved AWS settings could not be read")
+        state = .settingsUnreadable
+    }
+
+    /// The user saved settings while the daemon was not up yet: settings exist now, and the
+    /// forwarder will configure the daemon once it is ready.
+    func settingsSaved() {
+        if state == .settingsUnreadable || state == .notConfigured { state = .starting }
+    }
+
+    /// Every configure attempt failed. `keepingPreviousSettings` is true when the daemon is up
+    /// and still runs with older settings: its uploads and drops are untouched and only a
+    /// message is shown. Otherwise the daemon has no settings and drops are refused.
+    func configureFailed(keepingPreviousSettings: Bool) {
+        switch state {
+        case .restartRequired, .settingsUnreadable:
+            return
+        default:
+            break
+        }
+        if keepingPreviousSettings {
+            settingsNotApplied = true
+            switch state {
+            case .idle, .finished, .failed: state = .failed(Self.settingsNotAppliedMessage)
+            default: break
+            }
+        } else {
+            tracker.interrupted()
+            settingsNotApplied = false
+            state = .unavailable
+        }
     }
 
     /// Why a drop cannot be accepted in the current state, or nil when it can.
     private func refusalForState() -> String? {
         switch state {
         case .unavailable: "Uploads are unavailable"
+        case .restartRequired: Self.restartRequiredMessage
+        case .settingsUnreadable: Self.settingsUnreadableMessage
         case .notConfigured: "Connect your AWS account first"
         case .starting: "Rabbithole is still starting"
         default: nil
@@ -172,15 +215,15 @@ final class TrayViewModel {
         case .restarted:
             // The new daemon has no settings until `configured(with:)` is called.
             tracker.interrupted()
+            settingsNotApplied = false
             switch state {
-            case .notConfigured: break
-            case .failed where settingsUnreadableShown: break
+            case .notConfigured, .settingsUnreadable, .restartRequired: break
             default: state = .starting
             }
         case .unavailable:
             tracker.interrupted()
-            settingsUnreadableShown = false
-            state = .unavailable
+            settingsNotApplied = false
+            state = .restartRequired
         }
     }
 
@@ -188,7 +231,7 @@ final class TrayViewModel {
     private func refreshState() {
         guard tracker.total > 0 else { return }
         switch state {
-        case .unavailable, .notConfigured, .starting:
+        case .unavailable, .restartRequired, .notConfigured, .settingsUnreadable, .starting:
             return
         default:
             break
@@ -198,6 +241,8 @@ final class TrayViewModel {
                 remaining: tracker.remaining, total: tracker.total, fraction: tracker.fraction)
         } else if let error = tracker.firstError {
             state = .failed(error)
+        } else if settingsNotApplied {
+            state = .failed(Self.settingsNotAppliedMessage)
         } else {
             state = .finished
         }

@@ -17,6 +17,7 @@ private final class ScriptedClient: DaemonClient, Sendable {
         var holdConfigure = false
         var hangConfigure = false
         var configureDelay = false
+        var enqueueCount = 0
     }
 
     private let state = Mutex(State())
@@ -70,7 +71,9 @@ private final class ScriptedClient: DaemonClient, Sendable {
         }
     }
 
-    func enqueue(localPath: String) async throws -> String { "up-1" }
+    func enqueue(localPath: String) async throws -> String {
+        "up-\(state.withLock { state -> Int in state.enqueueCount += 1; return state.enqueueCount })"
+    }
 
     func watch() -> AsyncThrowingStream<UploadSnapshot, Error> {
         let hold = state.withLock { state -> Bool in
@@ -257,17 +260,113 @@ final class DaemonEventForwarderTests: XCTestCase {
         rig.forwarder.start()
         defer { rig.forwarder.stop() }
 
-        try await waitUntil {
-            rig.viewModel.state == .failed("Saved AWS settings could not be read")
-        }
+        try await waitUntil { rig.viewModel.state == .settingsUnreadable }
         rig.events.yield(.ready)
         try await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(client.configureCalls, 0)
-        XCTAssertEqual(rig.viewModel.state, .failed("Saved AWS settings could not be read"))
+        XCTAssertEqual(rig.viewModel.state, .settingsUnreadable)
 
         // A later save recovers normally.
         rig.forwarder.settingsChanged(newSettings)
+        try await waitUntil { rig.viewModel.state == .idle }
+        XCTAssertEqual(client.configured, [newSettings])
+    }
+
+    func testSaveBeforeTheFirstReadyMovesUnreadableToStartingAndIsConfiguredOnReady() async throws {
+        let client = ScriptedClient()
+        client.keepWatchesOpen()
+        let rig = makeRig(client: client, saved: { throw SettingsReadFailure() })
+        rig.forwarder.start()
+        defer { rig.forwarder.stop() }
+        try await waitUntil { rig.viewModel.state == .settingsUnreadable }
+
+        rig.forwarder.settingsChanged(newSettings)
+
+        try await waitUntil { rig.viewModel.state == .starting }
+        XCTAssertEqual(client.configureCalls, 0)
+
+        rig.events.yield(.ready)
+
+        try await waitUntil { rig.viewModel.state == .idle }
+        XCTAssertEqual(client.configured, [newSettings])
+    }
+
+    func testSaveAfterTerminalUnavailableIsNotConfiguredAndTheTextStays() async throws {
+        let client = ScriptedClient()
+        client.keepWatchesOpen()
+        let rig = makeRig(client: client, saved: { sampleSettings })
+        rig.forwarder.start()
+        defer { rig.forwarder.stop() }
+        rig.events.yield(.ready)
+        try await waitUntil { rig.viewModel.state == .idle }
+        rig.events.yield(.unavailable)
+        try await waitUntil { rig.viewModel.state == .restartRequired }
+        let callsBefore = client.configureCalls
+
+        rig.forwarder.settingsChanged(newSettings)
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(client.configureCalls, callsBefore)
+        XCTAssertEqual(rig.viewModel.state, .restartRequired)
+        XCTAssertEqual(
+            rig.viewModel.statusText, "Uploads are unavailable. Quit and reopen Rabbithole.")
+    }
+
+    func testFailedSaveConfigureOnAConfiguredDaemonKeepsUploadsAndAcceptsDrops() async throws {
+        let client = ScriptedClient()
+        client.keepWatchesOpen()
+        let rig = makeRig(client: client, saved: { sampleSettings })
+        rig.forwarder.start()
+        defer { rig.forwarder.stop() }
+        rig.events.yield(.ready)
+        try await waitUntil { rig.viewModel.state == .idle }
+        let file = URL(fileURLWithPath: "/tmp/photo.jpg")
+        await rig.viewModel.drop([file])
+        XCTAssertEqual(rig.viewModel.state, .uploading(remaining: 1, total: 1, fraction: 0))
+
+        let callsBefore = client.configureCalls
+        client.failConfigure(times: 5)
+        rig.forwarder.settingsChanged(newSettings)
+        try await waitUntil { client.configureCalls == callsBefore + 5 }
+        try await Task.sleep(for: .milliseconds(50))
+
+        // The batch is not interrupted; the daemon still accepts drops with the old settings.
+        XCTAssertEqual(rig.viewModel.state, .uploading(remaining: 1, total: 1, fraction: 0))
+        rig.viewModel.apply(
+            UploadSnapshot(
+                id: "up-1", fileName: "photo.jpg", localPath: file.path, objectKey: "k/up-1",
+                bytesTotal: 100, bytesSent: 100, state: .finished, errorMessage: ""))
+        XCTAssertEqual(rig.viewModel.state, .failed("AWS settings could not be applied"))
+        await rig.viewModel.drop([file])
+        XCTAssertEqual(rig.viewModel.state, .uploading(remaining: 1, total: 1, fraction: 0))
+
+        // The next save retries with the latest settings and clears the message.
+        rig.forwarder.settingsChanged(newSettings)
+        try await waitUntil { client.configured == [sampleSettings, newSettings] }
+        rig.viewModel.apply(
+            UploadSnapshot(
+                id: "up-2", fileName: "photo.jpg", localPath: file.path, objectKey: "k/up-2",
+                bytesTotal: 100, bytesSent: 100, state: .finished, errorMessage: ""))
+        try await waitUntil { rig.viewModel.state == .finished }
+    }
+
+    func testSaveAfterANonTerminalConfigureFailureRetriesAndRecovers() async throws {
+        let client = ScriptedClient()
+        client.keepWatchesOpen()
+        client.failConfigure(times: 5)
+        let rig = makeRig(client: client, saved: { sampleSettings })
+        rig.forwarder.start()
+        defer { rig.forwarder.stop() }
+
+        rig.events.yield(.ready)
+        try await waitUntil { rig.viewModel.state == .unavailable }
+        XCTAssertEqual(rig.viewModel.statusText, "Uploads are unavailable")
+        await rig.viewModel.drop([URL(fileURLWithPath: "/tmp/photo.jpg")])
+        XCTAssertEqual(rig.viewModel.state, .unavailable)
+
+        rig.forwarder.settingsChanged(newSettings)
+
         try await waitUntil { rig.viewModel.state == .idle }
         XCTAssertEqual(client.configured, [newSettings])
     }

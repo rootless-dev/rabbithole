@@ -89,53 +89,73 @@ final class DaemonEventForwarder: Sendable {
         }
         // True from the supervisor's ready or restarted until it reports unavailable.
         var daemonUp = false
+        // True once the daemon has accepted settings since it came up.
+        var daemonConfigured = false
+        // The supervisor gave up: no ready follows, so a save is only stored.
+        var terminal = false
 
         for await command in commands {
             if Task.isCancelled { return }
             switch command {
             case .event(.ready):
                 daemonUp = true
-                await bringUp(saved, replacingWatch: true)
+                daemonConfigured = await bringUp(
+                    saved, daemonConfigured: false, replacingWatch: true)
             case .event(.restarted):
                 daemonUp = true
                 // Uploads are interrupted and the new daemon has no settings: say so first.
                 await viewModel.handle(.restarted)
                 replaceWatch(with: nil)
-                await bringUp(saved, replacingWatch: true)
+                daemonConfigured = await bringUp(
+                    saved, daemonConfigured: false, replacingWatch: true)
             case .event(.unavailable):
                 daemonUp = false
+                daemonConfigured = false
+                terminal = true
                 await viewModel.handle(.unavailable)
                 replaceWatch(with: nil)
             case .settingsChanged(let settings):
                 saved = .value(settings)
-                if daemonUp { await bringUp(saved, replacingWatch: false) }
+                if terminal {
+                    // Stored above for the record; there is no daemon left to configure.
+                } else if daemonUp {
+                    daemonConfigured = await bringUp(
+                        saved, daemonConfigured: daemonConfigured, replacingWatch: false)
+                } else {
+                    await viewModel.settingsSaved()
+                }
             }
         }
     }
 
-    /// Configures the daemon with `saved` and reports the outcome to the view model.
-    private func bringUp(_ saved: Saved, replacingWatch: Bool) async {
+    /// Configures the daemon with `saved` and reports the outcome to the view model. Returns
+    /// whether the daemon now holds settings: `daemonConfigured` is what it held before, kept
+    /// when the attempt fails.
+    private func bringUp(
+        _ saved: Saved, daemonConfigured: Bool, replacingWatch: Bool
+    ) async -> Bool {
         let settings: AWSSettings?
         switch saved {
         case .unreadable:
-            return
+            return daemonConfigured
         case .nothing:
             settings = nil
         case .value(let value):
             guard await configurator.configure(value) else {
-                if Task.isCancelled { return }
-                await viewModel.handle(.unavailable)
-                return
+                if Task.isCancelled { return daemonConfigured }
+                await viewModel.configureFailed(keepingPreviousSettings: daemonConfigured)
+                return daemonConfigured
             }
             settings = value
         }
         // A stop() during configure or the hop to the main actor must not leave a watch behind.
-        if Task.isCancelled { return }
+        if Task.isCancelled { return daemonConfigured }
         await viewModel.configured(with: settings)
-        if Task.isCancelled { return }
+        if Task.isCancelled { return settings != nil }
         if replacingWatch || tasks.withLock({ $0.watch == nil }) {
             replaceWatch(with: startWatching())
         }
+        return settings != nil
     }
 
     // MARK: - Watch subscription
