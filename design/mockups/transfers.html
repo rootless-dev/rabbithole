@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbithole: pause, cancel, download and bucket mockup</title>
+<style>
+  body { margin:0; padding:28px; background:#eef0f5; color:#161a26; }
+  .tr { max-width:1040px; margin:0 auto; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+  .tr h2 { font-size:22px; margin:0 0 6px; }
+  .tr h3 { font-size:15px; margin:26px 0 0; }
+  .tr .subtitle { margin:0; color:#5b6278; font-size:14px; line-height:1.5; max-width:72ch; }
+  .tr .note { margin:4px 0 0; color:#5b6278; font-size:13px; line-height:1.5; max-width:72ch; }
+  .tr-desk { border-radius:10px; padding:26px; margin:14px 0 26px; }
+  .tr-desk.light { background:
+      radial-gradient(circle at 12% 30%, #ffb86b 0 10%, transparent 30%),
+      radial-gradient(circle at 8% 80%, #5fd0c5 0 10%, transparent 32%),
+      linear-gradient(150deg,#9fc4f2,#6f8fe0 55%,#8a6fd6); }
+  .tr-desk.dark { background:
+      radial-gradient(circle at 12% 30%, #c2542d 0 10%, transparent 30%),
+      radial-gradient(circle at 8% 80%, #1f8f8a 0 10%, transparent 32%),
+      linear-gradient(150deg,#1d2a52,#151a36 55%,#2a1b4d); }
+  .light { --ink:#161a26; --muted:#62697e; --line:rgba(22,26,38,.11); --main:#fbfbfd; --card:#ffffff; --side:rgba(250,251,255,.58); --hot:rgba(255,255,255,.6); --track:rgba(22,26,38,.12); --accent:#4a3fd0; --ok:#1c8f63; --bad:#c2372f; --hold:#9a6a12; --down:#1479a8; --on:#ffffff;
+           --shadow:rgba(20,24,60,.32); --edge:rgba(255,255,255,.7); }
+  .dark  { --ink:#f1f3fa; --muted:#9aa1b8; --line:rgba(255,255,255,.1); --main:#1a1d2b; --card:#222638; --side:rgba(26,29,44,.55); --hot:rgba(255,255,255,.12); --track:rgba(255,255,255,.14); --accent:#a99bff; --ok:#5fd0a0; --bad:#ff8a80; --hold:#f0c267; --down:#6cc8ee; --on:#14162a;
+           --shadow:rgba(0,0,0,.55); --edge:rgba(255,255,255,.14); }
+
+  .tr-win { display:grid; grid-template-columns:190px minmax(0,1fr); border-radius:12px; overflow:hidden; font-size:13px; color:var(--ink); box-shadow:0 18px 44px var(--shadow); border:1px solid var(--edge); }
+  .tr-win.list { height:560px; } .tr-win.detail { height:210px; margin-top:22px; }
+  .tr-side { background:var(--side); backdrop-filter:blur(26px) saturate(170%); -webkit-backdrop-filter:blur(26px) saturate(170%); padding:12px 10px; border-right:1px solid var(--line); }
+  .tr-lights { display:flex; gap:7px; padding:2px 4px 22px; }
+  .tr-lights i { width:11px; height:11px; border-radius:50%; display:block; }
+  .tr-lights i:nth-child(1){ background:#f2605a; } .tr-lights i:nth-child(2){ background:#f5bd3f; } .tr-lights i:nth-child(3){ background:#5cc74b; }
+  .tr-nav div { padding:7px 10px; border-radius:7px; margin-bottom:3px; }
+  .tr-nav div.on { background:var(--hot); font-weight:600; }
+  .tr-main { background:var(--main); padding:18px 20px 0; display:flex; flex-direction:column; min-width:0; }
+  .tr-top { display:flex; align-items:center; gap:16px; padding-bottom:12px; border-bottom:1px solid var(--line); }
+  .tr-top h4 { margin:0; font-size:19px; font-weight:600; flex:none; }
+  .tr-search { flex:1; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:7px 11px; color:var(--muted); }
+  .tr-list { flex:1; padding:12px 14px 0 0; }
+  .tr-item { position:relative; background:var(--card); border:1px solid var(--line); border-radius:9px; padding:8px 12px; margin-bottom:8px; display:flex; align-items:center; gap:12px; }
+  .tr-ring { flex:none; width:54px; height:54px; border-radius:50%; display:grid; place-items:center; background:conic-gradient(var(--c,var(--accent)) calc(var(--p) * 1%), var(--track) 0); }
+  .tr-ring.ok { --c:var(--ok); } .tr-ring.hold { --c:var(--hold); } .tr-ring.off { --c:var(--muted); } .tr-ring.down { --c:var(--down); }
+  .tr-ico { width:48px; height:48px; border-radius:50%; background:var(--card); display:grid; place-items:center; }
+  .th-page { box-sizing:border-box; width:22px; height:28px; border-radius:2px; padding:4px 3px; background:repeating-linear-gradient(#fff 0 3px,#bfc4d0 3px 4px) content-box, #fff; box-shadow:0 0 0 1px rgba(0,0,0,.2), 0 1px 3px rgba(0,0,0,.25); }
+  .th-gen { box-sizing:border-box; width:22px; height:28px; border-radius:2px; background:#f4f5f8; color:#7a8094; font-size:6px; font-weight:700; line-height:1; display:grid; place-items:end center; padding-bottom:3px; box-shadow:0 0 0 1px rgba(0,0,0,.2), 0 1px 3px rgba(0,0,0,.25); }
+  .th-folder { width:30px; height:21px; border-radius:3px; background:linear-gradient(#72c4f7,#3b97e3); position:relative; margin-top:5px; }
+  .th-folder::before { content:""; position:absolute; left:0; top:-4px; width:13px; height:7px; background:#58aeec; border-radius:2px 3px 0 0; }
+  .tr-txt { flex:1; min-width:0; }
+  .tr-l1 { display:flex; justify-content:space-between; align-items:baseline; gap:16px; }
+  .tr-l1 b { font-weight:600; white-space:nowrap; }
+  .tr-path { color:var(--muted); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tr-prog { color:var(--muted); font-size:12px; margin-top:2px; font-variant-numeric:tabular-nums; }
+  .tr-prog.ok { color:var(--ok); } .tr-prog.hold { color:var(--hold); } .tr-prog.down { color:var(--down); }
+  .tr-prog u { text-decoration:none; color:var(--accent); padding-left:10px; }
+  .tr-more { flex:none; width:26px; height:26px; border-radius:7px; display:grid; place-content:center; gap:3px; position:relative; }
+  .tr-more > i { width:3.5px; height:3.5px; border-radius:50%; background:var(--muted); display:block; }
+  .tr-more.open { background:var(--track); }
+  .tr-more.open > i { background:var(--ink); }
+  .tr-menu { min-width:186px; border-radius:9px; padding:5px; background:var(--card); border:1px solid var(--line); box-shadow:0 10px 28px var(--shadow); font-size:13px; color:var(--ink); text-align:left; }
+  .tr-more .tr-menu { position:absolute; right:0; top:30px; z-index:2; }
+  .tr-menu div { padding:5px 10px; border-radius:6px; white-space:nowrap; }
+  .tr-menu div.hot { background:var(--accent); color:var(--on); }
+  .tr-menu div.bad { color:var(--bad); }
+  .tr-menu div.tick::before { content:"✓"; display:inline-block; width:16px; margin-left:-2px; }
+  .tr-menu div.pad { padding-left:24px; }
+  .tr-menu small { color:var(--muted); padding-left:8px; }
+  .tr-menu div.hot small { color:inherit; opacity:.8; }
+  .tr-menu hr { border:0; border-top:1px solid var(--line); margin:4px 6px; }
+
+  .tr-back { color:var(--accent); font-size:12.5px; }
+  .tr-head { display:flex; align-items:center; gap:18px; padding:16px 0 4px; }
+  .tr-bigring { flex:none; width:92px; height:92px; border-radius:50%; display:grid; place-items:center; background:conic-gradient(var(--hold) 42%, var(--track) 0); }
+  .tr-hole { width:84px; height:84px; border-radius:50%; background:var(--main); display:grid; place-items:center; }
+  .tr-bigfolder { width:50px; height:35px; border-radius:5px; background:linear-gradient(#72c4f7,#3b97e3); position:relative; margin-top:8px; }
+  .tr-bigfolder::before { content:""; position:absolute; left:0; top:-7px; width:22px; height:12px; background:#58aeec; border-radius:3px 5px 0 0; }
+  .tr-title { flex:1; min-width:0; }
+  .tr-title h4 { margin:0; font-size:19px; font-weight:600; }
+  .tr-title p { margin:3px 0 0; color:var(--muted); font-size:12px; }
+  .tr-title p.prog { color:var(--hold); font-size:13px; margin-top:6px; }
+  .tr-acts { display:flex; gap:8px; flex:none; align-self:flex-start; }
+  .tr-btn { padding:5px 13px; border-radius:7px; border:1px solid var(--line); background:var(--card); font-size:12.5px; }
+  .tr-btn.bad { color:var(--bad); }
+  .tr-btn.go { background:var(--accent); color:var(--on); border-color:transparent; font-weight:600; }
+
+  .tr-pieces { display:flex; flex-wrap:wrap; gap:22px; justify-content:center; align-items:flex-start; margin-top:22px; }
+  .tr-cap { width:100%; text-align:center; margin:0 0 -10px; font-size:11.5px; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.4); }
+  .tr-panel { width:360px; border-radius:12px; background:var(--card); color:var(--ink); border:1px solid var(--edge); box-shadow:0 18px 44px var(--shadow); padding:16px 20px; font-size:13px; }
+  .tr-row { display:flex; justify-content:space-between; align-items:center; gap:14px; position:relative; }
+  .tr-row b { font-weight:600; }
+  .tr-row p { margin:2px 0 0; color:var(--muted); font-size:12px; }
+  .tr-sel { border:1px solid var(--line); border-radius:7px; padding:5px 26px 5px 11px; background:var(--main); position:relative; white-space:nowrap; }
+  .tr-sel::after { content:""; position:absolute; right:10px; top:50%; width:6px; height:6px; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:translateY(-70%) rotate(45deg); }
+  .tr-row .tr-menu { position:absolute; right:0; top:34px; z-index:2; min-width:250px; }
+  .tr-sheet { width:300px; border-radius:12px; background:var(--card); color:var(--ink); border:1px solid var(--edge); box-shadow:0 18px 44px var(--shadow); padding:18px 20px 16px; font-size:13px; }
+  .tr-sheet h4 { margin:0; font-size:15px; font-weight:600; }
+  .tr-sheet p { margin:6px 0 0; color:var(--muted); line-height:1.45; font-size:12.5px; }
+  .tr-field { margin-top:12px; }
+  .tr-field label { display:block; font-weight:500; margin-bottom:4px; font-size:12.5px; }
+  .tr-input { border:1px solid var(--line); border-radius:8px; padding:7px 11px; background:var(--main); }
+  .tr-input.focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .tr-hint { margin-top:4px; font-size:11.5px; color:var(--muted); line-height:1.4; }
+  .tr-hint.bad { color:var(--bad); }
+  .tr-input.bad { border-color:var(--bad); box-shadow:0 0 0 3px color-mix(in srgb, var(--bad) 18%, transparent); }
+  .tr-warn { margin-top:12px; padding:8px 11px; border-radius:8px; background:color-mix(in srgb, var(--bad) 10%, transparent); color:var(--bad); font-size:12px; line-height:1.4; }
+  .tr-messages { width:300px; border-radius:12px; background:var(--card); color:var(--ink); border:1px solid var(--edge); box-shadow:0 18px 44px var(--shadow); padding:18px 20px 16px; font-size:12.5px; }
+  .tr-messages h4 { margin:0 0 4px; font-size:15px; font-weight:600; }
+  .tr-messages dt { margin-top:10px; color:var(--muted); font-size:11.5px; }
+  .tr-messages dd { margin:5px 0 0; line-height:1.4; }
+  .tr-sacts { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+  .tr-sbtn { border:1px solid var(--line); border-radius:8px; padding:6px 14px; background:var(--main); }
+  .tr-sbtn.go { background:var(--accent); color:var(--on); border-color:transparent; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="tr">
+<h2>Rabbithole pause, cancel, download and bucket (approved mockup)</h2>
+<p class="subtitle">What the new functions add to screens that already exist. Uploads that are sending or waiting get the three-dot button too, with Pause and Cancel upload; two new states, paused and canceled; downloading a finished upload back; and the bucket selector with its list and Create new bucket.</p>
+<p class="note">Paused uses an amber ring, canceled a grey one, a download a blue one, so each reads apart from sending (violet), finished (green) and failed (red). Choosing where a download goes uses the system's folder window, which is not drawn here.</p>
+
+<template id="tr-tpl">
+<div class="tr-win list">
+  <div class="tr-side"><div class="tr-lights"><i></i><i></i><i></i></div>
+    <div class="tr-nav"><div>Overview</div><div class="on">History</div><div>Settings</div></div></div>
+  <div class="tr-main">
+    <div class="tr-top"><h4>History</h4><div class="tr-search">Search uploads by name or folder</div></div>
+    <div class="tr-list">
+      <div class="tr-item"><div class="tr-ring" style="--p:30"><div class="tr-ico"><div class="th-gen">GZ</div></div></div><div class="tr-txt"><div class="tr-l1"><b>db-dump.sql.gz</b><span class="tr-path">~/Work/backups/db-dump.sql.gz</span></div><div class="tr-prog">1.3 GB of 4.2 GB sent, 2.9 GB left, about 8 min</div></div><span class="tr-more open"><i></i><i></i><i></i><div class="tr-menu"><div class="hot">Pause</div><div class="bad">Cancel upload</div></div></span></div>
+      <div class="tr-item"><div class="tr-ring hold" style="--p:42"><div class="tr-ico"><div class="th-folder"></div></div></div><div class="tr-txt"><div class="tr-l1"><b>vacation-2026/</b><span class="tr-path">~/Pictures/vacation-2026</span></div><div class="tr-prog hold">Paused, 800 MB of 1.9 GB sent</div></div><span class="tr-more"><i></i><i></i><i></i></span></div>
+      <div class="tr-item"><div class="tr-ring hold" style="--p:12"><div class="tr-ico"><div class="th-folder"></div></div></div><div class="tr-txt"><div class="tr-l1"><b>design-assets/</b><span class="tr-path">~/Work/client/design-assets</span></div><div class="tr-prog hold">Paused while on battery, 76 MB of 640 MB sent</div></div><span class="tr-more"><i></i><i></i><i></i></span></div>
+      <div class="tr-item"><div class="tr-ring off" style="--p:38"><div class="tr-ico"><div class="th-folder"></div></div></div><div class="tr-txt"><div class="tr-l1"><b>raw-footage/</b><span class="tr-path">~/Movies/raw-footage</span></div><div class="tr-prog">Canceled yesterday at 18:20, 5 of 12 files sent</div></div><span class="tr-more"><i></i><i></i><i></i></span></div>
+      <div class="tr-item"><div class="tr-ring down" style="--p:25"><div class="tr-ico"><div class="th-folder"></div></div></div><div class="tr-txt"><div class="tr-l1"><b>archive-2025/</b><span class="tr-path">~/Documents/archive-2025</span></div><div class="tr-prog down">Downloading to ~/Downloads, 120 MB of 480 MB</div></div><span class="tr-more"><i></i><i></i><i></i></span></div>
+      <div class="tr-item"><div class="tr-ring ok" style="--p:100"><div class="tr-ico"><div class="th-page"></div></div></div><div class="tr-txt"><div class="tr-l1"><b>invoice-october.pdf</b><span class="tr-path">~/Documents/finance/invoice-october.pdf</span></div><div class="tr-prog ok">Finished today at 11:56, 184 KB sent</div><div class="tr-prog">Downloaded to ~/Downloads<u>Show in Finder</u></div></div><span class="tr-more"><i></i><i></i><i></i></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="tr-win detail">
+  <div class="tr-side"><div class="tr-lights"><i></i><i></i><i></i></div>
+    <div class="tr-nav"><div>Overview</div><div class="on">History</div><div>Settings</div></div></div>
+  <div class="tr-main">
+    <div class="tr-back">‹ History</div>
+    <div class="tr-head">
+      <div class="tr-bigring"><div class="tr-hole"><div class="tr-bigfolder"></div></div></div>
+      <div class="tr-title"><h4>vacation-2026/</h4><p>~/Pictures/vacation-2026</p><p class="prog">Paused, 800 MB of 1.9 GB sent</p></div>
+      <div class="tr-acts"><span class="tr-btn go">Resume</span><span class="tr-btn bad">Cancel upload</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="tr-pieces">
+  <p class="tr-cap">The menu by state: sending or waiting, paused by you, paused on battery, canceled, finished, being downloaded</p>
+  <div class="tr-menu"><div>Pause</div><div class="bad">Cancel upload</div></div>
+  <div class="tr-menu"><div>Resume</div><div class="bad">Cancel upload</div></div>
+  <div class="tr-menu"><div class="bad">Cancel upload</div></div>
+  <div class="tr-menu"><div>Try again</div><div>Download…</div><hr><div>Remove from history…</div><div class="bad">Delete from bucket…</div></div>
+  <div class="tr-menu"><div>Download…</div><hr><div>Remove from history…</div><div class="bad">Delete from bucket…</div></div>
+  <div class="tr-menu"><div>Cancel download</div></div>
+</div>
+
+<div class="tr-pieces">
+  <p class="tr-cap">Settings, Destination: the bucket selector open, and Create new bucket</p>
+  <div class="tr-panel" style="min-height:230px">
+    <div class="tr-row"><div><b>Bucket</b><p>3 buckets found in this account.</p></div><span class="tr-sel">carlos-backups</span>
+      <div class="tr-menu"><div class="tick hot">carlos-backups<small>sa-east-1</small></div><div class="pad">photos-archive<small>us-east-1</small></div><div class="pad">site-assets<small>sa-east-1</small></div><hr><div class="pad">Create new bucket…</div><div class="pad">Reload list</div></div>
+    </div>
+  </div>
+  <div class="tr-sheet">
+    <h4>Create a new bucket</h4>
+    <p>It is created private: nobody outside your account can read it.</p>
+    <div class="tr-field"><label>Name</label><div class="tr-input focus">carlos-backups-2026</div><div class="tr-hint">Lowercase letters, numbers and hyphens. Unique in all of AWS.</div></div>
+    <div class="tr-field"><label>Region</label><span class="tr-sel" style="display:inline-block">South America (São Paulo)</span></div>
+    <div class="tr-sacts"><span class="tr-sbtn">Cancel</span><span class="tr-sbtn go">Create and use</span></div>
+  </div>
+</div>
+
+<div class="tr-pieces">
+  <p class="tr-cap">When creating fails the window stays open: a problem with the name shows under the name, any other in a box above the buttons</p>
+  <div class="tr-sheet">
+    <h4>Create a new bucket</h4>
+    <p>It is created private: nobody outside your account can read it.</p>
+    <div class="tr-field"><label>Name</label><div class="tr-input bad">backups</div><div class="tr-hint bad">This name is already taken by another AWS account. Bucket names are unique in all of AWS: try another one.</div></div>
+    <div class="tr-field"><label>Region</label><span class="tr-sel" style="display:inline-block">South America (São Paulo)</span></div>
+    <div class="tr-sacts"><span class="tr-sbtn">Cancel</span><span class="tr-sbtn go">Create and use</span></div>
+  </div>
+  <div class="tr-sheet">
+    <h4>Create a new bucket</h4>
+    <p>It is created private: nobody outside your account can read it.</p>
+    <div class="tr-field"><label>Name</label><div class="tr-input">carlos-backups-2026</div><div class="tr-hint">Lowercase letters, numbers and hyphens. Unique in all of AWS.</div></div>
+    <div class="tr-field"><label>Region</label><span class="tr-sel" style="display:inline-block">South America (São Paulo)</span></div>
+    <div class="tr-warn">AWS denied permission to create buckets: the access key needs the s3:CreateBucket permission</div>
+    <div class="tr-sacts"><span class="tr-sbtn">Cancel</span><span class="tr-sbtn go">Create and use</span></div>
+  </div>
+  <div class="tr-messages">
+    <h4>Every message</h4>
+    <dl>
+      <dt>Under the name</dt>
+      <dd>This name is already taken by another AWS account. Bucket names are unique in all of AWS: try another one.</dd>
+      <dd>You already have a bucket with this name. Choose it in the list instead.</dd>
+      <dd>This name is not valid. Use 3 to 63 lowercase letters, numbers and hyphens, starting and ending with a letter or a number.</dd>
+      <dt>In the box</dt>
+      <dd>AWS denied permission to create buckets: the access key needs the s3:CreateBucket permission</dd>
+      <dd>AWS rejected the access key</dd>
+      <dd>No internet connection</dd>
+      <dd>This account has reached its limit of buckets</dd>
+      <dd>The bucket could not be created</dd>
+    </dl>
+  </div>
+</div>
+</template>
+
+<h3>Light theme</h3>
+<div class="tr-desk light" data-tr></div>
+<h3>Dark theme</h3>
+<div class="tr-desk dark" data-tr></div>
+</div>
+
+<script>
+  document.querySelectorAll('[data-tr]').forEach(function (desk) {
+    desk.appendChild(document.getElementById('tr-tpl').content.cloneNode(true));
+  });
+</script>
+</body>
+</html>
