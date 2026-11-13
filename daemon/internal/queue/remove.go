@@ -35,14 +35,20 @@ func (q *Queue) Remove(ctx context.Context, bucket, id string, indexes []int, de
 	if err != nil {
 		return err
 	}
-	if del == nil {
-		return q.forget(id, chosen, files)
+	// Unfinished multipart uploads go first: a file leaves the history only
+	// when nothing of it is left in the bucket that could not be found again.
+	forgotten, abortErr := q.abortRemoved(ctx, id, chosen)
+	var deleteErr error
+	if del != nil {
+		forgotten, deleteErr = deleteObjects(ctx, del, forgotten)
 	}
-	forgotten, deleteErr := deleteObjects(ctx, del, chosen)
 	if err := q.forget(id, forgotten, files); err != nil {
 		return err
 	}
-	return deleteErr
+	if deleteErr != nil {
+		return deleteErr
+	}
+	return abortErr
 }
 
 // claim marks the upload as busy, so that nothing else changes its files while
@@ -70,6 +76,8 @@ func (q *Queue) claimLocked(id, bucket string) error {
 	switch {
 	case !ok:
 		return ErrUnknownUpload
+	case u.snap.State == Paused:
+		return ErrUploadPaused
 	case u.snap.State == Queued || u.snap.State == Uploading || u.busy:
 		return ErrUploadActive
 	case u.bucket != bucket:
@@ -230,6 +238,7 @@ func recount(old Snapshot, remaining []FileRecord) Snapshot {
 	next := old
 	next.FilesTotal, next.FilesFinished, next.FilesFailed = len(remaining), 0, 0
 	next.BytesTotal, next.BytesSent = 0, 0
+	canceled := 0
 	for _, f := range remaining {
 		next.BytesTotal += f.Snapshot.BytesTotal
 		next.BytesSent += f.Snapshot.BytesSent
@@ -238,9 +247,13 @@ func recount(old Snapshot, remaining []FileRecord) Snapshot {
 			next.FilesFinished++
 		case Failed:
 			next.FilesFailed++
+		case Canceled:
+			canceled++
 		}
 	}
 	switch {
+	case next.FilesFailed == 0 && canceled > 0:
+		next.State, next.ErrorMessage = Canceled, ""
 	case next.FilesFailed == 0:
 		next.State, next.ErrorMessage = Finished, ""
 		next.BytesSent = next.BytesTotal

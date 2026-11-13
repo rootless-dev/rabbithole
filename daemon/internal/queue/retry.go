@@ -11,10 +11,13 @@ import (
 var (
 	// ErrUnknownFile means the upload has no file with a given index.
 	ErrUnknownFile = errors.New("unknown file")
-	// ErrUploadNotFailed means the upload is not in the failed state.
+	// ErrUploadNotFailed means the upload is neither failed nor canceled.
 	ErrUploadNotFailed = errors.New("upload did not fail")
-	// ErrFileNotFailed means a file that was asked for did not fail.
+	// ErrFileNotFailed means a file that was asked for neither failed nor was
+	// canceled.
 	ErrFileNotFailed = errors.New("file did not fail")
+	// ErrUploadPaused means the upload is paused, so it cannot be removed.
+	ErrUploadPaused = errors.New("upload is paused")
 	// ErrOtherBucket means the upload was sent to a bucket other than the
 	// configured one.
 	ErrOtherBucket = errors.New("upload belongs to another bucket")
@@ -22,10 +25,11 @@ var (
 	ErrUploadActive = errors.New("upload is queued or running")
 )
 
-// Retry sends failed files of the failed upload id again, inside the same
-// upload, using s. Without indexes it retries every failed file; with indexes,
-// exactly those files, and each must have failed. The upload goes back to the
-// end of the queue; files that finished are not sent again.
+// Retry sends failed files of the failed or canceled upload id again, inside the
+// same upload, using s. Without indexes it retries every failed or canceled
+// file; with indexes, exactly those files, and each must have failed or been
+// canceled. The upload goes back to the end of the queue; files that finished
+// are not sent again, and a multipart file continues where it stopped.
 func (q *Queue) Retry(s uploader.Settings, id string, indexes []int) error {
 	if err := q.checkRetryable(s, id); err != nil {
 		return err
@@ -41,6 +45,10 @@ func (q *Queue) Retry(s uploader.Settings, id string, indexes []int) error {
 	if err != nil {
 		return fmt.Errorf("load files: %w", err)
 	}
+	parts, err := q.store.Multiparts(id)
+	if err != nil {
+		return fmt.Errorf("load multipart records: %w", err)
+	}
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -51,7 +59,7 @@ func (q *Queue) Retry(s uploader.Settings, id string, indexes []int) error {
 	if err != nil {
 		return err
 	}
-	q.requeue(q.uploads[id], s, items, files, chosen)
+	q.requeue(q.uploads[id], s, items, files, chosen, parts)
 	select {
 	case q.wake <- struct{}{}:
 	default:
@@ -72,7 +80,7 @@ func (q *Queue) checkRetryableLocked(s uploader.Settings, id string) error {
 		return ErrUnknownUpload
 	case u.busy:
 		return ErrUploadActive
-	case u.snap.State != Failed:
+	case u.snap.State != Failed && u.snap.State != Canceled:
 		return ErrUploadNotFailed
 	case u.bucket != s.Bucket:
 		return ErrOtherBucket
@@ -81,13 +89,13 @@ func (q *Queue) checkRetryableLocked(s uploader.Settings, id string) error {
 }
 
 // chooseFailed returns the indexes of the files to send again: the listed
-// ones, or every failed one when none is listed.
+// ones, or every failed or canceled one when none is listed.
 func chooseFailed(files []FileRecord, indexes []int) (map[int]bool, error) {
 	chosen := map[int]bool{}
 	state := map[int]State{} // by file index, which is not always the position
 	for _, f := range files {
 		state[f.Snapshot.Index] = f.Snapshot.State
-		if len(indexes) == 0 && f.Snapshot.State == Failed {
+		if len(indexes) == 0 && retryable(f.Snapshot.State) {
 			chosen[f.Snapshot.Index] = true
 		}
 	}
@@ -96,7 +104,7 @@ func chooseFailed(files []FileRecord, indexes []int) (map[int]bool, error) {
 		switch {
 		case !ok:
 			return nil, fmt.Errorf("%w: index %d", ErrUnknownFile, idx)
-		case st != Failed:
+		case !retryable(st):
 			return nil, fmt.Errorf("%w: index %d", ErrFileNotFailed, idx)
 		}
 		chosen[idx] = true
@@ -104,13 +112,17 @@ func chooseFailed(files []FileRecord, indexes []int) (map[int]bool, error) {
 	return chosen, nil
 }
 
+// retryable reports whether a file in state is sent again by a retry.
+func retryable(state State) bool { return state == Failed || state == Canceled }
+
 // requeue puts the chosen files back in the queue and the upload at its end.
-// The caller holds q.mu.
-func (q *Queue) requeue(u *upload, s uploader.Settings, items []ItemRecord, files []FileRecord, chosen map[int]bool) {
+// parts are the multipart records of the files, by index, that the chosen
+// files continue from. The caller holds q.mu.
+func (q *Queue) requeue(u *upload, s uploader.Settings, items []ItemRecord, files []FileRecord, chosen map[int]bool, parts map[int]uploader.Multipart) {
 	keepResolved := u.prefix == s.Prefix
 	u.settings, u.region, u.prefix = s, s.Region, s.Prefix
 	u.items = restoreItems(items, keepResolved)
-	u.files = restoreFiles(files, chosen)
+	u.files = restoreFiles(files, chosen, parts)
 	// The key of a single file is set again when the file is sent, and the key
 	// prefix of a folder when it is resolved again.
 	if u.snap.Kind == SingleFile || u.snap.Kind == Folder && u.items[0].resolved == "" {
@@ -127,7 +139,7 @@ func (q *Queue) requeue(u *upload, s uploader.Settings, items []ItemRecord, file
 			u.snap.FilesFailed++
 		}
 	}
-	u.snap.State, u.snap.ErrorMessage, u.snap.EndedAt = Queued, "", time.Time{}
+	u.snap.State, u.snap.PauseReason, u.snap.ErrorMessage, u.snap.EndedAt = Queued, NotPaused, "", time.Time{}
 
 	q.waiting = append(q.waiting, u.snap.ID)
 	q.publish(u)
@@ -152,8 +164,9 @@ func restoreItems(recs []ItemRecord, keepResolved bool) []item {
 }
 
 // restoreFiles rebuilds the in-memory files of an upload; the chosen ones go
-// back to the queue with nothing sent.
-func restoreFiles(recs []FileRecord, chosen map[int]bool) []*fileState {
+// back to the queue with nothing sent, and carry the multipart record in parts
+// they continue from.
+func restoreFiles(recs []FileRecord, chosen map[int]bool, parts map[int]uploader.Multipart) []*fileState {
 	files := make([]*fileState, len(recs))
 	for i, r := range recs {
 		f := &fileState{
@@ -169,6 +182,9 @@ func restoreFiles(recs []FileRecord, chosen map[int]bool) []*fileState {
 		}
 		if chosen[r.Snapshot.Index] {
 			f.snap.State, f.snap.ErrorMessage, f.snap.ObjectKey, f.snap.BytesSent = Queued, "", "", 0
+			if m, ok := parts[r.Snapshot.Index]; ok {
+				f.multipart = &m
+			}
 		}
 		files[i] = f
 	}
@@ -184,6 +200,9 @@ func (q *Queue) Discard(id string) error {
 	case !ok:
 		q.mu.Unlock()
 		return ErrUnknownUpload
+	case u.snap.State == Paused:
+		q.mu.Unlock()
+		return ErrUploadPaused
 	case u.snap.State == Queued || u.snap.State == Uploading:
 		q.mu.Unlock()
 		return ErrUploadActive

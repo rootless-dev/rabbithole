@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -24,6 +25,10 @@ type fakeS3 struct {
 	completeErr error
 	abortErr    error
 
+	// What ListParts answers.
+	held    []HeldPart
+	listErr error
+
 	// Hooks run at the start of the named call.
 	onExists func()
 	onPart   func(number int32)
@@ -37,6 +42,11 @@ type fakeS3 struct {
 	putKeys       []string
 	putSizes      []int64
 	partSizes     []int64
+	partNumbers   []int32
+	completeKey   string
+	completeID    string
+	abortedIDs    []string
+	createdKeys   []string
 	completed     []CompletedPart
 	aborted       bool
 	abortCtxErr   error
@@ -129,6 +139,7 @@ func (f *fakeS3) PutObject(ctx context.Context, key string, body io.Reader, size
 
 func (f *fakeS3) CreateMultipart(ctx context.Context, key string) (string, error) {
 	f.calls = append(f.calls, "create")
+	f.createdKeys = append(f.createdKeys, key)
 	if f.createErr != nil {
 		return "", f.createErr
 	}
@@ -138,6 +149,7 @@ func (f *fakeS3) CreateMultipart(ctx context.Context, key string) (string, error
 func (f *fakeS3) UploadPart(ctx context.Context, key, uploadID string, number int32, body io.Reader, size int64) (string, error) {
 	f.calls = append(f.calls, "part")
 	f.partSizes = append(f.partSizes, size)
+	f.partNumbers = append(f.partNumbers, number)
 	if f.onPart != nil {
 		f.onPart(number)
 	}
@@ -158,12 +170,19 @@ func (f *fakeS3) UploadPart(ctx context.Context, key, uploadID string, number in
 func (f *fakeS3) CompleteMultipart(ctx context.Context, key, uploadID string, parts []CompletedPart) error {
 	f.calls = append(f.calls, "complete")
 	f.completed = parts
+	f.completeKey, f.completeID = key, uploadID
 	return f.completeErr
+}
+
+func (f *fakeS3) ListParts(context.Context, string, string) ([]HeldPart, error) {
+	f.calls = append(f.calls, "list-parts")
+	return f.held, f.listErr
 }
 
 func (f *fakeS3) AbortMultipart(ctx context.Context, key, uploadID string) error {
 	f.calls = append(f.calls, "abort")
 	f.aborted = true
+	f.abortedIDs = append(f.abortedIDs, uploadID)
 	f.abortCtxErr = ctx.Err()
 	if d, ok := ctx.Deadline(); ok {
 		f.abortHadDline = true
@@ -435,22 +454,22 @@ func TestForbiddenExistenceCheckNamesPermission(t *testing.T) {
 func TestFailedAbortIsReportedAndTheOriginalErrorWins(t *testing.T) {
 	path := sparseFile(t, "big.bin", 16*MiB)
 	fake := newFake()
-	fake.partErr = func(number int32) error { return ErrNoNetwork }
+	fake.completeErr = ErrPreconditionFailed
 	abortErr := errors.New("abort boom")
 	fake.abortErr = abortErr
 
 	var reported []error
 	err := newUploader().Upload(context.Background(), fake, Request{Prefix: "p/", LocalPath: path},
 		Callbacks{AbortFailed: func(err error) { reported = append(reported, err) }})
-	if !errors.Is(err, ErrNoNetwork) {
-		t.Fatalf("err = %v, want ErrNoNetwork", err)
+	if !errors.Is(err, ErrPreconditionFailed) {
+		t.Fatalf("err = %v, want ErrPreconditionFailed", err)
 	}
 	if len(reported) != 1 || !errors.Is(reported[0], abortErr) {
 		t.Fatalf("AbortFailed calls = %v, want one with the abort error", reported)
 	}
 }
 
-func TestPartFailureAbortsMultipart(t *testing.T) {
+func TestPartFailureKeepsTheMultipartUploadAndItsRecord(t *testing.T) {
 	path := sparseFile(t, "big.bin", 16*MiB)
 	fake := newFake()
 	fake.partErr = func(number int32) error {
@@ -459,20 +478,49 @@ func TestPartFailureAbortsMultipart(t *testing.T) {
 		}
 		return nil
 	}
+	var recorded []Multipart
+	var done []CompletedPart
+	ended := 0
+	cb := Callbacks{
+		MultipartRecorded: func(m Multipart) { recorded = append(recorded, m) },
+		PartDone:          func(p CompletedPart) { done = append(done, p) },
+		MultipartEnded:    func() { ended++ },
+	}
 
-	err := newUploader().Upload(context.Background(), fake, Request{Prefix: "p/", LocalPath: path}, Callbacks{})
+	err := newUploader().Upload(context.Background(), fake, Request{Prefix: "p/", LocalPath: path}, cb)
 	if !errors.Is(err, ErrNoNetwork) {
 		t.Fatalf("err = %v, want ErrNoNetwork", err)
 	}
-	if !fake.aborted {
-		t.Fatal("multipart upload was not aborted")
+	if fake.aborted {
+		t.Fatal("multipart upload was aborted; it must stay so the file can continue")
 	}
 	if slices.Contains(fake.calls, "complete") {
 		t.Fatalf("complete called after a part failure: %v", fake.calls)
 	}
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	want := Multipart{Key: "p/big.bin", UploadID: "upload-1", PartSize: 8 * MiB, FileSize: 16 * MiB, ModTimeNanos: info.ModTime().UnixNano()}
+	if len(recorded) != 1 || !reflect.DeepEqual(recorded[0], want) {
+		t.Fatalf("recorded = %+v, want one record %+v", recorded, want)
+	}
+	if !slices.Equal(done, []CompletedPart{{1, "etag-1"}}) || ended != 0 {
+		t.Fatalf("parts done = %v, ended = %d; want part 1 only and no end", done, ended)
+	}
 }
 
-func TestCancelAbortsMultipart(t *testing.T) {
+func TestSuccessEndsTheMultipartRecord(t *testing.T) {
+	path := sparseFile(t, "big.bin", 16*MiB)
+	ended := 0
+
+	err := newUploader().Upload(context.Background(), newFake(), Request{Prefix: "p/", LocalPath: path}, Callbacks{MultipartEnded: func() { ended++ }})
+	if err != nil || ended != 1 {
+		t.Fatalf("err = %v, ended = %d; want nil and one end", err, ended)
+	}
+}
+
+func TestCancelKeepsMultipartForResume(t *testing.T) {
 	path := sparseFile(t, "big.bin", 16*MiB)
 	fake := newFake()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -487,11 +535,19 @@ func TestCancelAbortsMultipart(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
-	if !fake.aborted {
-		t.Fatal("multipart upload was not aborted")
+	if fake.aborted {
+		t.Fatal("multipart upload was aborted; the user's pause must keep it")
 	}
-	if fake.abortCtxErr != nil {
-		t.Fatalf("abort context was already done: %v", fake.abortCtxErr)
+}
+
+func TestRejectedCompleteAbortsWithADeadline(t *testing.T) {
+	path := sparseFile(t, "big.bin", 16*MiB)
+	fake := newFake()
+	fake.completeErr = ErrPreconditionFailed
+
+	_ = newUploader().Upload(context.Background(), fake, Request{Prefix: "p/", LocalPath: path}, Callbacks{})
+	if !fake.aborted || fake.abortCtxErr != nil {
+		t.Fatalf("aborted = %v, abort ctx err = %v", fake.aborted, fake.abortCtxErr)
 	}
 	if !fake.abortHadDline || fake.abortDeadline > time.Second {
 		t.Fatalf("abort deadline = %v (set: %v), want at most 1s", fake.abortDeadline, fake.abortHadDline)
@@ -516,7 +572,7 @@ func TestMultipartOfAFileThatCannotBeOpenedTouchesNothing(t *testing.T) {
 	fake := newFake()
 	gone := filepath.Join(t.TempDir(), "gone.bin")
 
-	err := uploadMultipart(context.Background(), fake, "p/gone.bin", gone, 16*MiB, &progressTracker{total: 16 * MiB}, nil)
+	err := uploadMultipart(context.Background(), fake, "p/gone.bin", gone, 16*MiB, 0, &progressTracker{total: 16 * MiB}, Callbacks{})
 	if !errors.Is(err, ErrFileUnreadable) {
 		t.Fatalf("err = %v, want ErrFileUnreadable", err)
 	}
@@ -525,7 +581,7 @@ func TestMultipartOfAFileThatCannotBeOpenedTouchesNothing(t *testing.T) {
 	}
 }
 
-func TestCancelBetweenPartsAbortsMultipart(t *testing.T) {
+func TestCancelBetweenPartsKeepsMultipart(t *testing.T) {
 	path := sparseFile(t, "big.bin", 16*MiB)
 	fake := newFake()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -545,8 +601,8 @@ func TestCancelBetweenPartsAbortsMultipart(t *testing.T) {
 	if !slices.Equal(fake.partSizes, []int64{8 * MiB}) {
 		t.Fatalf("part sizes = %v, want only the first part", fake.partSizes)
 	}
-	if !fake.aborted || slices.Contains(fake.calls, "complete") {
-		t.Fatalf("calls = %v, want an abort and no complete", fake.calls)
+	if fake.aborted || slices.Contains(fake.calls, "complete") {
+		t.Fatalf("calls = %v, want no abort and no complete", fake.calls)
 	}
 }
 
@@ -643,8 +699,8 @@ func TestShrunkFileIsUnreadable(t *testing.T) {
 			if !errors.Is(err, ErrFileUnreadable) {
 				t.Fatalf("err = %v, want ErrFileUnreadable", err)
 			}
-			if tc.name == "multipart" && !fake.aborted {
-				t.Fatal("multipart upload was not aborted")
+			if fake.aborted {
+				t.Fatal("multipart upload was aborted; a later attempt sees the changed file and decides")
 			}
 		})
 	}

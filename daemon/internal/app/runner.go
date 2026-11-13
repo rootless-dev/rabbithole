@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync"
 
@@ -41,6 +42,19 @@ func (r *runner) Run(ctx context.Context, s uploader.Settings, req uploader.Requ
 	}
 	if err != nil {
 		r.logFailure(ctx, "upload failed", name, err)
+	}
+	return err
+}
+
+// AbortMultipart aborts a multipart upload in the bucket of s, and logs one
+// line if that fails, like Run. An upload S3 no longer knows is not a failure.
+func (r *runner) AbortMultipart(ctx context.Context, s uploader.Settings, key, uploadID string) error {
+	client, err := r.client(ctx, s)
+	if err == nil {
+		err = client.AbortMultipart(ctx, key, uploadID)
+	}
+	if err != nil && !errors.Is(err, uploader.ErrNoSuchUpload) {
+		r.logFailureOf(ctx, "multipart abort failed", []any{"file", filepath.Base(key)}, err)
 	}
 	return err
 }

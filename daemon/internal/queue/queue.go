@@ -37,6 +37,20 @@ const (
 	Uploading
 	Finished
 	Failed
+	// Paused is an upload the user paused, or any queued or running upload
+	// while every upload is on hold. The values are stored: append only.
+	Paused
+	// Canceled is an upload, or a file, the user stopped for good.
+	Canceled
+)
+
+// PauseReason says why an upload is Paused.
+type PauseReason int
+
+const (
+	NotPaused PauseReason = iota
+	PausedByUser
+	PausedOnHold
 )
 
 // Snapshot is the state of one upload at one moment.
@@ -50,6 +64,7 @@ type Snapshot struct {
 	BytesTotal    int64 // sum over the files
 	BytesSent     int64
 	State         State
+	PauseReason   PauseReason // set while State is Paused
 	ErrorMessage  string
 	Kind          Kind
 	RootPaths     []string // every path the upload was enqueued with, in order
@@ -96,6 +111,7 @@ type fileState struct {
 	snap        FileSnapshot
 	plan        plannedFile
 	lastPublish time.Time
+	multipart   *uploader.Multipart // what is needed to continue its multipart upload; see multipart.go
 }
 
 type upload struct {
@@ -107,6 +123,7 @@ type upload struct {
 	lastPublish time.Time
 	parallel    int
 	busy        bool // files are being removed; see remove.go
+	run         *run // set while the upload is running; see control.go
 
 	// items and files are kept only while the upload is queued or running; once
 	// it ends they are read from the store when needed.
@@ -133,6 +150,11 @@ type Queue struct {
 	// uploads of bucket.
 	filtered bool
 	bucket   string
+	// held is set by SetHold: nothing starts, and every queued or running
+	// upload is shown as paused on hold. It is never stored.
+	held    bool
+	running *run              // the run in progress, if any
+	current uploader.Settings // set by SetSettings; used to abort multipart uploads
 }
 
 type (
@@ -191,6 +213,9 @@ func (q *Queue) Restore() error {
 		q.uploads[id] = &upload{
 			snap: rec.Snapshot, bucket: rec.Bucket, region: rec.Region, prefix: rec.Prefix, parallel: rec.Parallel,
 		}
+		if rec.Snapshot.State == Paused {
+			q.uploads[id].snap.PauseReason = PausedByUser // the only pause that is stored
+		}
 		q.known = append(q.known, id)
 	}
 	return nil
@@ -209,14 +234,14 @@ func (q *Queue) SetBucket(bucket string) {
 	q.filtered, q.bucket = true, bucket
 	for _, id := range q.known {
 		if u := q.uploads[id]; was && u.bucket == old {
-			snap := u.snap
+			snap := q.view(u)
 			snap.Removed = true
 			q.pushToSubs(snap)
 		}
 	}
 	for _, id := range q.known {
 		if u := q.uploads[id]; u.bucket == bucket {
-			q.pushToSubs(u.snap)
+			q.pushToSubs(q.view(u))
 		}
 	}
 }
@@ -307,7 +332,7 @@ func (q *Queue) Subscribe() (initial []Snapshot, updates <-chan Snapshot, cancel
 	initial = make([]Snapshot, 0, len(q.known))
 	for _, id := range q.known {
 		if u := q.uploads[id]; q.visible(u) {
-			initial = append(initial, u.snap)
+			initial = append(initial, q.view(u))
 		}
 	}
 	q.subs[sub] = struct{}{}
@@ -338,7 +363,7 @@ func (q *Queue) SubscribeFiles(id string) (initial []FileSnapshot, updates <-cha
 			q.mu.Unlock()
 			return nil, nil, nil, ErrUnknownUpload
 		case u.files != nil:
-			initial = filesSnapshots(u.files)
+			initial = q.fileViews(u)
 		case stored != nil:
 			initial = recordSnapshots(stored)
 		}
@@ -388,7 +413,7 @@ func (q *Queue) Run(ctx context.Context) {
 	}()
 
 	for ctx.Err() == nil {
-		id, ok := q.next()
+		r, ok := q.start(ctx)
 		if !ok {
 			select {
 			case <-q.wake:
@@ -396,19 +421,8 @@ func (q *Queue) Run(ctx context.Context) {
 			}
 			continue
 		}
-		q.process(ctx, id)
+		q.process(ctx, r)
 	}
-}
-
-func (q *Queue) next() (string, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if len(q.waiting) == 0 {
-		return "", false
-	}
-	id := q.waiting[0]
-	q.waiting = q.waiting[1:]
-	return id, true
 }
 
 // run holds what the workers of one upload share.
@@ -422,29 +436,17 @@ type run struct {
 	folders   map[int]string // item index -> resolved folder name
 	folderErr map[int]error  // item index -> why its folder could not be resolved
 	fatal     error          // first error that stops the whole upload
+	reason    stopReason     // why the user, or a hold, stopped the upload; see control.go
 }
 
-func (q *Queue) process(ctx context.Context, id string) {
-	q.mu.Lock()
-	u := q.uploads[id]
-	u.snap.State = Uploading
-	q.publish(u)
-	q.persistUpload(u)
-	folders := map[int]string{}
-	for i, it := range u.items {
-		if it.resolved != "" {
-			folders[i] = it.resolved
-		}
-	}
-	q.mu.Unlock()
-
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	r := &run{q: q, u: u, ctx: runCtx, cancel: cancel, folders: folders, folderErr: map[int]error{}}
-
+// process runs the upload of r to its end, or until it is stopped.
+func (q *Queue) process(ctx context.Context, r *run) {
+	defer r.cancel()
 	r.resolveFolders()
 	r.sendFiles()
-	r.finish(ctx)
+	if canceled := r.finish(ctx); canceled && ctx.Err() == nil {
+		q.abortOf(r.u.snap.ID)
+	}
 	if q.onEnded != nil {
 		q.onEnded()
 	}
@@ -541,14 +543,14 @@ func (r *run) sendFile(f *fileState) {
 
 	q.mu.Lock()
 	f.snap.State = Uploading
+	req.Resume = f.multipart
 	q.publishFile(r.u, f)
 	q.mu.Unlock()
 
-	err = q.runner.Run(r.ctx, r.u.settings, req, uploader.Callbacks{
-		KeyResolved: func(key string) { r.keyResolved(f, key) },
-		Progress:    func(sent int64) { r.progressed(f, sent) },
-	})
-	r.settle(f, err)
+	cb := r.multipartCallbacks(f)
+	cb.KeyResolved = func(key string) { r.keyResolved(f, key) }
+	cb.Progress = func(sent int64) { r.progressed(f, sent) }
+	r.settle(f, q.runner.Run(r.ctx, r.u.settings, req, cb))
 }
 
 // keyResolved records the object key f is about to be written under.
@@ -649,35 +651,37 @@ func (r *run) setFileState(f *fileState, state State, msg string) {
 	f.snap.State, f.snap.ErrorMessage = state, msg
 	r.q.publishFile(r.u, f)
 	r.q.publish(r.u)
-	if state == Finished || state == Failed {
+	if state != Queued && state != Uploading {
 		r.q.persistFile(r.u, f)
 		r.q.persistUpload(r.u)
 	}
 }
 
-// finish settles every file that did not finish and the upload itself.
-func (r *run) finish(parent context.Context) {
+// finish settles every file that did not finish and the upload itself. It
+// reports whether the upload was canceled, which leaves its multipart uploads
+// to be aborted.
+func (r *run) finish(parent context.Context) (canceled bool) {
 	q, u := r.q, r.u
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	var stopped error
 	switch {
+	case r.stopApplies():
+		r.settleStopped()
 	case r.fatal != nil:
-		stopped = r.fatal
+		r.failUnfinished(uploader.Message(r.fatal))
 	case parent.Err() != nil:
-		stopped = parent.Err()
-	}
-	if stopped != nil {
-		r.failUnfinished(uploader.Message(stopped))
-	} else {
+		r.failUnfinished(uploader.Message(parent.Err()))
+	default:
 		r.settleOutcome()
 	}
-	u.snap.EndedAt = q.now()
+	if u.snap.State != Paused && u.snap.State != Queued {
+		u.snap.EndedAt = q.now()
+	}
 	q.publish(u)
 	q.persistUpload(u)
-	// From here on the files are read from the store, not kept in memory.
-	u.files, u.items = nil, nil
+	q.endRun(r)
+	return u.snap.State == Canceled
 }
 
 // failUnfinished fails the upload with msg, and every file that did not end.
@@ -685,7 +689,7 @@ func (r *run) finish(parent context.Context) {
 func (r *run) failUnfinished(msg string) {
 	for _, f := range r.u.files {
 		// A file that already ended keeps its own outcome and message.
-		if f.snap.State != Finished && f.snap.State != Failed {
+		if f.snap.State == Queued || f.snap.State == Uploading {
 			r.setFileState(f, Failed, msg)
 		}
 	}
@@ -697,6 +701,8 @@ func (r *run) failUnfinished(msg string) {
 func (r *run) settleOutcome() {
 	u := r.u
 	switch {
+	case u.snap.FilesFailed == 0 && r.hasCanceledFiles():
+		u.snap.State = Canceled // a retry of some files of a canceled upload
 	case u.snap.FilesFailed == 0:
 		u.snap.State = Finished
 		u.snap.BytesSent = u.snap.BytesTotal
@@ -721,7 +727,7 @@ func (q *Queue) persistFile(_ *upload, f *fileState) { q.journal.fileChanged(fil
 func (q *Queue) publish(u *upload) {
 	u.lastPublish = q.now()
 	if q.visible(u) {
-		q.pushToSubs(u.snap)
+		q.pushToSubs(q.view(u))
 	}
 }
 
@@ -730,7 +736,7 @@ func (q *Queue) publish(u *upload) {
 func (q *Queue) publishFile(u *upload, f *fileState) {
 	f.lastPublish = q.now()
 	for sub := range q.fileSubs[u.snap.ID] {
-		sub.push(f.snap)
+		sub.push(q.fileView(f))
 	}
 }
 

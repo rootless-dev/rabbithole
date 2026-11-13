@@ -33,6 +33,13 @@ var (
 	ErrBadCredentials = errors.New("bad credentials")
 	// ErrNoNetwork means the request could not reach AWS.
 	ErrNoNetwork = errors.New("no network")
+	// ErrNoSuchUpload means S3 does not know a multipart upload id: it was
+	// aborted, completed or expired.
+	ErrNoSuchUpload = errors.New("multipart upload not found")
+	// ErrListPartsDenied means listing the parts of a multipart upload was
+	// denied (missing s3:ListMultipartUploadParts). It is not fatal: the file
+	// starts over.
+	ErrListPartsDenied = errors.New("listing parts denied")
 	// ErrFileUnreadable means the local file vanished, could not be opened, or
 	// ended before the size recorded at the start of the upload.
 	ErrFileUnreadable = errors.New("file unreadable")
@@ -74,6 +81,10 @@ type S3 interface {
 	UploadPart(ctx context.Context, key, uploadID string, number int32, body io.Reader, size int64) (etag string, err error)
 	CompleteMultipart(ctx context.Context, key, uploadID string, parts []CompletedPart) error
 	AbortMultipart(ctx context.Context, key, uploadID string) error
+	// ListParts returns every part S3 holds for a multipart upload, page after
+	// page. An id S3 does not know is reported as ErrNoSuchUpload and a denied
+	// call as ErrListPartsDenied.
+	ListParts(ctx context.Context, key, uploadID string) ([]HeldPart, error)
 	// DeleteObjects deletes up to MaxDeleteBatch objects by exact key in one
 	// request and returns the keys that are gone; a key that did not exist
 	// counts as gone. When it fails part-way, deleted still lists the keys

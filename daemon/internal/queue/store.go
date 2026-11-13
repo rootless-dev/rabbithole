@@ -5,6 +5,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"rabbithole/daemon/internal/uploader"
 )
 
 // InterruptedMessage is the error message of an upload, and of each of its
@@ -47,12 +49,21 @@ type ItemUpdate struct {
 	Resolved string
 }
 
+// MultipartChange sets, or with a nil Record clears, the record of the
+// multipart upload of one file.
+type MultipartChange struct {
+	UploadID string
+	Index    int // FileSnapshot.Index of the file
+	Record   *uploader.Multipart
+}
+
 // Changes is a batch of updates to rows that already exist. An update to a row
 // that does not exist, for example one removed in the meantime, is ignored.
 type Changes struct {
-	Uploads []UploadRecord
-	Items   []ItemUpdate
-	Files   []FileRecord
+	Uploads    []UploadRecord
+	Items      []ItemUpdate
+	Files      []FileRecord
+	Multiparts []MultipartChange
 }
 
 // Store keeps uploads and their files across runs. The queue is its only
@@ -68,6 +79,9 @@ type Store interface {
 	Items(uploadID string) ([]ItemRecord, error)
 	// Files returns the files of an upload in index order.
 	Files(uploadID string) ([]FileRecord, error)
+	// Multiparts returns the multipart records of an upload's files, by file
+	// index. A file with no record is absent.
+	Multiparts(uploadID string) (map[int]uploader.Multipart, error)
 	// FailInterrupted turns every stored upload that is queued or uploading, and
 	// each of its files that had not finished, into a failed one with message.
 	FailInterrupted(message string, at time.Time) error
@@ -94,6 +108,7 @@ type memStore struct {
 	uploads map[string]UploadRecord
 	items   map[string][]ItemRecord
 	files   map[string][]FileRecord
+	parts   map[fileKey]uploader.Multipart
 }
 
 func newMemStore() *memStore {
@@ -101,7 +116,20 @@ func newMemStore() *memStore {
 		uploads: map[string]UploadRecord{},
 		items:   map[string][]ItemRecord{},
 		files:   map[string][]FileRecord{},
+		parts:   map[fileKey]uploader.Multipart{},
 	}
+}
+
+func (m *memStore) Multiparts(id string) (map[int]uploader.Multipart, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[int]uploader.Multipart{}
+	for k, v := range m.parts {
+		if k.upload == id {
+			out[k.index] = v
+		}
+	}
+	return out, nil
 }
 
 func (m *memStore) CreateUpload(rec UploadRecord, items []ItemRecord, files []FileRecord) error {
@@ -135,7 +163,22 @@ func (m *memStore) Save(c Changes) error {
 			files[at] = rec
 		}
 	}
+	m.saveMultiparts(c.Multiparts)
 	return nil
+}
+
+// saveMultiparts applies multipart record changes; a record is kept only for a
+// file that exists. The caller holds m.mu.
+func (m *memStore) saveMultiparts(changes []MultipartChange) {
+	for _, ch := range changes {
+		key := fileKey{ch.UploadID, ch.Index}
+		switch {
+		case ch.Record == nil:
+			delete(m.parts, key)
+		case slices.ContainsFunc(m.files[ch.UploadID], func(f FileRecord) bool { return f.Snapshot.Index == ch.Index }):
+			m.parts[key] = *ch.Record
+		}
+	}
 }
 
 func (m *memStore) DeleteFiles(id string, indexes []int) error {
@@ -144,6 +187,9 @@ func (m *memStore) DeleteFiles(id string, indexes []int) error {
 	m.files[id] = slices.DeleteFunc(m.files[id], func(f FileRecord) bool {
 		return slices.Contains(indexes, f.Snapshot.Index)
 	})
+	for _, idx := range indexes {
+		delete(m.parts, fileKey{id, idx})
+	}
 	return nil
 }
 
@@ -193,6 +239,11 @@ func (m *memStore) DeleteUpload(id string) error {
 	delete(m.uploads, id)
 	delete(m.items, id)
 	delete(m.files, id)
+	for k := range m.parts {
+		if k.upload == id {
+			delete(m.parts, k)
+		}
+	}
 	m.order = sortedWithout(m.order, id)
 	return nil
 }
@@ -226,6 +277,7 @@ type journal struct {
 	uploads map[string]UploadRecord
 	items   map[fileKey]ItemUpdate
 	files   map[fileKey]FileRecord
+	parts   map[fileKey]MultipartChange
 }
 
 func newJournal(s Store, log Logger) *journal {
@@ -236,7 +288,17 @@ func newJournal(s Store, log Logger) *journal {
 		uploads: map[string]UploadRecord{},
 		items:   map[fileKey]ItemUpdate{},
 		files:   map[fileKey]FileRecord{},
+		parts:   map[fileKey]MultipartChange{},
 	}
+}
+
+// multipartChanged queues the multipart record of a file, or with a nil record
+// its removal.
+func (j *journal) multipartChanged(uploadID string, index int, rec *uploader.Multipart) {
+	j.mu.Lock()
+	j.parts[fileKey{uploadID, index}] = MultipartChange{UploadID: uploadID, Index: index, Record: rec}
+	j.mu.Unlock()
+	j.signal()
 }
 
 func (j *journal) uploadChanged(rec UploadRecord) {
@@ -284,12 +346,16 @@ func (j *journal) flush() {
 	for _, rec := range j.files {
 		c.Files = append(c.Files, rec)
 	}
+	for _, ch := range j.parts {
+		c.Multiparts = append(c.Multiparts, ch)
+	}
 	clear(j.uploads)
 	clear(j.items)
 	clear(j.files)
+	clear(j.parts)
 	j.mu.Unlock()
 
-	if len(c.Uploads)+len(c.Items)+len(c.Files) == 0 {
+	if len(c.Uploads)+len(c.Items)+len(c.Files)+len(c.Multiparts) == 0 {
 		return
 	}
 	sort.Slice(c.Files, func(a, b int) bool {

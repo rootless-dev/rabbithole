@@ -81,6 +81,13 @@ var objectStatuses = []struct {
 	{uploader.ErrWrongRegion, codes.FailedPrecondition},
 }
 
+// isBucketError reports whether err came from the bucket: a delete that failed,
+// or a multipart upload that could not be aborted.
+func isBucketError(err error) bool {
+	var fromBucket *objectError
+	return errors.As(err, &fromBucket) || errors.Is(err, queue.ErrMultipartAbort)
+}
+
 // removeStatus maps what Queue.Remove returns to a gRPC status.
 func (s *Server) removeStatus(id string, err error) error {
 	switch {
@@ -90,11 +97,12 @@ func (s *Server) removeStatus(id string, err error) error {
 		return status.Error(codes.NotFound, "unknown file")
 	case errors.Is(err, queue.ErrUploadActive):
 		return status.Error(codes.FailedPrecondition, "The upload is queued or running")
+	case errors.Is(err, queue.ErrUploadPaused):
+		return status.Error(codes.FailedPrecondition, "The upload is paused: resume or cancel it first")
 	case errors.Is(err, queue.ErrOtherBucket):
 		return status.Error(codes.FailedPrecondition, "This upload belongs to another bucket")
 	}
-	var fromBucket *objectError
-	if !errors.As(err, &fromBucket) {
+	if !isBucketError(err) {
 		s.log.Error("remove failed", "upload_id", id, "error", err.Error())
 		return status.Error(codes.Internal, "could not remove upload")
 	}

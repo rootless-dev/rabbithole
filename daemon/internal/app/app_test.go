@@ -551,9 +551,14 @@ const (
 // failingS3 is a fakeS3 whose part upload and abort fail with scripted errors.
 type failingS3 struct {
 	fakeS3
-	putErr   error
-	partErr  error
-	abortErr error
+	putErr      error
+	partErr     error
+	completeErr error
+	abortErr    error
+}
+
+func (f failingS3) CompleteMultipart(context.Context, string, string, []uploader.CompletedPart) error {
+	return f.completeErr
 }
 
 func (f failingS3) PutObject(context.Context, string, io.Reader, int64) error { return f.putErr }
@@ -671,7 +676,7 @@ func TestFailedClientConstructionLogsTheUploadFailure(t *testing.T) {
 }
 
 func TestFailedMultipartAbortIsLogged(t *testing.T) {
-	r, buf, settings := failureRunner(t, failingS3{partErr: uploader.ErrNoNetwork, abortErr: awsFailure("InternalError", 500)})
+	r, buf, settings := failureRunner(t, failingS3{completeErr: uploader.ErrPreconditionFailed, abortErr: awsFailure("InternalError", 500)})
 	file := filepath.Join(shortTempDir(t), "big.bin")
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -698,6 +703,31 @@ func TestFailedMultipartAbortIsLogged(t *testing.T) {
 	}
 }
 
+func TestRunnerAbortMultipartLogsAFailureWithoutLeakingCredentials(t *testing.T) {
+	r, buf, settings := failureRunner(t, failingS3{abortErr: awsFailure("InternalError", 500)})
+
+	err := r.AbortMultipart(context.Background(), settings, "p/big.bin", "upload-1")
+	if err == nil {
+		t.Fatal("expected the abort error to be returned")
+	}
+	lines := logLines(t, buf.String())
+	if len(lines) != 1 || lines[0]["msg"] != "multipart abort failed" || lines[0]["file"] != "big.bin" || lines[0]["aws_code"] != "InternalError" {
+		t.Fatalf("unexpected log output: %s", buf.String())
+	}
+	if out := buf.String(); strings.Contains(out, leakTestKeyID) || strings.Contains(out, leakTestSecret) {
+		t.Fatalf("log output leaks credentials: %s", out)
+	}
+}
+
+func TestRunnerAbortMultipartOfAnUnknownUploadIsNotAFailure(t *testing.T) {
+	r, buf, settings := failureRunner(t, failingS3{abortErr: uploader.ErrNoSuchUpload})
+
+	err := r.AbortMultipart(context.Background(), settings, "p/big.bin", "upload-1")
+	if !errors.Is(err, uploader.ErrNoSuchUpload) || buf.String() != "" {
+		t.Fatalf("err = %v, log = %q; want the error returned and nothing logged", err, buf.String())
+	}
+}
+
 // fakeS3 accepts every write and reports no existing objects.
 type fakeS3 struct{}
 
@@ -716,6 +746,9 @@ func (fakeS3) CompleteMultipart(context.Context, string, string, []uploader.Comp
 	return nil
 }
 func (fakeS3) AbortMultipart(context.Context, string, string) error { return nil }
+func (fakeS3) ListParts(context.Context, string, string) ([]uploader.HeldPart, error) {
+	return nil, nil
+}
 func (fakeS3) DeleteObjects(_ context.Context, keys []string) ([]string, error) {
 	return keys, nil
 }

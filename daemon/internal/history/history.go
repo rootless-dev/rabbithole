@@ -75,6 +75,20 @@ var migrations = []string{
 		error_message TEXT    NOT NULL,
 		PRIMARY KEY (upload_id, idx)
 	) WITHOUT ROWID;`,
+	// Version 2: what is needed to continue the multipart upload of a file.
+	// parts is a JSON list of {number, etag}. A row goes with its file.
+	`CREATE TABLE multiparts (
+		upload_id      TEXT    NOT NULL,
+		idx            INTEGER NOT NULL,
+		object_key     TEXT    NOT NULL,
+		s3_upload_id   TEXT    NOT NULL,
+		part_size      INTEGER NOT NULL,
+		file_size      INTEGER NOT NULL,
+		mod_time_ns    INTEGER NOT NULL,
+		parts          TEXT    NOT NULL,
+		PRIMARY KEY (upload_id, idx),
+		FOREIGN KEY (upload_id, idx) REFERENCES files (upload_id, idx) ON DELETE CASCADE
+	) WITHOUT ROWID;`,
 }
 
 // Store is the SQLite-backed history.
@@ -257,7 +271,10 @@ func (s *Store) Save(c queue.Changes) error {
 		if err := updateItems(tx, c.Items); err != nil {
 			return err
 		}
-		return updateFiles(tx, c.Files)
+		if err := updateFiles(tx, c.Files); err != nil {
+			return err
+		}
+		return saveMultiparts(tx, c.Multiparts)
 	})
 }
 

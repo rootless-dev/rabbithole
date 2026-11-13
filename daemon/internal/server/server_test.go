@@ -169,8 +169,13 @@ func newEnv(t *testing.T, r queue.Runner) *env { return newEnvWith(t, r) }
 
 func newEnvWith(t *testing.T, r queue.Runner, opts ...server.Option) *env {
 	t.Helper()
+	return newEnvOn(t, queue.New(r, time.Now), opts...)
+}
+
+// newEnvOn serves q, which the test built, over an in-memory connection.
+func newEnvOn(t *testing.T, q *queue.Queue, opts ...server.Option) *env {
+	t.Helper()
 	logs := &syncBuffer{}
-	q := queue.New(r, time.Now)
 	srv := server.New(q, logging.New(logs, "debug", "rabbitholed"), opts...)
 
 	lis := bufconn.Listen(1 << 20)

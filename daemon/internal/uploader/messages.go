@@ -37,6 +37,7 @@ var messages = []struct {
 	{ErrForbidden, "AWS denied the existence check: the access key needs the s3:ListBucket permission"},
 	{ErrWriteDenied, "AWS denied permission to write to the bucket"},
 	{ErrDeleteDenied, "AWS denied permission to delete from the bucket: the access key needs the s3:DeleteObject permission"},
+	{ErrListPartsDenied, "AWS denied listing the uploaded parts: the access key needs the s3:ListMultipartUploadParts permission"},
 	{ErrPreconditionFailed, "An object with this name appeared during the upload"},
 	{ErrNoFreeName, "Could not find a free name for this file"},
 	{ErrFileUnreadable, "File could not be read"},

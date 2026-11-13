@@ -152,6 +152,30 @@ func (c *client) AbortMultipart(ctx context.Context, key, uploadID string) error
 	return mapError(err)
 }
 
+// ListParts lists every part S3 holds for the multipart upload, one page at a
+// time. It needs s3:ListMultipartUploadParts: a denied call maps to
+// ErrListPartsDenied, and an upload id S3 does not know to ErrNoSuchUpload.
+func (c *client) ListParts(ctx context.Context, key, uploadID string) ([]uploader.HeldPart, error) {
+	pages := s3.NewListPartsPaginator(c.s3, &s3.ListPartsInput{
+		Bucket:   aws.String(c.bucket),
+		Key:      aws.String(key),
+		UploadId: aws.String(uploadID),
+	})
+	var held []uploader.HeldPart
+	for pages.HasMorePages() {
+		page, err := pages.NextPage(ctx)
+		if err != nil {
+			return nil, mapErrorWithDenial(err, uploader.ErrListPartsDenied)
+		}
+		for _, p := range page.Parts {
+			held = append(held, uploader.HeldPart{
+				Number: aws.ToInt32(p.PartNumber), ETag: aws.ToString(p.ETag), Size: aws.ToInt64(p.Size),
+			})
+		}
+	}
+	return held, nil
+}
+
 // DeleteObjects deletes the keys in one request. S3 reports a missing key as
 // deleted, and so does this: only a key S3 refused to delete is left out of
 // the result. The error never carries the text S3 sent back for a key.
@@ -278,6 +302,7 @@ const accessDeniedCode = "AccessDenied"
 // to the uploader sentinel that describes them.
 var sentinelByCode = map[string]error{
 	"NoSuchBucket":                 uploader.ErrBucketNotFound,
+	"NoSuchUpload":                 uploader.ErrNoSuchUpload,
 	"InvalidAccessKeyId":           uploader.ErrBadCredentials,
 	"SignatureDoesNotMatch":        uploader.ErrBadCredentials,
 	"PreconditionFailed":           uploader.ErrPreconditionFailed,

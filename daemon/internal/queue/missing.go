@@ -43,7 +43,7 @@ func (q *Queue) uploadsWithFinishedFiles(bucket string) []string {
 	var ids []string
 	for _, id := range q.known {
 		u := q.uploads[id]
-		if u.bucket == bucket && u.snap.FilesFinished > 0 && u.snap.State != Queued && u.snap.State != Uploading && !u.busy {
+		if u.bucket == bucket && u.snap.FilesFinished > 0 && u.snap.State != Queued && u.snap.State != Uploading && u.snap.State != Paused && !u.busy {
 			ids = append(ids, id)
 		}
 	}
@@ -81,10 +81,21 @@ func (q *Queue) ForgetMissing(bucket string, missing []FinishedFile) (int, error
 	return removed, nil
 }
 
+// notOursToTouch reports whether claiming an upload failed because the upload
+// is gone, busy, paused or of another bucket: reconciliation leaves it alone.
+func notOursToTouch(err error) bool {
+	for _, skip := range []error{ErrUnknownUpload, ErrUploadActive, ErrUploadPaused, ErrOtherBucket} {
+		if errors.Is(err, skip) {
+			return true
+		}
+	}
+	return false
+}
+
 func (q *Queue) forgetMissingOf(bucket, id string, missing map[FinishedFile]bool) (int, error) {
 	files, err := q.claim(id, bucket)
-	if errors.Is(err, ErrUnknownUpload) || errors.Is(err, ErrUploadActive) || errors.Is(err, ErrOtherBucket) {
-		return 0, nil // not ours to touch now
+	if notOursToTouch(err) {
+		return 0, nil
 	}
 	if err != nil {
 		return 0, err

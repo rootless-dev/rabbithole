@@ -29,6 +29,8 @@ type Server struct {
 	mu       sync.Mutex
 	settings uploader.Settings
 	hasConf  bool
+	// configuredOnce is set by the first successful Configure of the run.
+	configuredOnce bool
 }
 
 // Option changes how New builds a Server.
@@ -80,13 +82,21 @@ func (s *Server) Configure(_ context.Context, req *pb.ConfigureRequest) (*pb.Con
 	}
 	s.mu.Lock()
 	s.settings, s.hasConf = st, true
+	first := !s.configuredOnce
+	s.configuredOnce = true
 	s.mu.Unlock()
 	s.queue.SetBucket(st.Bucket)
+	s.queue.SetSettings(st)
 	if s.onConfigured != nil {
 		s.onConfigured(st)
 	}
-
 	s.log.Info("configured", "region", st.Region, "bucket", st.Bucket, "prefix", st.Prefix)
+
+	// Once per daemon run: the first Configure decides, whatever later ones say.
+	if first && req.GetResumeInterrupted() {
+		n := s.queue.ResumeInterrupted(st)
+		s.log.Info("interrupted uploads resumed", "uploads", n)
+	}
 	return &pb.ConfigureResponse{}, nil
 }
 
@@ -119,9 +129,9 @@ func (s *Server) retryStatus(id string, err error) error {
 	case errors.Is(err, queue.ErrUnknownFile):
 		return status.Error(codes.NotFound, "unknown file")
 	case errors.Is(err, queue.ErrUploadNotFailed):
-		return status.Error(codes.FailedPrecondition, "Only a failed upload can be retried")
+		return status.Error(codes.FailedPrecondition, "Only a failed or canceled upload can be retried")
 	case errors.Is(err, queue.ErrFileNotFailed):
-		return status.Error(codes.FailedPrecondition, "Only a failed file can be retried")
+		return status.Error(codes.FailedPrecondition, "Only a failed or canceled file can be retried")
 	case errors.Is(err, queue.ErrOtherBucket):
 		return status.Error(codes.FailedPrecondition, "This upload belongs to another bucket")
 	case errors.Is(err, queue.ErrUploadActive):
@@ -224,6 +234,7 @@ func toProto(s queue.Snapshot) *pb.UploadSnapshot {
 		BytesTotal:    s.BytesTotal,
 		BytesSent:     s.BytesSent,
 		State:         toProtoState(s.State),
+		PauseReason:   toProtoPauseReason(s.PauseReason),
 		ErrorMessage:  s.ErrorMessage,
 		Kind:          toProtoKind(s.Kind),
 		RootPaths:     s.RootPaths,
@@ -272,6 +283,17 @@ func toProtoKind(k queue.Kind) pb.UploadKind {
 	}
 }
 
+func toProtoPauseReason(r queue.PauseReason) pb.PauseReason {
+	switch r {
+	case queue.PausedByUser:
+		return pb.PauseReason_PAUSED_BY_USER
+	case queue.PausedOnHold:
+		return pb.PauseReason_PAUSED_ON_HOLD
+	default:
+		return pb.PauseReason_PAUSE_REASON_UNSPECIFIED
+	}
+}
+
 func toProtoState(s queue.State) pb.UploadState {
 	switch s {
 	case queue.Queued:
@@ -282,6 +304,10 @@ func toProtoState(s queue.State) pb.UploadState {
 		return pb.UploadState_FINISHED
 	case queue.Failed:
 		return pb.UploadState_FAILED
+	case queue.Paused:
+		return pb.UploadState_PAUSED
+	case queue.Canceled:
+		return pb.UploadState_CANCELED
 	default:
 		return pb.UploadState_UPLOAD_STATE_UNSPECIFIED
 	}
