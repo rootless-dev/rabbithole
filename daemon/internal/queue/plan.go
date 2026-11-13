@@ -53,6 +53,7 @@ type item struct {
 	path     string
 	isDir    bool
 	destName string // name inside this upload, unique among its items
+	resolved string // for a folder, the name it landed under at the destination; empty until known
 }
 
 // plannedFile is one file the upload will send.

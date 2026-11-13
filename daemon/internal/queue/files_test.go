@@ -339,21 +339,29 @@ func TestUnreadableEntryFailsWithoutCallingTheRunner(t *testing.T) {
 	// Mark the second entry the way the walk does for a directory it cannot read.
 	q.mu.Lock()
 	u := q.uploads[id]
-	u.files = append(u.files, &fileState{
+	locked := &fileState{
 		plan: plannedFile{local: filepath.Join(root, "d", "locked"), unreadable: true, item: 0, inner: "locked"},
 		snap: FileSnapshot{UploadID: id, Index: 1, RelativePath: "d/locked", State: Queued},
-	})
+	}
+	u.files = append(u.files, locked)
 	u.snap.FilesTotal = 2
 	q.mu.Unlock()
+	mem := q.store.(*memStore)
+	mem.mu.Lock()
+	mem.files[id] = append(mem.files[id], fileRecord(locked))
+	mem.mu.Unlock()
 	startRun(t, q)
 	last := collectUntil(t, updates, isTerminal)
 	got := last[len(last)-1]
 	if calls != 1 || got.ErrorMessage != "1 of 2 files could not be sent" {
 		t.Errorf("calls = %d, last = %+v", calls, got)
 	}
-	q.mu.Lock()
-	entry := q.uploads[id].files[1].snap
-	q.mu.Unlock()
+	initial, _, cancelFiles, err := q.SubscribeFiles(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancelFiles()
+	entry := initial[1]
 	if entry.State != Failed || entry.ErrorMessage != uploader.Message(uploader.ErrFileUnreadable) {
 		t.Errorf("unreadable entry = %+v, want Failed with %q", entry, uploader.Message(uploader.ErrFileUnreadable))
 	}

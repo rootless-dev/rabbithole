@@ -56,6 +56,11 @@ type Snapshot struct {
 	FilesTotal    int
 	FilesFinished int
 	FilesFailed   int
+	// Removed marks the last snapshot of an upload that left the history or
+	// belongs to a bucket that is no longer the configured one.
+	Removed   bool
+	CreatedAt time.Time
+	EndedAt   time.Time // zero while the upload has not ended
 }
 
 // FileSnapshot is the state of one file of an upload at one moment.
@@ -71,6 +76,8 @@ type FileSnapshot struct {
 	BytesSent    int64
 	State        State
 	ErrorMessage string
+	// Removed marks the last snapshot of a file that left its upload.
+	Removed bool
 }
 
 // Runner performs the upload of one file.
@@ -94,17 +101,25 @@ type fileState struct {
 type upload struct {
 	snap        Snapshot
 	settings    uploader.Settings
+	bucket      string
+	region      string
+	prefix      string
 	lastPublish time.Time
-	items       []item
-	files       []*fileState
 	parallel    int
+
+	// items and files are kept only while the upload is queued or running; once
+	// it ends they are read from the store when needed.
+	items []item
+	files []*fileState
 }
 
 // Queue runs enqueued uploads one after another and publishes snapshots.
 type Queue struct {
-	runner Runner
-	now    func() time.Time
-	wake   chan struct{} // capacity 1: signals Run that work may be waiting
+	runner  Runner
+	now     func() time.Time
+	wake    chan struct{} // capacity 1: signals Run that work may be waiting
+	store   Store
+	journal *journal
 
 	mu       sync.Mutex
 	uploads  map[string]*upload
@@ -112,6 +127,10 @@ type Queue struct {
 	waiting  []string // IDs not started yet, in FIFO order
 	subs     map[*uploadSub]struct{}
 	fileSubs map[string]map[*fileSub]struct{} // by upload ID
+	// filtered is set by SetBucket: from then on subscribers see only the
+	// uploads of bucket.
+	filtered bool
+	bucket   string
 }
 
 type (
@@ -119,15 +138,91 @@ type (
 	fileSub   = subscriber[int, FileSnapshot]
 )
 
+// Option changes how New builds a Queue.
+type Option func(*Queue)
+
+// WithStore makes the queue keep its uploads in s, and report a failed write
+// to log. Without it uploads live in memory only.
+func WithStore(s Store, log Logger) Option {
+	return func(q *Queue) {
+		q.store = s
+		q.journal = newJournal(s, log)
+	}
+}
+
 // New returns a Queue that runs uploads with r and reads the time from now.
-func New(r Runner, now func() time.Time) *Queue {
-	return &Queue{
+func New(r Runner, now func() time.Time, opts ...Option) *Queue {
+	q := &Queue{
 		runner:   r,
 		now:      now,
 		wake:     make(chan struct{}, 1),
 		uploads:  make(map[string]*upload),
 		subs:     make(map[*uploadSub]struct{}),
 		fileSubs: make(map[string]map[*fileSub]struct{}),
+	}
+	WithStore(newMemStore(), nopLogger{})(q)
+	for _, opt := range opts {
+		opt(q)
+	}
+	return q
+}
+
+// Restore loads the stored uploads. An upload that was queued or running when
+// the daemon last stopped was cut off: it becomes failed, with the files that
+// had not finished. Call it before Run and before any subscriber arrives.
+func (q *Queue) Restore() error {
+	if err := q.store.FailInterrupted(InterruptedMessage, q.now()); err != nil {
+		return fmt.Errorf("fail interrupted uploads: %w", err)
+	}
+	recs, err := q.store.Uploads()
+	if err != nil {
+		return fmt.Errorf("load uploads: %w", err)
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, rec := range recs {
+		id := rec.Snapshot.ID
+		q.uploads[id] = &upload{
+			snap: rec.Snapshot, bucket: rec.Bucket, region: rec.Region, prefix: rec.Prefix, parallel: rec.Parallel,
+		}
+		q.known = append(q.known, id)
+	}
+	return nil
+}
+
+// SetBucket makes bucket the one whose uploads subscribers see. Every
+// subscriber gets a removed snapshot for each upload of the bucket that was
+// current before, then a snapshot of each upload of the new one.
+func (q *Queue) SetBucket(bucket string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	was, old := q.filtered, q.bucket
+	if was && old == bucket {
+		return
+	}
+	q.filtered, q.bucket = true, bucket
+	for _, id := range q.known {
+		if u := q.uploads[id]; was && u.bucket == old {
+			snap := u.snap
+			snap.Removed = true
+			q.pushToSubs(snap)
+		}
+	}
+	for _, id := range q.known {
+		if u := q.uploads[id]; u.bucket == bucket {
+			q.pushToSubs(u.snap)
+		}
+	}
+}
+
+// visible reports whether subscribers see u. The caller holds q.mu.
+func (q *Queue) visible(u *upload) bool {
+	return !q.filtered || u.bucket == q.bucket
+}
+
+func (q *Queue) pushToSubs(s Snapshot) {
+	for sub := range q.subs {
+		sub.push(s)
 	}
 }
 
@@ -145,6 +240,9 @@ func (q *Queue) Enqueue(s uploader.Settings, req EnqueueRequest) (string, error)
 
 	u := &upload{
 		settings: s,
+		bucket:   s.Bucket,
+		region:   s.Region,
+		prefix:   s.Prefix,
 		items:    p.items,
 		parallel: clampParallel(req.ParallelFiles),
 		snap: Snapshot{
@@ -154,6 +252,7 @@ func (q *Queue) Enqueue(s uploader.Settings, req EnqueueRequest) (string, error)
 			State:      Queued,
 			Kind:       p.kind,
 			FilesTotal: len(p.files),
+			CreatedAt:  q.now(),
 		},
 	}
 	for _, it := range p.items {
@@ -169,6 +268,12 @@ func (q *Queue) Enqueue(s uploader.Settings, req EnqueueRequest) (string, error)
 			BytesTotal:   pf.size,
 			State:        Queued,
 		}})
+	}
+
+	// Stored before the upload can run, in one step and outside the lock, so
+	// a plan of tens of thousands of files never holds up the subscribers.
+	if err := q.store.CreateUpload(recordOf(u), itemRecords(u.items), fileRecords(u.files)); err != nil {
+		q.journal.log.Warn("could not save upload history", "upload_id", id, "error", err.Error())
 	}
 
 	q.mu.Lock()
@@ -195,7 +300,9 @@ func (q *Queue) Subscribe() (initial []Snapshot, updates <-chan Snapshot, cancel
 	q.mu.Lock()
 	initial = make([]Snapshot, 0, len(q.known))
 	for _, id := range q.known {
-		initial = append(initial, q.uploads[id].snap)
+		if u := q.uploads[id]; q.visible(u) {
+			initial = append(initial, u.snap)
+		}
 	}
 	q.subs[sub] = struct{}{}
 	q.mu.Unlock()
@@ -210,20 +317,39 @@ func (q *Queue) Subscribe() (initial []Snapshot, updates <-chan Snapshot, cancel
 	}
 }
 
-// SubscribeFiles is Subscribe for the files of one upload. It returns
-// ErrUnknownUpload when no upload has that id.
+// SubscribeFiles is Subscribe for the files of one upload, whatever its bucket.
+// The files of an upload that is not queued or running are read from the
+// store. It returns ErrUnknownUpload when no upload has that id.
 func (q *Queue) SubscribeFiles(id string) (initial []FileSnapshot, updates <-chan FileSnapshot, cancel func(), err error) {
 	sub := newSubscriber(func(s FileSnapshot) int { return s.Index })
 
-	q.mu.Lock()
-	u, ok := q.uploads[id]
-	if !ok {
+	var stored []FileRecord
+	for {
+		q.mu.Lock()
+		u, ok := q.uploads[id]
+		switch {
+		case !ok:
+			q.mu.Unlock()
+			return nil, nil, nil, ErrUnknownUpload
+		case u.files != nil:
+			initial = filesSnapshots(u.files)
+		case stored != nil:
+			initial = recordSnapshots(stored)
+		}
+		if initial != nil {
+			break // still holding q.mu
+		}
 		q.mu.Unlock()
-		return nil, nil, nil, ErrUnknownUpload
-	}
-	initial = make([]FileSnapshot, 0, len(u.files))
-	for _, f := range u.files {
-		initial = append(initial, f.snap)
+
+		// Outside the lock: a read from disk must not hold up the queue. The
+		// journal is flushed first so the read sees what the upload just did.
+		q.journal.flush()
+		if stored, err = q.store.Files(id); err != nil {
+			return nil, nil, nil, fmt.Errorf("load files: %w", err)
+		}
+		if stored == nil {
+			stored = []FileRecord{}
+		}
 	}
 	if q.fileSubs[id] == nil {
 		q.fileSubs[id] = make(map[*fileSub]struct{})
@@ -244,6 +370,17 @@ func (q *Queue) SubscribeFiles(id string) (initial []FileSnapshot, updates <-cha
 // Run processes the queue in order until ctx is cancelled and the current
 // upload has stopped.
 func (q *Queue) Run(ctx context.Context) {
+	stopWriter := make(chan struct{})
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		q.journal.loop(stopWriter)
+	}()
+	defer func() {
+		close(stopWriter)
+		<-writerDone // what the last upload recorded is stored before Run returns
+	}()
+
 	for ctx.Err() == nil {
 		id, ok := q.next()
 		if !ok {
@@ -286,11 +423,18 @@ func (q *Queue) process(ctx context.Context, id string) {
 	u := q.uploads[id]
 	u.snap.State = Uploading
 	q.publish(u)
+	q.persistUpload(u)
+	folders := map[int]string{}
+	for i, it := range u.items {
+		if it.resolved != "" {
+			folders[i] = it.resolved
+		}
+	}
 	q.mu.Unlock()
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	r := &run{q: q, u: u, ctx: runCtx, cancel: cancel, folders: map[int]string{}, folderErr: map[int]error{}}
+	r := &run{q: q, u: u, ctx: runCtx, cancel: cancel, folders: folders, folderErr: map[int]error{}}
 
 	r.resolveFolders()
 	r.sendFiles()
@@ -301,7 +445,7 @@ func (q *Queue) process(ctx context.Context, id string) {
 func (r *run) resolveFolders() {
 	resolver, canResolve := r.q.runner.(FolderResolver)
 	for i, it := range r.u.items {
-		if !it.isDir || r.ctx.Err() != nil {
+		if !it.isDir || it.resolved != "" || r.ctx.Err() != nil {
 			continue
 		}
 		name := it.destName
@@ -321,9 +465,12 @@ func (r *run) resolveFolders() {
 		}
 		r.q.mu.Lock()
 		r.folders[i] = name
+		r.u.items[i].resolved = name
+		r.q.journal.itemResolved(ItemUpdate{UploadID: r.u.snap.ID, Index: i, Resolved: name})
 		if r.u.snap.Kind == Folder {
 			r.u.snap.ObjectKey = r.u.settings.Prefix + name + "/"
 			r.q.publish(r.u)
+			r.q.persistUpload(r.u)
 		}
 		r.q.mu.Unlock()
 	}
@@ -353,6 +500,9 @@ func (r *run) sendFiles() {
 	}
 dispatch:
 	for _, f := range r.u.files {
+		if f.snap.State != Queued {
+			continue // a retry sends only the files it put back in the queue
+		}
 		select {
 		case jobs <- f:
 		case <-r.ctx.Done():
@@ -490,6 +640,10 @@ func (r *run) setFileState(f *fileState, state State, msg string) {
 	f.snap.State, f.snap.ErrorMessage = state, msg
 	r.q.publishFile(r.u, f)
 	r.q.publish(r.u)
+	if state == Finished || state == Failed {
+		r.q.persistFile(r.u, f)
+		r.q.persistUpload(r.u)
+	}
 }
 
 // finish settles every file that did not finish and the upload itself.
@@ -506,18 +660,33 @@ func (r *run) finish(parent context.Context) {
 		stopped = parent.Err()
 	}
 	if stopped != nil {
-		msg := uploader.Message(stopped)
-		for _, f := range u.files {
-			// A file that already ended keeps its own outcome and message.
-			if f.snap.State != Finished && f.snap.State != Failed {
-				r.setFileState(f, Failed, msg)
-			}
-		}
-		u.snap.State, u.snap.ErrorMessage = Failed, msg
-		q.publish(u)
-		return
+		r.failUnfinished(uploader.Message(stopped))
+	} else {
+		r.settleOutcome()
 	}
+	u.snap.EndedAt = q.now()
+	q.publish(u)
+	q.persistUpload(u)
+	// From here on the files are read from the store, not kept in memory.
+	u.files, u.items = nil, nil
+}
 
+// failUnfinished fails the upload with msg, and every file that did not end.
+// The caller holds q.mu.
+func (r *run) failUnfinished(msg string) {
+	for _, f := range r.u.files {
+		// A file that already ended keeps its own outcome and message.
+		if f.snap.State != Finished && f.snap.State != Failed {
+			r.setFileState(f, Failed, msg)
+		}
+	}
+	r.u.snap.State, r.u.snap.ErrorMessage = Failed, msg
+}
+
+// settleOutcome sets the final state of an upload that ran to the end. The
+// caller holds q.mu.
+func (r *run) settleOutcome() {
+	u := r.u
 	switch {
 	case u.snap.FilesFailed == 0:
 		u.snap.State = Finished
@@ -528,15 +697,63 @@ func (r *run) finish(parent context.Context) {
 		u.snap.State = Failed
 		u.snap.ErrorMessage = fmt.Sprintf("%d of %d files could not be sent", u.snap.FilesFailed, u.snap.FilesTotal)
 	}
-	q.publish(u)
 }
+
+// recordOf is the stored form of an upload.
+func recordOf(u *upload) UploadRecord {
+	return UploadRecord{Snapshot: u.snap, Bucket: u.bucket, Region: u.region, Prefix: u.prefix, Parallel: u.parallel}
+}
+
+func itemRecords(items []item) []ItemRecord {
+	out := make([]ItemRecord, len(items))
+	for i, it := range items {
+		out[i] = ItemRecord{Index: i, Path: it.path, IsDir: it.isDir, DestName: it.destName, Resolved: it.resolved}
+	}
+	return out
+}
+
+func fileRecord(f *fileState) FileRecord {
+	return FileRecord{Snapshot: f.snap, Item: f.plan.item, Inner: f.plan.inner, Unreadable: f.plan.unreadable}
+}
+
+func fileRecords(files []*fileState) []FileRecord {
+	out := make([]FileRecord, len(files))
+	for i, f := range files {
+		out[i] = fileRecord(f)
+	}
+	return out
+}
+
+func filesSnapshots(files []*fileState) []FileSnapshot {
+	out := make([]FileSnapshot, 0, len(files))
+	for _, f := range files {
+		out = append(out, f.snap)
+	}
+	return out
+}
+
+func recordSnapshots(recs []FileRecord) []FileSnapshot {
+	out := make([]FileSnapshot, 0, len(recs))
+	for _, r := range recs {
+		out = append(out, r.Snapshot)
+	}
+	return out
+}
+
+// persistUpload queues the upload's current state for the store. The caller
+// holds q.mu. It never waits for the store.
+func (q *Queue) persistUpload(u *upload) { q.journal.uploadChanged(recordOf(u)) }
+
+// persistFile queues the file's current state for the store. The caller holds
+// q.mu. It never waits for the store.
+func (q *Queue) persistFile(_ *upload, f *fileState) { q.journal.fileChanged(fileRecord(f)) }
 
 // publish hands the upload's current snapshot to every subscriber. The caller
 // holds q.mu. It never blocks.
 func (q *Queue) publish(u *upload) {
 	u.lastPublish = q.now()
-	for sub := range q.subs {
-		sub.push(u.snap)
+	if q.visible(u) {
+		q.pushToSubs(u.snap)
 	}
 }
 

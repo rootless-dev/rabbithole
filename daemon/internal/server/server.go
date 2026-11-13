@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -30,6 +31,8 @@ type Server struct {
 
 // New returns a Server that enqueues uploads on q.
 func New(q *queue.Queue, log *logging.Logger) *Server {
+	// Until Configure names a bucket no upload is shown.
+	q.SetBucket("")
 	return &Server{queue: q, log: log}
 }
 
@@ -59,9 +62,49 @@ func (s *Server) Configure(_ context.Context, req *pb.ConfigureRequest) (*pb.Con
 	s.mu.Lock()
 	s.settings, s.hasConf = st, true
 	s.mu.Unlock()
+	s.queue.SetBucket(st.Bucket)
 
 	s.log.Info("configured", "region", st.Region, "bucket", st.Bucket, "prefix", st.Prefix)
 	return &pb.ConfigureResponse{}, nil
+}
+
+// RetryUpload sends failed files of a failed upload again, with the settings
+// in force now.
+func (s *Server) RetryUpload(_ context.Context, req *pb.RetryUploadRequest) (*pb.RetryUploadResponse, error) {
+	s.mu.Lock()
+	st, ok := s.settings, s.hasConf
+	s.mu.Unlock()
+	if !ok {
+		return nil, status.Error(codes.FailedPrecondition, "daemon is not configured: call Configure first")
+	}
+	indexes := make([]int, len(req.GetFileIndexes()))
+	for i, idx := range req.GetFileIndexes() {
+		indexes[i] = int(idx)
+	}
+
+	if err := s.queue.Retry(st, req.GetUploadId(), indexes); err != nil {
+		return nil, s.retryStatus(req.GetUploadId(), err)
+	}
+	s.log.Info("upload retried", "upload_id", req.GetUploadId(), "files", len(indexes))
+	return &pb.RetryUploadResponse{}, nil
+}
+
+// retryStatus maps what Queue.Retry returns to a gRPC status.
+func (s *Server) retryStatus(id string, err error) error {
+	switch {
+	case errors.Is(err, queue.ErrUnknownUpload):
+		return status.Error(codes.NotFound, "unknown upload")
+	case errors.Is(err, queue.ErrUnknownFile):
+		return status.Error(codes.NotFound, "unknown file")
+	case errors.Is(err, queue.ErrUploadNotFailed):
+		return status.Error(codes.FailedPrecondition, "Only a failed upload can be retried")
+	case errors.Is(err, queue.ErrFileNotFailed):
+		return status.Error(codes.FailedPrecondition, "Only a failed file can be retried")
+	case errors.Is(err, queue.ErrOtherBucket):
+		return status.Error(codes.FailedPrecondition, "This upload belongs to another bucket")
+	}
+	s.log.Error("retry failed", "upload_id", id, "error", err.Error())
+	return status.Error(codes.Internal, "could not retry upload")
 }
 
 // EnqueueUpload queues the file at local_path with the settings in force now.
@@ -105,8 +148,11 @@ func (s *Server) EnqueueUpload(_ context.Context, req *pb.EnqueueUploadRequest) 
 func (s *Server) WatchUploadFiles(req *pb.WatchUploadFilesRequest, stream pb.Daemon_WatchUploadFilesServer) error {
 	initial, updates, cancel, err := s.queue.SubscribeFiles(req.GetUploadId())
 	if err != nil {
-		// ErrUnknownUpload is the only error SubscribeFiles returns.
-		return status.Error(codes.NotFound, "unknown upload")
+		if errors.Is(err, queue.ErrUnknownUpload) {
+			return status.Error(codes.NotFound, "unknown upload")
+		}
+		s.log.Error("could not read files", "upload_id", req.GetUploadId(), "error", err.Error())
+		return status.Error(codes.Internal, "could not read the files of the upload")
 	}
 	defer cancel()
 	return relay(stream.Context(), initial, updates, func(f queue.FileSnapshot) error {
@@ -160,7 +206,18 @@ func toProto(s queue.Snapshot) *pb.UploadSnapshot {
 		FilesTotal:    int32(s.FilesTotal),
 		FilesFinished: int32(s.FilesFinished),
 		FilesFailed:   int32(s.FilesFailed),
+		Removed:       s.Removed,
+		CreatedAtMs:   millis(s.CreatedAt),
+		EndedAtMs:     millis(s.EndedAt),
 	}
+}
+
+// millis is t in milliseconds since the Unix epoch; zero for the zero time.
+func millis(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
 }
 
 func toProtoFile(f queue.FileSnapshot) *pb.FileSnapshot {
@@ -174,6 +231,7 @@ func toProtoFile(f queue.FileSnapshot) *pb.FileSnapshot {
 		BytesSent:    f.BytesSent,
 		State:        toProtoState(f.State),
 		ErrorMessage: f.ErrorMessage,
+		Removed:      f.Removed,
 	}
 }
 

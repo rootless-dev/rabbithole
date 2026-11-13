@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -21,6 +22,7 @@ import (
 
 	"rabbithole/daemon/internal/awss3"
 	pb "rabbithole/daemon/internal/gen/rabbithole/v1"
+	"rabbithole/daemon/internal/history"
 	"rabbithole/daemon/internal/logging"
 	"rabbithole/daemon/internal/queue"
 	"rabbithole/daemon/internal/server"
@@ -92,7 +94,7 @@ func silenceGRPCLog() {
 }
 
 func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, opts options) int {
-	socketPath, err := parseArgs(args)
+	cfg, err := parseArgs(args)
 	if err != nil {
 		logging.BootError(stderr, serviceName, err)
 		return exitUsage
@@ -103,18 +105,36 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 
 	silenceGRPCLog()
 
-	ln, socketInfo, err := listenUnix(socketPath, opts.listen)
+	store, err := history.Open(cfg.database)
 	if err != nil {
 		logging.BootError(stderr, serviceName, err)
 		return exitError
 	}
+	ln, socketInfo, err := listenUnix(cfg.socket, opts.listen)
+	if err != nil {
+		_ = store.Close()
+		logging.BootError(stderr, serviceName, err)
+		return exitError
+	}
 
-	svc := startServices(ctx, ln, opts.runner, log)
-	log.Info("listening", "socket", socketPath)
+	svc, err := startServices(ctx, ln, opts.runner, store, log)
+	if err != nil {
+		_ = ln.Close()
+		_ = store.Close()
+		removeOwnSocket(log, cfg.socket, socketInfo)
+		logging.BootError(stderr, serviceName, err)
+		return exitError
+	}
+	log.Info("listening", "socket", cfg.socket, "database", cfg.database)
 	code := awaitShutdown(ctx, log, stdin, opts.signals, svc.serveErr)
-	svc.stop(log)
+	if svc.stop(log) {
+		// Closed only once nothing can write to it any more.
+		if err := store.Close(); err != nil {
+			log.Warn("could not close database", "error", err.Error())
+		}
+	}
 
-	removeOwnSocket(log, socketPath, socketInfo)
+	removeOwnSocket(log, cfg.socket, socketInfo)
 	log.Info("stopped")
 	return code
 }
@@ -128,9 +148,13 @@ type services struct {
 	serveErr      <-chan error    // receives the error that ended Serve
 }
 
-// startServices starts the queue and serves the gRPC API on ln.
-func startServices(ctx context.Context, ln net.Listener, r queue.Runner, log *logging.Logger) *services {
-	q := queue.New(r, time.Now)
+// startServices loads the stored history, starts the queue and serves the gRPC
+// API on ln.
+func startServices(ctx context.Context, ln net.Listener, r queue.Runner, store queue.Store, log *logging.Logger) (*services, error) {
+	q := queue.New(r, time.Now, queue.WithStore(store, log))
+	if err := q.Restore(); err != nil {
+		return nil, fmt.Errorf("load upload history: %w", err)
+	}
 	grpcServer := grpc.NewServer()
 	pb.RegisterDaemonServer(grpcServer, server.New(q, log))
 
@@ -143,7 +167,7 @@ func startServices(ctx context.Context, ln net.Listener, r queue.Runner, log *lo
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- grpcServer.Serve(ln) }()
 
-	return &services{grpcServer: grpcServer, cancelUploads: cancelUploads, queueDone: queueDone, serveErr: serveErr}
+	return &services{grpcServer: grpcServer, cancelUploads: cancelUploads, queueDone: queueDone, serveErr: serveErr}, nil
 }
 
 // awaitShutdown blocks until something ends the daemon, logs what it was and
@@ -170,8 +194,9 @@ func awaitShutdown(ctx context.Context, log *logging.Logger, stdin io.Reader, si
 }
 
 // stop cancels the uploads and stops the server, waiting for both at most
-// shutdownTimeout, counted from this call.
-func (s *services) stop(log *logging.Logger) {
+// shutdownTimeout, counted from this call. It reports whether the queue, the
+// only writer of the history, has stopped.
+func (s *services) stop(log *logging.Logger) bool {
 	deadline, cancelDeadline := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancelDeadline()
 
@@ -189,22 +214,37 @@ func (s *services) stop(log *logging.Logger) {
 	s.grpcServer.Stop()
 	select {
 	case <-s.queueDone:
+		return true
 	case <-deadline.Done():
 		log.Warn("upload did not stop before the deadline")
+		return false
 	}
 }
 
-// parseArgs reads --socket from args. Flag errors are returned instead of
-// printed so the caller can emit them as a single JSON line.
-func parseArgs(args []string) (string, error) {
+// config is what the command line selects.
+type config struct {
+	socket   string
+	database string
+}
+
+// databaseFile is the name of the history database next to the socket.
+const databaseFile = "history.db"
+
+// parseArgs reads --socket and --database from args. Flag errors are returned
+// instead of printed so the caller can emit them as a single JSON line.
+func parseArgs(args []string) (config, error) {
 	fs := flag.NewFlagSet(serviceName, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	socket := fs.String("socket", "", "path of the Unix socket to listen on")
+	database := fs.String("database", "", "path of the history database (default: "+databaseFile+" next to the socket)")
 	if err := fs.Parse(args); err != nil {
-		return "", err
+		return config{}, err
 	}
 	if *socket == "" {
-		return "", errors.New("missing required flag --socket")
+		return config{}, errors.New("missing required flag --socket")
 	}
-	return *socket, nil
+	if *database == "" {
+		*database = filepath.Join(filepath.Dir(*socket), databaseFile)
+	}
+	return config{socket: *socket, database: *database}, nil
 }
