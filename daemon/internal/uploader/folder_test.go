@@ -72,6 +72,70 @@ func TestResolveFolderReportsDeniedListing(t *testing.T) {
 	}
 }
 
+// everyPrefixTaken reports every prefix as in use.
+type everyPrefixTaken struct {
+	*fakeS3
+	checks int
+	onCall func(checks int)
+}
+
+func (e *everyPrefixTaken) PrefixExists(context.Context, string) (bool, error) {
+	e.checks++
+	if e.onCall != nil {
+		e.onCall(e.checks)
+	}
+	return true, nil
+}
+
+func TestResolveFolderGivesUpAfterAThousandTakenNames(t *testing.T) {
+	fake := &everyPrefixTaken{fakeS3: newFake()}
+	_, err := newUploader().ResolveFolder(context.Background(), fake, "p/", "photos")
+	if !errors.Is(err, ErrNoFreeName) {
+		t.Fatalf("err = %v, want ErrNoFreeName", err)
+	}
+	if fake.checks != maxKeyAttempts {
+		t.Fatalf("prefix checks = %d, want %d", fake.checks, maxKeyAttempts)
+	}
+}
+
+func TestResolveFolderStopsWhenCancelledBetweenCandidates(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fake := &everyPrefixTaken{fakeS3: newFake(), onCall: func(checks int) {
+		if checks == 2 {
+			cancel()
+		}
+	}}
+	_, err := newUploader().ResolveFolder(ctx, fake, "p/", "photos")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if fake.checks != 2 {
+		t.Fatalf("prefix checks = %d, want 2", fake.checks)
+	}
+}
+
+// cancelDuringListing cancels the context while a listing is in flight and
+// fails it with an error of its own, as an SDK that wraps cancellation does.
+type cancelDuringListing struct {
+	*fakeS3
+	cancel context.CancelFunc
+}
+
+func (c *cancelDuringListing) PrefixExists(context.Context, string) (bool, error) {
+	c.cancel()
+	return false, errors.New("request aborted")
+}
+
+func TestResolveFolderReportsTheContextErrorWhenTheListingFailsAfterCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, err := newUploader().ResolveFolder(ctx, &cancelDuringListing{fakeS3: newFake(), cancel: cancel}, "p/", "photos")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
 func TestSkipExistenceCheckGoesStraightToThePut(t *testing.T) {
 	path := sparseFile(t, "a.txt", 10)
 	fake := newFake()

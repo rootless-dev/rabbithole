@@ -214,19 +214,11 @@ func TestWatchUploadFilesUnknownUploadIsNotFound(t *testing.T) {
 func TestWatchUploadFilesEndsWhenClientContextEnds(t *testing.T) {
 	root := writeTree(t, "a.txt")
 	e := configured(t, noopRunner())
-	resp, err := e.client.EnqueueUpload(ctxT(t), &pb.EnqueueUploadRequest{LocalPath: filepath.Join(root, "a.txt")})
+	resp, err := e.server.EnqueueUpload(ctxT(t), &pb.EnqueueUploadRequest{LocalPath: filepath.Join(root, "a.txt")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(ctxT(t))
-	stream, err := e.client.WatchUploadFiles(ctx, &pb.WatchUploadFilesRequest{UploadId: resp.GetUploadId()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := stream.Recv(); err != nil {
-		t.Fatal(err)
-	}
-	cancel()
-	_, err = stream.Recv()
-	wantCode(t, err, codes.Canceled)
+	assertHandlerReturnsWhenClientGoesAway(t, func(stream *fakeStream[*pb.FileSnapshot]) error {
+		return e.server.WatchUploadFiles(&pb.WatchUploadFilesRequest{UploadId: resp.GetUploadId()}, stream)
+	})
 }

@@ -63,29 +63,32 @@ func newClient(s uploader.Settings, httpClient s3.HTTPClient) (uploader.S3, erro
 // lexicographically, so an exact match is always the first result for its own
 // prefix.
 func (c *client) ObjectExists(ctx context.Context, key string) (bool, error) {
-	out, err := c.s3.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-		Bucket:  aws.String(c.bucket),
-		Prefix:  aws.String(key),
-		MaxKeys: aws.Int32(1),
-	})
-	if err != nil {
-		return false, mapErrorWithDenial(err, uploader.ErrForbidden)
-	}
-	return len(out.Contents) > 0 && aws.ToString(out.Contents[0].Key) == key, nil
+	first, found, err := c.firstKeyUnder(ctx, key)
+	return found && first == key, err
 }
 
 // PrefixExists reports whether any object lives under prefix. Like
 // ObjectExists it needs only s3:ListBucket.
 func (c *client) PrefixExists(ctx context.Context, prefix string) (bool, error) {
+	_, found, err := c.firstKeyUnder(ctx, prefix)
+	return found, err
+}
+
+// firstKeyUnder lists at most one key under prefix and returns it; found is
+// false when there is none. A denied listing maps to ErrForbidden.
+func (c *client) firstKeyUnder(ctx context.Context, prefix string) (key string, found bool, err error) {
 	out, err := c.s3.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 		Bucket:  aws.String(c.bucket),
 		Prefix:  aws.String(prefix),
 		MaxKeys: aws.Int32(1),
 	})
 	if err != nil {
-		return false, mapErrorWithDenial(err, uploader.ErrForbidden)
+		return "", false, mapErrorWithDenial(err, uploader.ErrForbidden)
 	}
-	return len(out.Contents) > 0, nil
+	if len(out.Contents) == 0 {
+		return "", false, nil
+	}
+	return aws.ToString(out.Contents[0].Key), true, nil
 }
 
 func (c *client) PutObject(ctx context.Context, key string, body io.Reader, size int64) error {

@@ -54,8 +54,99 @@ func (b *syncBuffer) String() string {
 
 type env struct {
 	client pb.DaemonClient
+	server *server.Server // the same server the client talks to, for calling handlers directly
 	queue  *queue.Queue
 	logs   *syncBuffer
+}
+
+// fakeStream is the server side of a watch stream: it records what is sent and
+// reports the context it is given, so a test can end the stream without gRPC.
+type fakeStream[T any] struct {
+	grpc.ServerStream
+	ctx  context.Context
+	sent chan T
+	// failOn, when above zero, makes the failOn-th Send fail with errSendFailed.
+	failOn int
+	calls  int
+}
+
+var errSendFailed = errors.New("send failed")
+
+func newFakeStream[T any](ctx context.Context) *fakeStream[T] {
+	return &fakeStream[T]{ctx: ctx, sent: make(chan T, 64)}
+}
+
+func (s *fakeStream[T]) Context() context.Context { return s.ctx }
+
+func (s *fakeStream[T]) Send(v T) error {
+	s.calls++
+	if s.calls == s.failOn {
+		return errSendFailed
+	}
+	s.sent <- v
+	return nil
+}
+
+func TestWatchReturnsTheErrorOfAFailedSend(t *testing.T) {
+	for name, failOn := range map[string]int{"replayed snapshot": 1, "live update": 2} {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t, noopRunner())
+			if _, err := e.server.Configure(ctxT(t), validConfig()); err != nil {
+				t.Fatal(err)
+			}
+			enqueue := func() {
+				if _, err := e.server.EnqueueUpload(ctxT(t), &pb.EnqueueUploadRequest{LocalPath: writeFile(t, "a.txt", "x")}); err != nil {
+					t.Error(err)
+				}
+			}
+			enqueue()
+			stream := newFakeStream[*pb.UploadSnapshot](ctxT(t))
+			stream.failOn = failOn
+			done := make(chan error, 1)
+			go func() { done <- e.server.WatchUploads(&pb.WatchUploadsRequest{}, stream) }()
+			if failOn == 2 {
+				<-stream.sent // the replay is out, so the handler is waiting for updates
+				enqueue()
+			}
+			select {
+			case err := <-done:
+				if !errors.Is(err, errSendFailed) {
+					t.Fatalf("handler returned %v, want the send error", err)
+				}
+			case <-time.After(testTimeout):
+				t.Fatal("handler did not return after a failed send")
+			}
+		})
+	}
+}
+
+// assertHandlerReturnsWhenClientGoesAway runs a watch handler on a fake stream,
+// waits for its first message, ends the stream's context, and requires the
+// handler itself to return with the context's error.
+func assertHandlerReturnsWhenClientGoesAway[T any](t *testing.T, handler func(stream *fakeStream[T]) error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := newFakeStream[T](ctx)
+	done := make(chan error, 1)
+	go func() { done <- handler(stream) }()
+
+	select {
+	case <-stream.sent:
+	case err := <-done:
+		t.Fatalf("handler returned before the client went away: %v", err)
+	case <-time.After(testTimeout):
+		t.Fatal("handler sent nothing")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("handler returned %v, want context.Canceled", err)
+		}
+	case <-time.After(testTimeout):
+		t.Fatal("handler did not return after the client went away")
+	}
 }
 
 // startQueue runs the queue until the test ends. Tests call it when they want
@@ -95,7 +186,7 @@ func newEnv(t *testing.T, r queue.Runner) *env {
 		_ = conn.Close()
 		gs.Stop()
 	})
-	return &env{client: pb.NewDaemonClient(conn), queue: q, logs: logs}
+	return &env{client: pb.NewDaemonClient(conn), server: srv, queue: q, logs: logs}
 }
 
 func noopRunner() queue.Runner {
@@ -332,14 +423,15 @@ func TestWatchReplaysExistingUploadsOnSubscribe(t *testing.T) {
 
 func TestWatchEndsWhenClientContextEnds(t *testing.T) {
 	e := newEnv(t, noopRunner())
-	ctx, cancel := context.WithCancel(ctxT(t))
-	stream, err := e.client.WatchUploads(ctx, &pb.WatchUploadsRequest{})
-	if err != nil {
+	if _, err := e.server.Configure(ctxT(t), validConfig()); err != nil {
 		t.Fatal(err)
 	}
-	cancel()
-	_, err = stream.Recv()
-	wantCode(t, err, codes.Canceled)
+	if _, err := e.server.EnqueueUpload(ctxT(t), &pb.EnqueueUploadRequest{LocalPath: writeFile(t, "a.txt", "x")}); err != nil {
+		t.Fatal(err)
+	}
+	assertHandlerReturnsWhenClientGoesAway(t, func(stream *fakeStream[*pb.UploadSnapshot]) error {
+		return e.server.WatchUploads(&pb.WatchUploadsRequest{}, stream)
+	})
 }
 
 func TestSettingsCapturedAtEnqueue(t *testing.T) {

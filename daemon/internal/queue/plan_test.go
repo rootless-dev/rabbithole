@@ -222,6 +222,109 @@ func TestPlanNameClashSkipsNamesAlreadyTaken(t *testing.T) {
 	}
 }
 
+func TestPlanWalksAListedSymlinkToAFolderUnderTheLinkName(t *testing.T) {
+	root := tree(t, "real/a.txt", "real/sub/b.txt")
+	link := filepath.Join(root, "shortcut")
+	if err := os.Symlink(filepath.Join(root, "real"), link); err != nil {
+		t.Fatal(err)
+	}
+	p, err := buildPlan(req(link))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"shortcut/a.txt", "shortcut/sub/b.txt"}
+	if p.kind != Folder || !slices.Equal(relativePaths(p), want) {
+		t.Errorf("kind = %v, paths = %v, want %v", p.kind, relativePaths(p), want)
+	}
+	if p.items[0].destName != "shortcut" || p.files[1].inner != "sub/b.txt" {
+		t.Errorf("items = %+v, files = %+v", p.items, p.files)
+	}
+}
+
+func TestPlanRejectsAListedSymlinkWhoseTargetIsGone(t *testing.T) {
+	root := tree(t, "real/a.txt")
+	link := filepath.Join(root, "dangling")
+	if err := os.Symlink(filepath.Join(root, "gone"), link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := buildPlan(req(link)); !errors.Is(err, ErrInvalidPath) {
+		t.Errorf("err = %v, want ErrInvalidPath", err)
+	}
+}
+
+func TestResolveListedSymlinkKeepsThePathItCannotResolve(t *testing.T) {
+	root := tree(t, "file.txt")
+	dangling := filepath.Join(root, "dangling")
+	if err := os.Symlink(filepath.Join(root, "gone"), dangling); err != nil {
+		t.Fatal(err)
+	}
+	for name, path := range map[string]string{
+		"missing path":     filepath.Join(root, "missing"),
+		"regular file":     filepath.Join(root, "file.txt"),
+		"dangling symlink": dangling,
+	} {
+		if got := resolveListedSymlink(path); got != path {
+			t.Errorf("%s: resolveListedSymlink(%q) = %q, want it unchanged", name, path, got)
+		}
+	}
+}
+
+func TestPlanGivesDotOnlyNamesADistinctDestination(t *testing.T) {
+	root := tree(t, "one/.env", "two/.env", "three/.env")
+	p, err := buildPlan(req(
+		filepath.Join(root, "one", ".env"), filepath.Join(root, "two", ".env"), filepath.Join(root, "three", ".env"),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{".env", ".env-2", ".env-3"}; !slices.Equal(relativePaths(p), want) {
+		t.Errorf("paths = %v, want %v", relativePaths(p), want)
+	}
+}
+
+func TestUniqueNameKeepsTheExtensionOfAFileButNotOfAFolder(t *testing.T) {
+	used := map[string]bool{"v1.2": true, "a.tar.gz": true, ".env": true}
+	for _, tt := range []struct {
+		name  string
+		isDir bool
+		want  string
+	}{
+		{"v1.2", true, "v1.2-2"},
+		{"v1.2", false, "v1-2.2"},
+		{"a.tar.gz", false, "a.tar-2.gz"},
+		{".env", false, ".env-2"},
+		{"free.txt", false, "free.txt"},
+	} {
+		if got := uniqueName(tt.name, tt.isDir, used); got != tt.want {
+			t.Errorf("uniqueName(%q, dir=%v) = %q, want %q", tt.name, tt.isDir, got, tt.want)
+		}
+	}
+}
+
+func TestBaseNameOfTheFilesystemRootIsRoot(t *testing.T) {
+	if got := baseName(string(filepath.Separator)); got != "root" {
+		t.Errorf("baseName(/) = %q, want root", got)
+	}
+	if got := baseName(filepath.Join("some", "dir", "..", "file.txt")); got != "file.txt" {
+		t.Errorf("baseName of a relative path = %q, want file.txt", got)
+	}
+}
+
+func TestPlanRejectsAListedFileThatCannotBeOpened(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read everything")
+	}
+	root := tree(t, "secret.txt")
+	locked := filepath.Join(root, "secret.txt")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o600) })
+	if _, err := buildPlan(req(locked)); !errors.Is(err, ErrInvalidPath) {
+		t.Errorf("err = %v, want ErrInvalidPath", err)
+	}
+}
+
 func TestClampParallel(t *testing.T) {
 	for in, want := range map[int]int{0: 4, -3: 1, 1: 1, 7: 7, 16: 16, 17: 16, 1000: 16} {
 		if got := clampParallel(in); got != want {

@@ -411,6 +411,20 @@ func TestListenFailurePrintsOneJSONLineAndExits1(t *testing.T) {
 	if strings.Count(stderr.String(), "\n") != 1 {
 		t.Fatalf("stderr is not exactly one line: %q", stderr.String())
 	}
+	lines := logLines(t, stderr.String())
+	if len(lines) != 1 {
+		t.Fatalf("stderr holds %d JSON lines, want 1: %q", len(lines), stderr.String())
+	}
+	line := lines[0]
+	if line["level"] != "error" || line["service"] != serviceName {
+		t.Errorf("level = %v, service = %v; want error, %s", line["level"], line["service"], serviceName)
+	}
+	if msg, _ := line["msg"].(string); !strings.Contains(msg, io.ErrClosedPipe.Error()) {
+		t.Errorf("msg = %q, want it to carry the listen error %q", msg, io.ErrClosedPipe)
+	}
+	if _, ok := line["time"]; !ok {
+		t.Errorf("missing time field: %v", line)
+	}
 }
 
 func TestRunnerBuildsClientFromJobSettingsThenUploads(t *testing.T) {

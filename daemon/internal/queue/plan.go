@@ -8,6 +8,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"rabbithole/daemon/internal/uploader"
 )
 
 // Kind is what the user handed over as one upload.
@@ -238,10 +240,7 @@ func uniqueName(name string, isDir bool, used map[string]bool) string {
 	}
 	ext := ""
 	if !isDir {
-		ext = filepath.Ext(name)
-		if ext == name {
-			ext = ""
-		}
+		ext = uploader.Ext(name)
 	}
 	base := strings.TrimSuffix(name, ext)
 	for n := 2; ; n++ {

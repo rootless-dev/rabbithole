@@ -20,6 +20,7 @@ type fakeS3 struct {
 	existsErr   error
 	putErr      func(key string) error
 	partErr     func(number int32) error
+	createErr   error
 	completeErr error
 	abortErr    error
 
@@ -118,6 +119,9 @@ func (f *fakeS3) PutObject(ctx context.Context, key string, body io.Reader, size
 
 func (f *fakeS3) CreateMultipart(ctx context.Context, key string) (string, error) {
 	f.calls = append(f.calls, "create")
+	if f.createErr != nil {
+		return "", f.createErr
+	}
 	return "upload-1", nil
 }
 
@@ -481,6 +485,58 @@ func TestCancelAbortsMultipart(t *testing.T) {
 	}
 	if !fake.abortHadDline || fake.abortDeadline > time.Second {
 		t.Fatalf("abort deadline = %v (set: %v), want at most 1s", fake.abortDeadline, fake.abortHadDline)
+	}
+}
+
+func TestFailedCreateMultipartIsReturnedWithoutAnAbort(t *testing.T) {
+	path := sparseFile(t, "big.bin", 16*MiB)
+	fake := newFake()
+	fake.createErr = ErrBucketNotFound
+
+	err := newUploader().Upload(context.Background(), fake, Request{Prefix: "p/", LocalPath: path}, Callbacks{})
+	if !errors.Is(err, ErrBucketNotFound) {
+		t.Fatalf("err = %v, want ErrBucketNotFound", err)
+	}
+	if fake.aborted || slices.Contains(fake.calls, "part") || slices.Contains(fake.calls, "complete") {
+		t.Fatalf("calls = %v, want nothing after create", fake.calls)
+	}
+}
+
+func TestMultipartOfAFileThatCannotBeOpenedTouchesNothing(t *testing.T) {
+	fake := newFake()
+	gone := filepath.Join(t.TempDir(), "gone.bin")
+
+	err := uploadMultipart(context.Background(), fake, "p/gone.bin", gone, 16*MiB, &progressTracker{total: 16 * MiB}, nil)
+	if !errors.Is(err, ErrFileUnreadable) {
+		t.Fatalf("err = %v, want ErrFileUnreadable", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("S3 was called: %v", fake.calls)
+	}
+}
+
+func TestCancelBetweenPartsAbortsMultipart(t *testing.T) {
+	path := sparseFile(t, "big.bin", 16*MiB)
+	fake := newFake()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// The first part is fully sent by the time progress reaches 8 MiB, so the
+	// cancellation lands between part 1 and part 2.
+	cb := Callbacks{Progress: func(sent int64) {
+		if sent >= 8*MiB {
+			cancel()
+		}
+	}}
+
+	err := newUploader().Upload(ctx, fake, Request{Prefix: "p/", LocalPath: path}, cb)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if !slices.Equal(fake.partSizes, []int64{8 * MiB}) {
+		t.Fatalf("part sizes = %v, want only the first part", fake.partSizes)
+	}
+	if !fake.aborted || slices.Contains(fake.calls, "complete") {
+		t.Fatalf("calls = %v, want an abort and no complete", fake.calls)
 	}
 }
 

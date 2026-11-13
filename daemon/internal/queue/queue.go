@@ -469,14 +469,12 @@ func (r *run) request(f *fileState) (uploader.Request, error) {
 	return uploader.Request{Prefix: dir, LocalPath: f.plan.local, SkipExistenceCheck: true}, nil
 }
 
-// fail marks f failed because err kept it from starting.
+// fail marks f failed because err kept it from starting. err is never fatal:
+// a fatal folder resolution error stops the upload in resolveFolders instead
+// of being recorded for the folder's files.
 func (r *run) fail(f *fileState, err error) {
 	r.q.mu.Lock()
 	defer r.q.mu.Unlock()
-	if uploader.IsFatal(err) {
-		r.stop(err)
-		return
-	}
 	r.setFileState(f, Failed, uploader.Message(err))
 }
 

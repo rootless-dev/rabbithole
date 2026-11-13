@@ -450,8 +450,61 @@ func TestCompleteMultipartMapsPreconditionFailed(t *testing.T) {
 }
 
 func TestNewRejectsIncompleteSettings(t *testing.T) {
-	_, err := New(context.Background(), uploader.Settings{})
-	if err == nil {
-		t.Fatal("New with empty settings must fail")
+	complete := uploader.Settings{AccessKeyID: "AKIDEXAMPLE", SecretAccessKey: "secret-example", Region: "us-east-1", Bucket: "my-bucket"}
+	if _, err := New(context.Background(), complete); err != nil {
+		t.Fatalf("New with complete settings: %v", err)
+	}
+	tests := []struct {
+		name   string
+		mutate func(*uploader.Settings)
+		want   string
+	}{
+		{"missing access key", func(s *uploader.Settings) { s.AccessKeyID = "" }, "access key id"},
+		{"missing secret", func(s *uploader.Settings) { s.SecretAccessKey = "" }, "secret access key"},
+		{"missing region", func(s *uploader.Settings) { s.Region = "" }, "region"},
+		{"missing bucket", func(s *uploader.Settings) { s.Bucket = "" }, "bucket"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := complete
+			tt.mutate(&s)
+			_, err := New(context.Background(), s)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want it to name %q", err, tt.want)
+			}
+			for _, other := range []string{"region", "bucket"} {
+				if other != tt.want && strings.Contains(err.Error(), other) {
+					t.Fatalf("err = %v, names %q but %q is what is missing", err, other, tt.want)
+				}
+			}
+			for _, secret := range []string{complete.AccessKeyID, complete.SecretAccessKey} {
+				if strings.Contains(err.Error(), secret) {
+					t.Fatalf("err = %v, leaks a credential", err)
+				}
+			}
+		})
+	}
+}
+
+func TestMultipartCallsMapErrors(t *testing.T) {
+	c, _ := newTestClient(t, func(r *http.Request) *http.Response {
+		return reply(404, errorXML("NoSuchBucket"), nil)
+	})
+	ctx := context.Background()
+	if id, err := c.CreateMultipart(ctx, "k"); id != "" || !errors.Is(err, uploader.ErrBucketNotFound) {
+		t.Fatalf("CreateMultipart = %q, %v; want empty id, ErrBucketNotFound", id, err)
+	}
+	if etag, err := c.UploadPart(ctx, "k", "up-1", 1, strings.NewReader("part"), 4); etag != "" || !errors.Is(err, uploader.ErrBucketNotFound) {
+		t.Fatalf("UploadPart = %q, %v; want empty etag, ErrBucketNotFound", etag, err)
+	}
+
+	denied, _ := newTestClient(t, func(r *http.Request) *http.Response {
+		return reply(403, errorXML("AccessDenied"), nil)
+	})
+	if _, err := denied.CreateMultipart(ctx, "k"); !errors.Is(err, uploader.ErrWriteDenied) {
+		t.Fatalf("CreateMultipart error = %v, want ErrWriteDenied", err)
+	}
+	if _, err := denied.UploadPart(ctx, "k", "up-1", 1, strings.NewReader("part"), 4); !errors.Is(err, uploader.ErrWriteDenied) {
+		t.Fatalf("UploadPart error = %v, want ErrWriteDenied", err)
 	}
 }

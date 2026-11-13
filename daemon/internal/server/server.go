@@ -105,32 +105,13 @@ func (s *Server) EnqueueUpload(_ context.Context, req *pb.EnqueueUploadRequest) 
 func (s *Server) WatchUploadFiles(req *pb.WatchUploadFilesRequest, stream pb.Daemon_WatchUploadFilesServer) error {
 	initial, updates, cancel, err := s.queue.SubscribeFiles(req.GetUploadId())
 	if err != nil {
-		if errors.Is(err, queue.ErrUnknownUpload) {
-			return status.Error(codes.NotFound, "unknown upload")
-		}
-		s.log.Error("watch files failed", "upload_id", req.GetUploadId(), "error", err.Error())
-		return status.Error(codes.Internal, "could not watch upload files")
+		// ErrUnknownUpload is the only error SubscribeFiles returns.
+		return status.Error(codes.NotFound, "unknown upload")
 	}
 	defer cancel()
-
-	for _, snap := range initial {
-		if err := stream.Send(toProtoFile(snap)); err != nil {
-			return err
-		}
-	}
-	for {
-		select {
-		case snap, ok := <-updates:
-			if !ok {
-				return nil
-			}
-			if err := stream.Send(toProtoFile(snap)); err != nil {
-				return err
-			}
-		case <-stream.Context().Done():
-			return stream.Context().Err()
-		}
-	}
+	return relay(stream.Context(), initial, updates, func(f queue.FileSnapshot) error {
+		return stream.Send(toProtoFile(f))
+	})
 }
 
 // WatchUploads sends one snapshot per known upload, then a snapshot whenever
@@ -138,23 +119,28 @@ func (s *Server) WatchUploadFiles(req *pb.WatchUploadFilesRequest, stream pb.Dae
 func (s *Server) WatchUploads(_ *pb.WatchUploadsRequest, stream pb.Daemon_WatchUploadsServer) error {
 	initial, updates, cancel := s.queue.Subscribe()
 	defer cancel()
+	return relay(stream.Context(), initial, updates, func(u queue.Snapshot) error {
+		return stream.Send(toProto(u))
+	})
+}
 
-	for _, snap := range initial {
-		if err := stream.Send(toProto(snap)); err != nil {
+// relay sends every value of initial, then every value of updates, until send
+// fails or ctx ends. updates is closed only by the subscription's cancel, which
+// the caller runs after relay returns, so it never closes while relay reads it.
+func relay[T any](ctx context.Context, initial []T, updates <-chan T, send func(T) error) error {
+	for _, v := range initial {
+		if err := send(v); err != nil {
 			return err
 		}
 	}
 	for {
 		select {
-		case snap, ok := <-updates:
-			if !ok {
-				return nil
-			}
-			if err := stream.Send(toProto(snap)); err != nil {
+		case v := <-updates:
+			if err := send(v); err != nil {
 				return err
 			}
-		case <-stream.Context().Done():
-			return stream.Context().Err()
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 }

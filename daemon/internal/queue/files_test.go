@@ -351,6 +351,12 @@ func TestUnreadableEntryFailsWithoutCallingTheRunner(t *testing.T) {
 	if calls != 1 || got.ErrorMessage != "1 of 2 files could not be sent" {
 		t.Errorf("calls = %d, last = %+v", calls, got)
 	}
+	q.mu.Lock()
+	entry := q.uploads[id].files[1].snap
+	q.mu.Unlock()
+	if entry.State != Failed || entry.ErrorMessage != uploader.Message(uploader.ErrFileUnreadable) {
+		t.Errorf("unreadable entry = %+v, want Failed with %q", entry, uploader.Message(uploader.ErrFileUnreadable))
+	}
 }
 
 func TestFolderResolutionFailureIsFatalOnlyForFatalErrors(t *testing.T) {
