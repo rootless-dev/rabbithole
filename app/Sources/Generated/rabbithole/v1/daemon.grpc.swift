@@ -59,11 +59,25 @@ public enum Rabbithole_V1_Daemon: Sendable {
                 type: .serverStreaming
             )
         }
+        /// Namespace for "WatchUploadFiles" metadata.
+        public enum WatchUploadFiles: Sendable {
+            /// Request type for "WatchUploadFiles".
+            public typealias Input = Rabbithole_V1_WatchUploadFilesRequest
+            /// Response type for "WatchUploadFiles".
+            public typealias Output = Rabbithole_V1_FileSnapshot
+            /// Descriptor for "WatchUploadFiles".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "WatchUploadFiles",
+                type: .serverStreaming
+            )
+        }
         /// Descriptors for all methods in the "rabbithole.v1.Daemon" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             Configure.descriptor,
             EnqueueUpload.descriptor,
-            WatchUploads.descriptor
+            WatchUploads.descriptor,
+            WatchUploadFiles.descriptor
         ]
     }
 }
@@ -114,7 +128,7 @@ extension Rabbithole_V1_Daemon {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > EnqueueUpload queues a local file for upload.
+        /// > EnqueueUpload queues local files and folders as one upload.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Rabbithole_V1_EnqueueUploadRequest` message.
@@ -154,6 +168,30 @@ extension Rabbithole_V1_Daemon {
             deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_UploadSnapshot>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Rabbithole_V1_UploadSnapshot>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WatchUploadFiles" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > WatchUploadFiles streams every file of one upload once, then a snapshot
+        /// > whenever one of its files changes state or progresses.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_WatchUploadFilesRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_WatchUploadFilesRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_FileSnapshot` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func watchUploadFiles<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_WatchUploadFilesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_WatchUploadFilesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_FileSnapshot>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Rabbithole_V1_FileSnapshot>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -215,7 +253,7 @@ extension Rabbithole_V1_Daemon {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > EnqueueUpload queues a local file for upload.
+        /// > EnqueueUpload queues local files and folders as one upload.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Rabbithole_V1_EnqueueUploadRequest` message.
@@ -276,6 +314,39 @@ extension Rabbithole_V1_Daemon {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "WatchUploadFiles" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > WatchUploadFiles streams every file of one upload once, then a snapshot
+        /// > whenever one of its files changes state or progresses.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_WatchUploadFilesRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_WatchUploadFilesRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_FileSnapshot` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func watchUploadFiles<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_WatchUploadFilesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_WatchUploadFilesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_FileSnapshot>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Rabbithole_V1_FileSnapshot>) async throws -> Result
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.serverStreaming(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.WatchUploadFiles.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -315,7 +386,7 @@ extension Rabbithole_V1_Daemon.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > EnqueueUpload queues a local file for upload.
+    /// > EnqueueUpload queues local files and folders as one upload.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Rabbithole_V1_EnqueueUploadRequest` message.
@@ -366,6 +437,34 @@ extension Rabbithole_V1_Daemon.ClientProtocol {
             onResponse: handleResponse
         )
     }
+
+    /// Call the "WatchUploadFiles" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > WatchUploadFiles streams every file of one upload once, then a snapshot
+    /// > whenever one of its files changes state or progresses.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_WatchUploadFilesRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchUploadFiles<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_WatchUploadFilesRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Rabbithole_V1_FileSnapshot>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        try await self.watchUploadFiles(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_WatchUploadFilesRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_FileSnapshot>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
 }
 
 // Helpers providing sugared APIs for 'ClientProtocol' methods.
@@ -408,7 +507,7 @@ extension Rabbithole_V1_Daemon.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > EnqueueUpload queues a local file for upload.
+    /// > EnqueueUpload queues local files and folders as one upload.
     ///
     /// - Parameters:
     ///   - message: request message to send.
@@ -462,6 +561,38 @@ extension Rabbithole_V1_Daemon.ClientProtocol {
             metadata: metadata
         )
         return try await self.watchUploads(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchUploadFiles" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > WatchUploadFiles streams every file of one upload once, then a snapshot
+    /// > whenever one of its files changes state or progresses.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchUploadFiles<Result>(
+        _ message: Rabbithole_V1_WatchUploadFilesRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Rabbithole_V1_FileSnapshot>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_WatchUploadFilesRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.watchUploadFiles(
             request: request,
             options: options,
             onResponse: handleResponse

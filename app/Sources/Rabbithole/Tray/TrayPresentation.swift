@@ -27,9 +27,10 @@ struct TrayPresentation: Equatable {
     let isDragging: Bool
 
     init(
-        state: TrayState, statusText: String, feedback: DropFeedback, hoverItemCount: Int,
+        state: TrayState, statusText: String, feedback: DropFeedback, itemCount: Int,
         condition: ServiceCondition
     ) {
+        let items = itemCount == 1 ? "1 item" : "\(itemCount) items"
         if state == .notConfigured {
             topBlock = .setup
         } else if condition == .keyRejected {
@@ -44,16 +45,11 @@ struct TrayPresentation: Equatable {
         switch feedback {
         case .hovering:
             dropStyle = .over
-            if hoverItemCount > 1 {
-                dropTitle = "One file at a time"
-                dropSubtitle = "Several files in one drop are not supported yet"
-            } else {
-                dropTitle = "Release to upload"
-                dropSubtitle = "1 item to Quick uploads"
-            }
+            dropTitle = "Release to upload"
+            dropSubtitle = "\(items) to Quick uploads"
         case .confirmed:
             dropStyle = .done
-            dropTitle = "1 item added"
+            dropTitle = "\(items) added"
             dropSubtitle = "Upload started"
         case .refused(let message):
             dropStyle = .normal
@@ -91,7 +87,7 @@ struct TrayPresentation: Equatable {
     init(_ viewModel: TrayViewModel) {
         self.init(
             state: viewModel.state, statusText: viewModel.statusText,
-            feedback: viewModel.dropFeedback, hoverItemCount: viewModel.hoverItemCount,
+            feedback: viewModel.dropFeedback, itemCount: viewModel.feedbackItemCount,
             condition: viewModel.uploads.ledger.condition)
     }
 }

@@ -16,8 +16,17 @@ struct UploadRecord: Identifiable, Equatable, Sendable {
     var endedAt: Date?
     /// Smoothed transfer speed while uploading; nil before two samples exist.
     var bytesPerSecond: Double?
+    var kind: UploadKind = .singleFile
+    /// Every path the upload was handed, in order; see `handedPaths`.
+    var rootPaths: [String] = []
+    var filesTotal = 1
+    var filesFinished = 0
+    var filesFailed = 0
 
     var isActive: Bool { state == .queued || state == .uploading }
+
+    /// The files and folders this upload was made of, which is what sending it again takes.
+    var handedPaths: [String] { rootPaths.isEmpty ? [localPath] : rootPaths }
 
     /// Progress from 0 to 1. A finished upload is always 1, including an empty file.
     var fraction: Double {
@@ -78,7 +87,8 @@ struct UploadLedger: Equatable, Sendable {
                 id: snapshot.id, fileName: snapshot.fileName, localPath: snapshot.localPath,
                 objectKey: snapshot.objectKey, bytesTotal: max(snapshot.bytesTotal, 0),
                 bytesSent: max(snapshot.bytesSent, 0), state: snapshot.state,
-                errorMessage: "", startedAt: now)
+                errorMessage: "", startedAt: now, kind: snapshot.kind, rootPaths: snapshot.rootPaths)
+            countFiles(&record, from: snapshot)
             let ended = finish(&record, with: snapshot, now: now)
             index[snapshot.id] = records.count
             records.append(record)
@@ -92,6 +102,7 @@ struct UploadLedger: Equatable, Sendable {
         record.bytesSent = max(record.bytesSent, snapshot.bytesSent)
         if !snapshot.objectKey.isEmpty { record.objectKey = snapshot.objectKey }
         if snapshot.state != .queued { record.state = snapshot.state }
+        countFiles(&record, from: snapshot)
         sampleSpeed(&record, now: now)
         let ended = finish(&record, with: snapshot, now: now)
         records[position] = record
@@ -111,6 +122,14 @@ struct UploadLedger: Equatable, Sendable {
     /// Forgets the current service condition, for example after new settings were saved.
     mutating func clearCondition() {
         condition = .none
+    }
+
+    /// Takes the file counters of a snapshot. Like bytes sent, the counts of ended files
+    /// never go back.
+    private func countFiles(_ record: inout UploadRecord, from snapshot: UploadSnapshot) {
+        record.filesTotal = max(snapshot.filesTotal, 0)
+        record.filesFinished = max(record.filesFinished, snapshot.filesFinished)
+        record.filesFailed = max(record.filesFailed, snapshot.filesFailed)
     }
 
     /// Applies a terminal snapshot to `record`. Returns true when it ended the upload.
@@ -172,6 +191,11 @@ extension UploadLedger {
     }
 
     var finishedCount: Int { records.filter { $0.state == .finished }.count }
+
+    /// How many files the finished uploads hold.
+    var finishedFileCount: Int {
+        records.filter { $0.state == .finished }.reduce(0) { $0 + $1.filesTotal }
+    }
 
     var finishedBytes: Int64 {
         records.filter { $0.state == .finished }.reduce(0) { $0 + $1.bytesTotal }

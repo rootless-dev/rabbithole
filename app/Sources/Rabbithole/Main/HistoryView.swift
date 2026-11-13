@@ -107,14 +107,14 @@ struct UploadDetailView: View {
                     fraction: record.ringFraction, color: record.ringColor, size: 92, hole: 84,
                     holeColor: Theme.main
                 ) {
-                    ThumbnailView(path: record.localPath, fileName: record.fileName, side: 50)
+                    UploadThumbnail(record: record, side: 50)
                 }
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(record.fileName)
+                    Text(UploadText.name(record))
                         .font(.system(size: 19, weight: .semibold))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text(UploadText.displayPath(record.localPath))
+                    Text(UploadText.location(record))
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                         .lineLimit(1)
@@ -136,7 +136,7 @@ struct UploadDetailView: View {
 
             TimelineView(.periodic(from: .now, by: 60)) { timeline in
                 HStack(alignment: .top, spacing: 14) {
-                    Fact(label: "Files", value: record.state == .finished ? "1 of 1 sent" : "0 of 1 sent")
+                    Fact(label: "Files", value: UploadText.filesSent(record))
                     Fact(label: "Speed", value: record.bytesPerSecond.map(UploadText.speed) ?? "–")
                     Fact(label: "Started", value: UploadText.started(record.startedAt, now: timeline.date))
                     Fact(
@@ -161,19 +161,14 @@ struct UploadDetailView: View {
                     selection: $model.detailFilter)
             }
 
-            let files = UploadQuery(state: model.detailFilter).apply(to: [record])
-            if files.isEmpty {
-                Text("No files in this state.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.muted)
-                    .padding(.top, 16)
-                    .frame(maxWidth: .infinity)
-            }
-            ForEach(files) { file in
-                FileRow(record: file, retry: { context.actions.retry([file]) })
-            }
-            .padding(.top, 4)
-            Spacer(minLength: 0)
+            UploadFileRows(
+                files: model.detailFiles, filter: model.detailFilter,
+                hiddenPrefix: UploadText.hiddenFilePrefix(record),
+                standIn: record.kind == .singleFile ? FileSnapshot(standingFor: record) : nil,
+                canRetryFiles: record.kind == .singleFile,
+                retry: { context.actions.retry([record]) }
+            )
+            .equatable()
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)
@@ -223,19 +218,119 @@ private struct Fact: View {
     }
 }
 
-/// One file of an upload: a plain thumbnail, the name, a short status and a thin line.
-private struct FileRow: View {
-    let record: UploadRecord
+/// The scrolling list of an upload's files under the state tabs. It is rebuilt only when
+/// one of the values compared below changes or when a file appears or changes state, not on
+/// every progress report of the upload around it; rows are made as they scroll into view.
+private struct UploadFileRows: View, Equatable {
+    let files: UploadFilesModel
+    let filter: UploadStateFilter
+    /// The start of every file's path that the header already shows.
+    let hiddenPrefix: String
+    /// The one file of a single-file upload, drawn from the upload itself until the files
+    /// stream delivers it (or when the daemon no longer knows the upload).
+    let standIn: FileSnapshot?
+    /// Sending one file again is possible only when the file is the whole upload.
+    let canRetryFiles: Bool
     let retry: () -> Void
 
+    nonisolated static func == (lhs: UploadFileRows, rhs: UploadFileRows) -> Bool {
+        lhs.files === rhs.files && lhs.filter == rhs.filter && lhs.hiddenPrefix == rhs.hiddenPrefix
+            && lhs.standIn == rhs.standIn && lhs.canRetryFiles == rhs.canRetryFiles
+    }
+
     var body: some View {
-        let line = UploadText.fileLine(record)
+        let indexes = files.indexes(filter)
+        if files.count > 0 {
+            if indexes.isEmpty {
+                note("No files in this state.")
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(indexes, id: \.self) { index in
+                            LiveFileRow(
+                                files: files, index: index, hiddenPrefix: hiddenPrefix,
+                                retry: canRetryFiles ? retry : nil)
+                        }
+                    }
+                    .padding(.top, 4)
+                    .padding(.bottom, 12)
+                    .padding(.trailing, 14)
+                }
+            }
+        } else if let standIn {
+            if filter.includes(standIn.state) {
+                FileRow(file: standIn, name: standIn.relativePath, retry: canRetryFiles ? retry : nil)
+                    .padding(.top, 4)
+                    .padding(.trailing, 14)
+                Spacer(minLength: 0)
+            } else {
+                note("No files in this state.")
+            }
+        } else if files.phase == .unavailable {
+            note("The list of files is no longer available for this upload.")
+        } else {
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.muted)
+            .padding(.top, 16)
+            .frame(maxWidth: .infinity)
+        Spacer(minLength: 0)
+    }
+}
+
+extension FileSnapshot {
+    /// The only file of a single-file upload, as far as the upload itself tells.
+    init(standingFor record: UploadRecord) {
+        self.init(
+            uploadID: record.id, index: 0, relativePath: record.fileName, localPath: record.localPath,
+            objectKey: record.objectKey, bytesTotal: record.bytesTotal, bytesSent: record.bytesSent,
+            state: record.state, errorMessage: record.errorMessage)
+    }
+
+    /// Progress from 0 to 1 for the row's line. A failed file keeps how far it got, as the
+    /// mockup draws it; a finished one is always full, including an empty file.
+    var barFraction: Double {
+        if state == .finished { return 1 }
+        guard bytesTotal > 0 else { return 0 }
+        return min(max(Double(bytesSent) / Double(bytesTotal), 0), 1)
+    }
+}
+
+/// A row of the lazy list: it looks its file up when drawn, so progress redraws only the
+/// rows on screen.
+private struct LiveFileRow: View {
+    let files: UploadFilesModel
+    let index: Int
+    let hiddenPrefix: String
+    let retry: (() -> Void)?
+
+    var body: some View {
+        if let file = files.file(at: index) {
+            FileRow(file: file, name: UploadText.fileName(file, hiding: hiddenPrefix), retry: retry)
+        }
+    }
+}
+
+/// One file of an upload: a plain thumbnail, the name, a short status and a thin line.
+private struct FileRow: View {
+    let file: FileSnapshot
+    let name: String
+    /// Sends the file again; nil draws the link switched off.
+    let retry: (() -> Void)?
+
+    var body: some View {
+        let line = UploadText.fileLine(file)
         HStack(spacing: 12) {
-            ThumbnailView(path: record.localPath, fileName: record.fileName, side: 26)
+            ThumbnailView(path: file.localPath, fileName: name, side: 26)
                 .frame(width: 30, height: 26)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(record.fileName)
+                    Text(name)
                         .fontWeight(.medium)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -245,12 +340,17 @@ private struct FileRow: View {
                         .monospacedDigit()
                         .foregroundStyle(line.tone.color)
                         .lineLimit(1)
-                    if record.state == .failed {
-                        Button("Try again", action: retry)
+                    if file.state == .failed {
+                        // The engine cannot send one file of a folder again yet: there the
+                        // link is drawn switched off, and the upload's own button sends all.
+                        Button("Try again", action: retry ?? {})
                             .buttonStyle(LinkButtonStyle(fontSize: 12))
+                            .disabled(retry == nil)
+                            .opacity(retry == nil ? 0.45 : 1)
+                            .help(retry == nil ? "Use Try again at the top to send this upload again" : "")
                     }
                 }
-                ThinBar(fraction: record.ringFraction, color: record.ringColor)
+                ThinBar(fraction: file.barFraction, color: file.state.color)
             }
         }
         .padding(.horizontal, 4)

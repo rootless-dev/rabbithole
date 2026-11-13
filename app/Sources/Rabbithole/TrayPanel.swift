@@ -174,21 +174,20 @@ final class TrayWindowController: NSObject {
 }
 
 enum FilePicker {
-    /// Lets the user pick one regular file. Packages are selectable here and refused later by
-    /// the view model's file check.
+    /// Lets the user pick files, folders or both. Everything picked becomes one upload.
     @MainActor
-    static func chooseFile() async -> URL? {
+    static func chooseItems() async -> [URL] {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.message = "Choose a file to upload"
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.message = "Choose files or folders to upload"
         NSApp.activate()
         let response = await panel.begin()
-        return response == .OK ? panel.url : nil
+        return response == .OK ? panel.urls : []
     }
 
-    /// The files currently copied in Finder, if any. Other clipboard contents give nothing.
+    /// The files and folders currently copied in Finder, if any. Other clipboard contents give nothing.
     @MainActor
     static func clipboardFiles() -> [URL] {
         let objects = NSPasteboard.general.readObjects(

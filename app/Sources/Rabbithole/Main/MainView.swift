@@ -225,7 +225,7 @@ struct SummaryCards: View {
             }
             if let last = ledger.lastFinished, let endedAt = last.endedAt {
                 SummaryCard(label: "Last upload finished", value: UploadText.longAge(endedAt, now: now)) {
-                    Text(last.fileName).cardNote()
+                    Text(UploadText.name(last)).cardNote()
                 }
             } else {
                 SummaryCard(label: "Last upload finished", value: "Not yet", isNone: true) { EmptyView() }
@@ -235,7 +235,7 @@ struct SummaryCards: View {
     }
 
     private var storedNote: String {
-        let count = ledger.finishedCount
+        let count = ledger.finishedFileCount
         return "\(count.formatted(.number.locale(Locale(identifier: "en_US")))) \(count == 1 ? "file" : "files") since Rabbithole was opened"
     }
 }
@@ -341,17 +341,17 @@ struct UploadRow: View {
                 fraction: isStopped ? record.fraction : record.ringFraction,
                 color: isStopped ? Theme.muted : record.ringColor
             ) {
-                ThumbnailView(path: record.localPath, fileName: record.fileName, side: 30)
+                UploadThumbnail(record: record, side: 30)
             }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    Text(record.fileName)
+                    Text(UploadText.name(record))
                         .fontWeight(.semibold)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .layoutPriority(1)
                     Spacer(minLength: 0)
-                    Text(UploadText.displayPath(record.localPath))
+                    Text(UploadText.location(record))
                         .font(.system(size: 11.5))
                         .foregroundStyle(Theme.muted)
                         .lineLimit(1)
@@ -387,8 +387,13 @@ extension UploadRecord {
     /// A failed upload shows a full ring in the failure color, as History draws it.
     var ringFraction: Double { state == .failed ? 1 : fraction }
 
-    var ringColor: Color {
-        switch state {
+    var ringColor: Color { state.color }
+}
+
+extension UploadState {
+    /// The color of a ring or progress line in this state.
+    var color: Color {
+        switch self {
         case .queued, .uploading: Theme.accent
         case .finished: Theme.ok
         case .failed: Theme.bad

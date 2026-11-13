@@ -58,15 +58,31 @@ final class MainWindowModel {
     var historyQuery = UploadQuery()
     var detailFilter: UploadStateFilter = .all
 
+    /// The files of the upload whose detail is open. The daemon's files stream is read only
+    /// while a detail is open and the window is showing.
+    let detailFiles: UploadFilesModel
+    /// Opens the daemon's files stream of one upload; set by the app's composition.
+    @ObservationIgnored var watchFiles: (String) -> AsyncThrowingStream<FileSnapshot, Error> = { _ in
+        AsyncThrowingStream { $0.finish() }
+    }
+    @ObservationIgnored private var filesTask: Task<Void, Never>?
+    @ObservationIgnored private var windowIsShowing = true
+
+    init(detailFiles: UploadFilesModel = UploadFilesModel()) {
+        self.detailFiles = detailFiles
+    }
+
     func show(_ section: MainSection) {
         self.section = section
         detail = nil
+        followDetailFiles()
     }
 
     func show(pane: SettingsPane) {
         section = .settings
         settingsPane = pane
         detail = nil
+        followDetailFiles()
     }
 
     func openDetail(id: String, from origin: MainSection? = nil) {
@@ -74,9 +90,36 @@ final class MainWindowModel {
         section = origin
         detailFilter = .all
         detail = (id, origin)
+        followDetailFiles()
     }
 
     func closeDetail() {
         detail = nil
+        followDetailFiles()
+    }
+
+    /// The window was shown or closed. A closed window stops reading the files stream; the
+    /// detail stays where it was and catches up when the window comes back.
+    func windowShowing(_ showing: Bool) {
+        guard showing != windowIsShowing else { return }
+        windowIsShowing = showing
+        followDetailFiles()
+    }
+
+    /// Starts, moves or ends the files subscription to match what is on screen.
+    private func followDetailFiles() {
+        let wanted = windowIsShowing ? detail?.id : nil
+        if wanted != nil, wanted == detailFiles.uploadID, filesTask != nil { return }
+        filesTask?.cancel()
+        filesTask = nil
+        guard let wanted else {
+            // A closed window keeps the list it had; leaving the detail drops it.
+            if detail == nil { detailFiles.clear() }
+            return
+        }
+        let stream = watchFiles(wanted)
+        filesTask = Task { [detailFiles] in
+            await detailFiles.follow(uploadID: wanted, stream: stream)
+        }
     }
 }

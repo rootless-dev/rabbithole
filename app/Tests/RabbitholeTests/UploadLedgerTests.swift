@@ -219,4 +219,43 @@ final class UploadQueryTests: XCTestCase {
         XCTAssertEqual(FileKind.of(fileName: "data.unknownext"), .other)
         XCTAssertEqual(FileKind.folders.title, "Folders")
     }
+
+    private let start = Date(timeIntervalSince1970: 1_794_500_000)
+
+    func testTheFoldersFilterMatchesFolderUploadsAndSeveralItemsGoByTheirFirst() {
+        var ledger = UploadLedger()
+        ledger.apply(.folder("folder", "vacation-2026", files: 12, total: 100, .uploading), now: start)
+        ledger.apply(.make("file", "notes.txt", total: 5, .uploading), now: start)
+        ledger.apply(
+            .several("several", ["/Users/someone/Downloads/report-q3.pdf", "/Users/someone/Desktop/cover.png"], total: 9, .uploading),
+            now: start)
+        let all = ledger.records
+
+        XCTAssertEqual(FileKind.of(ledger["folder"]!), .folders)
+        XCTAssertEqual(FileKind.of(ledger["several"]!), .documents)
+        XCTAssertEqual(UploadQuery(kinds: [.folders]).apply(to: all).map(\.id), ["folder"])
+        XCTAssertEqual(UploadQuery(kinds: [.documents]).apply(to: all).map(\.id), ["file", "several"])
+        XCTAssertEqual(
+            UploadQuery(text: "desktop").apply(to: all).map(\.id), ["several"],
+            "search looks at every path the upload was handed")
+    }
+
+    func testFileCountersFollowTheSnapshotsAndTheSummaryCountsFiles() {
+        var ledger = UploadLedger()
+        ledger.apply(.folder("a", "vacation-2026", files: 12, total: 1200, .queued), now: start)
+        XCTAssertEqual(ledger["a"]?.kind, .folder)
+        XCTAssertEqual(ledger["a"]?.handedPaths, ["/Users/someone/Pictures/vacation-2026"])
+        XCTAssertEqual(ledger["a"]?.filesTotal, 12)
+
+        ledger.apply(.folder("a", "vacation-2026", files: 12, finished: 5, failed: 1, total: 1200, sent: 600, .uploading), now: start)
+        // A late snapshot never takes ended files back.
+        ledger.apply(.folder("a", "vacation-2026", files: 12, finished: 4, total: 1200, sent: 500, .uploading), now: start)
+        XCTAssertEqual(ledger["a"]?.filesFinished, 5)
+        XCTAssertEqual(ledger["a"]?.filesFailed, 1)
+
+        ledger.apply(.folder("a", "vacation-2026", files: 12, finished: 12, total: 1200, sent: 1200, .finished), now: start)
+        ledger.apply(.make("b", "notes.txt", total: 5, sent: 5, .finished), now: start)
+        XCTAssertEqual(ledger.finishedCount, 2, "uploads")
+        XCTAssertEqual(ledger.finishedFileCount, 13, "files")
+    }
 }

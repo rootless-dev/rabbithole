@@ -12,6 +12,17 @@ enum UploadStateFilter: CaseIterable, Sendable {
         case .failed: "Failed"
         }
     }
+
+    /// Whether a file in `state` belongs under this tab of an upload's file list.
+    func includes(_ state: UploadState) -> Bool {
+        switch self {
+        case .all: true
+        case .inProgress: state == .uploading
+        case .waiting: state == .queued
+        case .finished: state == .finished
+        case .failed: state == .failed
+        }
+    }
 }
 
 /// The search text and filters of an upload list. State is one at a time, file kinds are
@@ -58,11 +69,11 @@ struct UploadQuery: Equatable, Sendable {
     private var trimmedText: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private func matchesTextAndKind(_ record: UploadRecord) -> Bool {
-        if !kinds.isEmpty, !kinds.contains(FileKind.of(fileName: record.fileName)) { return false }
+        if !kinds.isEmpty, !kinds.contains(FileKind.of(record)) { return false }
         let needle = trimmedText
         guard !needle.isEmpty else { return true }
         return record.fileName.localizedCaseInsensitiveContains(needle)
-            || record.localPath.localizedCaseInsensitiveContains(needle)
+            || record.handedPaths.contains { $0.localizedCaseInsensitiveContains(needle) }
     }
 
     private func matches(_ state: UploadState, filter: UploadStateFilter) -> Bool {

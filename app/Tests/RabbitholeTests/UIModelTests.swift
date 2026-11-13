@@ -10,7 +10,7 @@ final class TrayPresentationTests: XCTestCase {
         condition: ServiceCondition = .none, text: String = "status"
     ) -> TrayPresentation {
         TrayPresentation(
-            state: state, statusText: text, feedback: feedback, hoverItemCount: hover, condition: condition)
+            state: state, statusText: text, feedback: feedback, itemCount: hover, condition: condition)
     }
 
     func testIdleShowsTheDropAreaWithNoStatusAndTheWholeMenu() {
@@ -47,15 +47,21 @@ final class TrayPresentationTests: XCTestCase {
         XCTAssertTrue(over.isDragging)
 
         let several = look(.idle, feedback: .hovering, hover: 3)
-        XCTAssertEqual(several.dropTitle, "One file at a time")
+        XCTAssertEqual(several.dropStyle, .over)
+        XCTAssertEqual(several.dropTitle, "Release to upload")
+        XCTAssertEqual(several.dropSubtitle, "3 items to Quick uploads")
 
         let done = look(.uploading(remaining: 1, total: 1, fraction: 0), feedback: .confirmed)
         XCTAssertEqual(done.dropStyle, .done)
         XCTAssertEqual(done.dropTitle, "1 item added")
         XCTAssertEqual(done.dropSubtitle, "Upload started")
 
-        let refused = look(.idle, feedback: .refused("Folders are not supported yet"))
-        XCTAssertEqual(refused.dropTitle, "Folders are not supported yet")
+        let severalDone = look(.uploading(remaining: 3, total: 3, fraction: 0), feedback: .confirmed, hover: 3)
+        XCTAssertEqual(severalDone.dropTitle, "3 items added")
+        XCTAssertEqual(severalDone.dropSubtitle, "Upload started")
+
+        let refused = look(.idle, feedback: .refused("Rabbithole is still starting"))
+        XCTAssertEqual(refused.dropTitle, "Rabbithole is still starting")
         XCTAssertEqual(refused.dropStyle, .normal)
     }
 
@@ -97,7 +103,7 @@ final class TrayPresentationTests: XCTestCase {
 @MainActor
 final class TrayViewModelUploadsTests: XCTestCase {
     private func makeModel(client: StubDaemonClient = StubDaemonClient()) -> TrayViewModel {
-        let model = TrayViewModel(client: client, isRegularFile: { _ in true }, sleep: { _ in })
+        let model = TrayViewModel(client: client, sleep: { _ in })
         model.configured(
             with: AWSSettings(accessKeyID: "id", secretAccessKey: "secret", region: "r", bucket: "b"))
         return model
@@ -148,6 +154,26 @@ final class TrayViewModelUploadsTests: XCTestCase {
         await model.uploadFromClipboard([URL(fileURLWithPath: "/tmp/copied.pdf")])
         XCTAssertEqual(client.enqueued, ["/tmp/copied.pdf"])
         XCTAssertEqual(model.state, .uploading(remaining: 1, total: 1, fraction: 0))
+
+        let copied = [URL(fileURLWithPath: "/tmp/a.pdf"), URL(fileURLWithPath: "/tmp/photos", isDirectory: true)]
+        await model.uploadFromClipboard(copied)
+        XCTAssertEqual(
+            client.requests.last?.paths, ["/tmp/a.pdf", "/tmp/photos"],
+            "several copied files and folders are one upload")
+    }
+
+    func testRetryOfAFailedUploadSendsEverythingItWasHandedAsOneUpload() async {
+        let client = StubDaemonClient()
+        let model = makeModel(client: client)
+        let paths = ["/tmp/report-q3.pdf", "/tmp/photos", "/tmp/notes.txt"]
+        await model.drop(paths.map { URL(fileURLWithPath: $0) })
+        model.apply(.several("up-1", paths, files: 9, finished: 6, failed: 3, total: 900, sent: 600, .failed, error: "3 of 9 files could not be sent"))
+        XCTAssertEqual(model.state, .failed("3 of 9 files could not be sent"))
+
+        let count = await model.retry(model.uploads.ledger.records)
+        XCTAssertEqual(count, 1)
+        XCTAssertEqual(client.requests.map(\.paths), [paths, paths])
+        XCTAssertEqual(model.state, .uploading(remaining: 3, total: 3, fraction: 0))
     }
 
     func testRetryEnqueuesEachFailedFileAgainAndClearsTheCondition() async {
@@ -175,7 +201,7 @@ final class TrayViewModelUploadsTests: XCTestCase {
         client.failEnqueue(with: .invalidArgument("gone"))
         let none = await model.retry(failed)
         XCTAssertEqual(none, 0)
-        XCTAssertEqual(model.state, .failed("This file cannot be read"))
+        XCTAssertEqual(model.state, .failed("gone"), "the daemon's own words are shown")
 
         client.failEnqueue(with: nil)
         model.handle(.unavailable)
@@ -187,10 +213,173 @@ final class TrayViewModelUploadsTests: XCTestCase {
     func testHoverRemembersHowManyItemsAreHeld() {
         let model = makeModel()
         model.setHovering(true, itemCount: 3)
-        XCTAssertEqual(model.hoverItemCount, 3)
-        XCTAssertEqual(TrayPresentation(model).dropTitle, "One file at a time")
+        XCTAssertEqual(model.feedbackItemCount, 3)
+        XCTAssertEqual(TrayPresentation(model).dropSubtitle, "3 items to Quick uploads")
         model.setHovering(false)
         XCTAssertEqual(model.dropFeedback, .none)
+    }
+}
+
+final class UploadFileListTests: XCTestCase {
+    private func file(_ index: Int, _ state: UploadState, sent: Int64 = 0) -> FileSnapshot {
+        .make(index, "vacation-2026/IMG_\(index).jpg", total: 100, sent: sent, state)
+    }
+
+    func testFilesAreListedSendingThenFailedThenWaitingThenFinishedEachInTheirOwnOrder() {
+        var list = UploadFileList()
+        for (index, state) in [(5, UploadState.queued), (0, .finished), (3, .uploading), (4, .queued), (1, .finished), (2, .failed)] {
+            XCTAssertTrue(list.apply(file(index, state)), "a new file changes the listing")
+        }
+        XCTAssertEqual(list.count, 6)
+        XCTAssertEqual(list.indexes(.all), [3, 2, 4, 5, 0, 1])
+        XCTAssertEqual(list.indexes(.inProgress), [3])
+        XCTAssertEqual(list.indexes(.waiting), [4, 5])
+        XCTAssertEqual(list.indexes(.finished), [0, 1])
+        XCTAssertEqual(list.indexes(.failed), [2])
+    }
+
+    func testProgressKeepsTheListingAndAStateChangeMovesOnlyThatFile() {
+        var list = UploadFileList()
+        for index in 0..<4 { list.apply(file(index, .queued)) }
+
+        XCTAssertTrue(list.apply(file(2, .uploading, sent: 10)))
+        XCTAssertFalse(list.apply(file(2, .uploading, sent: 60)), "progress alone does not reorder")
+        XCTAssertEqual(list[2]?.bytesSent, 60)
+        XCTAssertEqual(list.indexes(.all), [2, 0, 1, 3])
+
+        XCTAssertTrue(list.apply(file(2, .finished, sent: 100)))
+        XCTAssertTrue(list.apply(file(0, .failed)))
+        XCTAssertEqual(list.indexes(.all), [0, 1, 3, 2])
+        XCTAssertEqual(list.count, 4, "the same index is the same file")
+    }
+
+    func testInterruptFailsWaitingAndSendingFilesOnly() {
+        var list = UploadFileList()
+        list.apply(file(0, .finished, sent: 100))
+        list.apply(file(1, .uploading, sent: 40))
+        list.apply(file(2, .queued))
+        XCTAssertTrue(list.interrupt(message: "Upload interrupted"))
+        XCTAssertEqual(list.indexes(.failed), [1, 2])
+        XCTAssertEqual(list[1]?.errorMessage, "Upload interrupted")
+        XCTAssertEqual(list[1]?.bytesSent, 40)
+        XCTAssertEqual(list.indexes(.finished), [0])
+        XCTAssertFalse(list.interrupt(message: "Upload interrupted"))
+    }
+
+    func testTensOfThousandsOfFilesStayCheapToFollow() {
+        var list = UploadFileList()
+        let count = 50_000
+        let started = ContinuousClock.now
+        for index in 0..<count { list.apply(file(index, .queued)) }
+        // Every file is sent and finishes, four at a time, as a folder upload goes.
+        for index in 0..<count {
+            list.apply(file(index, .uploading, sent: 50))
+            if index >= 4 { list.apply(file(index - 4, .finished, sent: 100)) }
+        }
+        let elapsed = ContinuousClock.now - started
+        XCTAssertEqual(list.indexes(.inProgress), [count - 4, count - 3, count - 2, count - 1])
+        XCTAssertEqual(list.indexes(.finished).count, count - 4)
+        XCTAssertEqual(list.indexes(.all).prefix(4), [count - 4, count - 3, count - 2, count - 1])
+        XCTAssertLessThan(elapsed, .seconds(5), "150,000 updates must not take a sort each")
+    }
+}
+
+@MainActor
+final class UploadFilesModelTests: XCTestCase {
+    private func stream(
+        _ files: [FileSnapshot], failing error: DaemonError? = nil
+    ) -> AsyncThrowingStream<FileSnapshot, Error> {
+        AsyncThrowingStream { continuation in
+            for file in files { continuation.yield(file) }
+            continuation.finish(throwing: error)
+        }
+    }
+
+    func testFollowLoadsTheFilesOfOneUploadAndANewUploadReplacesThem() async {
+        let model = UploadFilesModel(publishInterval: .zero)
+        XCTAssertEqual(model.phase, .waiting)
+        await model.follow(
+            uploadID: "up-1",
+            stream: stream([.make(0, "a.jpg", total: 10, .uploading), .make(1, "b.jpg", total: 10, .queued)]))
+        XCTAssertEqual(model.phase, .loaded)
+        XCTAssertEqual(model.count, 2)
+        XCTAssertEqual(model.indexes(.all), [0, 1])
+        XCTAssertEqual(model.file(at: 1)?.relativePath, "b.jpg")
+
+        await model.follow(uploadID: "up-2", stream: stream([.make(0, "c.jpg", of: "up-2", total: 10, .finished)]))
+        XCTAssertEqual(model.count, 1)
+        XCTAssertEqual(model.file(at: 0)?.relativePath, "c.jpg")
+
+        model.clear()
+        XCTAssertEqual(model.count, 0)
+        XCTAssertEqual(model.phase, .waiting)
+        XCTAssertNil(model.uploadID)
+    }
+
+    func testAStreamThatFailsLeavesNothingToShowOrInterruptsWhatWasShown() async {
+        let unknown = UploadFilesModel(publishInterval: .zero)
+        await unknown.follow(uploadID: "gone", stream: stream([], failing: .notFound))
+        XCTAssertEqual(unknown.phase, .unavailable)
+
+        let interrupted = UploadFilesModel(publishInterval: .zero)
+        await interrupted.follow(
+            uploadID: "up-1",
+            stream: stream(
+                [.make(0, "a.jpg", total: 10, .finished), .make(1, "b.jpg", total: 10, sent: 4, .uploading)],
+                failing: .unavailable))
+        XCTAssertEqual(interrupted.phase, .loaded)
+        XCTAssertEqual(interrupted.indexes(.failed), [1])
+        XCTAssertEqual(interrupted.file(at: 1)?.errorMessage, "Upload interrupted")
+    }
+
+    func testChangesArePublishedTogetherAfterTheInterval() async throws {
+        let model = UploadFilesModel(publishInterval: .milliseconds(20))
+        let (stream, continuation) = AsyncThrowingStream<FileSnapshot, Error>.makeStream()
+        let following = Task { await model.follow(uploadID: "up-1", stream: stream) }
+        for index in 0..<500 { continuation.yield(.make(index, "f\(index).jpg", total: 10, .queued)) }
+        XCTAssertEqual(model.phase, .waiting, "nothing is announced before the interval has passed")
+        for _ in 0..<200 where model.count < 500 || model.phase != .loaded {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(model.count, 500)
+        XCTAssertEqual(model.phase, .loaded)
+
+        following.cancel()
+        await following.value
+        XCTAssertEqual(model.count, 500, "a cancelled subscription keeps what it had")
+    }
+
+    func testTheWindowModelFollowsFilesOnlyWhileADetailIsOpenAndTheWindowShows() async throws {
+        let client = StubDaemonClient()
+        client.setFiles([.make(0, "a.jpg", total: 10, .finished)], of: "up-1")
+        client.setFiles([.make(0, "b.jpg", of: "up-2", total: 10, .finished)], of: "up-2")
+        let model = MainWindowModel(detailFiles: UploadFilesModel(publishInterval: .zero))
+        model.watchFiles = { client.watchFiles(uploadID: $0) }
+        XCTAssertEqual(client.watchedFiles, [], "nothing is asked for before a detail opens")
+
+        model.openDetail(id: "up-1")
+        try await waitUntil { model.detailFiles.count == 1 }
+        XCTAssertEqual(client.watchedFiles, ["up-1"])
+        XCTAssertEqual(model.detailFiles.file(at: 0)?.relativePath, "a.jpg")
+
+        model.openDetail(id: "up-2")
+        try await waitUntil { model.detailFiles.file(at: 0)?.relativePath == "b.jpg" }
+        XCTAssertEqual(client.watchedFiles, ["up-1", "up-2"])
+
+        model.windowShowing(false)
+        XCTAssertEqual(model.detailFiles.count, 1, "a closed window keeps the list for when it comes back")
+        model.windowShowing(true)
+        XCTAssertEqual(client.watchedFiles, ["up-1", "up-2", "up-2"])
+
+        model.closeDetail()
+        XCTAssertEqual(model.detailFiles.count, 0)
+        model.show(.history)
+        XCTAssertEqual(client.watchedFiles.count, 3, "leaving the detail asks for nothing more")
+    }
+
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        for _ in 0..<300 where !condition() { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(condition())
     }
 }
 
@@ -236,6 +425,20 @@ final class SettingsModelsTests: XCTestCase {
         XCTAssertTrue(second.pauseOnBattery)
         XCTAssertFalse(second.checkAfterSending)
         XCTAssertEqual(second.skipPatterns, "*.log")
+    }
+
+    func testSkipPatternsAndSimultaneousUploadsGoIntoEveryEnqueueRequest() {
+        XCTAssertEqual(AppPreferences.patterns(from: ".DS_Store, node_modules, *.tmp"), [".DS_Store", "node_modules", "*.tmp"])
+        XCTAssertEqual(AppPreferences.patterns(from: " *.log ,, ,Thumbs.db,"), ["*.log", "Thumbs.db"])
+        XCTAssertEqual(AppPreferences.patterns(from: "  "), [])
+
+        let scratch = ScratchDefaults()
+        let preferences = AppPreferences(defaults: scratch.defaults)
+        preferences.skipPatterns = "*.log, build"
+        preferences.simultaneousUploads = 6
+        XCTAssertEqual(
+            preferences.enqueueRequest(for: ["/tmp/a", "/tmp/photos"]),
+            EnqueueRequest(paths: ["/tmp/a", "/tmp/photos"], skipPatterns: ["*.log", "build"], parallelFiles: 6))
     }
 
     func testPreferencesOutOfRangeAreClampedAndNoSecretKeysExist() {

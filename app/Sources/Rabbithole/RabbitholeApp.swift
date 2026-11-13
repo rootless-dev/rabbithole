@@ -56,8 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             makeClient: { _ in client })
         let viewModel = TrayViewModel(
             client: client,
-            isRegularFile: TrayViewModel.isRegularFileOffMain,
-            sleep: { try await Task.sleep(for: $0) })
+            sleep: { try await Task.sleep(for: $0) },
+            makeRequest: { preferences.enqueueRequest(for: $0) })
         let forwarder = DaemonEventForwarder(
             client: client, events: supervisor.events, viewModel: viewModel,
             loadSettings: { try store.load() })
@@ -70,8 +70,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let actions = makeActions()
         let account = AccountModel(store: store, onSaved: { forwarder.settingsChanged($0) })
         let loginItem = LoginItemModel(service: SystemLoginItemService())
+        let windowModel = MainWindowModel()
+        windowModel.watchFiles = { client.watchFiles(uploadID: $0) }
         let context = MainContext(
-            model: MainWindowModel(), tray: viewModel, account: account, preferences: preferences,
+            model: windowModel, tray: viewModel, account: account, preferences: preferences,
             loginItem: loginItem, actions: actions)
         let mainWindow = MainWindowController(
             context: context, thumbnails: ThumbnailCache(),
@@ -131,8 +133,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var actions = AppActions()
         actions.chooseFile = { [weak self] in
             Task {
-                guard let url = await FilePicker.chooseFile() else { return }
-                await self?.viewModel?.drop([url])
+                let urls = await FilePicker.chooseItems()
+                guard !urls.isEmpty else { return }
+                await self?.viewModel?.drop(urls)
             }
         }
         actions.uploadFromClipboard = { [weak self] in

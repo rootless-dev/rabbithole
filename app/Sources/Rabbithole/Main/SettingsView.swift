@@ -303,7 +303,8 @@ private struct ShortcutRecorder: View {
     }
 }
 
-/// Upload behavior. The engine does not act on these yet: each choice is stored and restored.
+/// Upload behavior. "Uploads at the same time" and "Skip these files" go to the daemon with
+/// every upload; the engine does not act on the others yet, which are stored and restored.
 private struct UploadsPane: View {
     let preferences: AppPreferences
 

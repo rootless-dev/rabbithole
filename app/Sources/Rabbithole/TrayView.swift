@@ -326,6 +326,7 @@ struct TrayMenuRule: View {
 // MARK: - Recent uploads
 
 /// The list that opens beside the menu: the last five uploads of this run, then History.
+/// Folders end with a slash.
 struct RecentUploadsView: View {
     static let width: CGFloat = 196
     static let limit = 5
@@ -344,7 +345,7 @@ struct RecentUploadsView: View {
                 }
                 ForEach(recent) { record in
                     TrayMenuRow(
-                        title: record.fileName,
+                        title: UploadText.name(record),
                         shortcut: UploadText.shortAge(record.startedAt, now: timeline.date),
                         action: { actions.openUpload(record.id) })
                 }

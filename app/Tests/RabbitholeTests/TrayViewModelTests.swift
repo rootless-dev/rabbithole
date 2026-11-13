@@ -7,7 +7,7 @@ import XCTest
 private final class FakeDaemonClient: DaemonClient, Sendable {
     private struct Calls {
         var configured: [AWSSettings] = []
-        var enqueued: [String] = []
+        var requests: [EnqueueRequest] = []
         var nextID = 1
         var enqueueError: DaemonError?
     }
@@ -15,7 +15,10 @@ private final class FakeDaemonClient: DaemonClient, Sendable {
     private let calls = Mutex(Calls())
 
     var configured: [AWSSettings] { calls.withLock { $0.configured } }
-    var enqueued: [String] { calls.withLock { $0.enqueued } }
+    /// One request per upload.
+    var requests: [EnqueueRequest] { calls.withLock { $0.requests } }
+    /// The paths of every request, flattened.
+    var enqueued: [String] { requests.flatMap(\.paths) }
 
     func failEnqueue(with error: DaemonError) {
         calls.withLock { $0.enqueueError = error }
@@ -25,10 +28,10 @@ private final class FakeDaemonClient: DaemonClient, Sendable {
         calls.withLock { $0.configured.append(settings) }
     }
 
-    func enqueue(localPath: String) async throws -> String {
+    func enqueue(_ request: EnqueueRequest) async throws -> String {
         try calls.withLock { state in
             if let error = state.enqueueError { throw error }
-            state.enqueued.append(localPath)
+            state.requests.append(request)
             defer { state.nextID += 1 }
             return "up-\(state.nextID)"
         }
@@ -37,11 +40,10 @@ private final class FakeDaemonClient: DaemonClient, Sendable {
     func watch() -> AsyncThrowingStream<UploadSnapshot, Error> {
         AsyncThrowingStream { $0.finish() }
     }
-}
 
-@MainActor
-private final class ModelBox: Sendable {
-    var model: TrayViewModel?
+    func watchFiles(uploadID: String) -> AsyncThrowingStream<FileSnapshot, Error> {
+        AsyncThrowingStream { $0.finish() }
+    }
 }
 
 private final class SleepRecorder: Sendable {
@@ -68,12 +70,12 @@ final class TrayViewModelTests: XCTestCase {
         settings: AWSSettings? = TrayViewModelTests.sampleSettings,
         recorder: SleepRecorder = SleepRecorder(),
         ready: Bool = true,
-        isRegularFile: @escaping @Sendable (URL) async -> Bool = { _ in true }
+        makeRequest: @escaping ([String]) -> EnqueueRequest = { EnqueueRequest(paths: $0) }
     ) -> TrayViewModel {
         let model = TrayViewModel(
             client: client,
-            isRegularFile: isRegularFile,
-            sleep: { try await recorder.sleep($0) }
+            sleep: { try await recorder.sleep($0) },
+            makeRequest: makeRequest
         )
         // The model always starts in `starting`; most tests want a configured daemon.
         if ready { model.configured(with: settings) }
@@ -217,40 +219,6 @@ final class TrayViewModelTests: XCTestCase {
         XCTAssertEqual(client.enqueued, [])
     }
 
-    func testDropIsRefusedWhenTheStateChangesDuringTheFileCheck() async {
-        let client = FakeDaemonClient()
-        let box = ModelBox()
-        let model = makeViewModel(
-            client: client,
-            isRegularFile: { _ in
-                await box.model?.handle(.restarted)
-                return true
-            })
-        box.model = model
-        await model.drop([file])
-
-        XCTAssertEqual(client.enqueued, [])
-        XCTAssertEqual(model.dropFeedback, .refused("Rabbithole is still starting"))
-    }
-
-    func testUnavailableDuringFileCheckStaysUnavailableAndSkipsEnqueue() async {
-        let client = FakeDaemonClient()
-        client.failEnqueue(with: .unavailable)
-        let box = ModelBox()
-        let model = makeViewModel(
-            client: client,
-            isRegularFile: { _ in
-                await box.model?.handle(.unavailable)
-                return true
-            })
-        box.model = model
-        model.configured(with: settings)
-        // The state flips to unavailable during the file check, so enqueue is never reached.
-        await model.drop([file])
-
-        XCTAssertEqual(model.state, .restartRequired)
-    }
-
     func testRestartGoesBackToStartingAndRefusesDrops() async {
         let client = FakeDaemonClient()
         let model = makeViewModel(client: client)
@@ -272,9 +240,9 @@ final class TrayViewModelTests: XCTestCase {
 
     func testRefusalClearsAfterTwoSecondsOnTheInjectedSleep() async {
         let recorder = SleepRecorder()
-        let model = makeViewModel(recorder: recorder)
-        await model.drop([file, URL(fileURLWithPath: "/tmp/other.jpg")])
-        XCTAssertEqual(model.dropFeedback, .refused("Drop one file at a time"))
+        let model = makeViewModel(recorder: recorder, ready: false)
+        await model.drop([file])
+        XCTAssertEqual(model.dropFeedback, .refused("Rabbithole is still starting"))
 
         for _ in 0..<50 where model.dropFeedback != .none { await Task.yield() }
 
@@ -283,8 +251,8 @@ final class TrayViewModelTests: XCTestCase {
     }
 
     func testNewerHoverIsNotClearedByAnEarlierRefusal() async {
-        let model = makeViewModel()
-        await model.drop([file, URL(fileURLWithPath: "/tmp/other.jpg")])
+        let model = makeViewModel(ready: false)
+        await model.drop([file])
         model.setHovering(true)
 
         for _ in 0..<50 { await Task.yield() }
@@ -409,7 +377,8 @@ final class TrayViewModelTests: XCTestCase {
         let cases: [(DaemonError, String)] = [
             (.notConfigured, "Connect your AWS account first"),
             (.unavailable, "Uploads are unavailable"),
-            (.invalidArgument("path is empty"), "This file cannot be read"),
+            (.invalidArgument("\"notes\" has no files to send"), "\"notes\" has no files to send"),
+            (.invalidArgument(""), "This file cannot be read"),
             (.other("rpc error: code = Internal"), "Upload could not be started"),
         ]
         for (error, message) in cases {
@@ -433,54 +402,68 @@ final class TrayViewModelTests: XCTestCase {
         XCTAssertEqual(model.state, .failed("Upload could not be started"))
     }
 
-    func testFolderIsRefused() async throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("rabbithole-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let client = FakeDaemonClient()
-        let model = makeViewModel(client: client, isRegularFile: TrayViewModel.isRegularFileOffMain)
-        await model.drop([directory])
-
-        XCTAssertEqual(model.dropFeedback, .refused("Folders are not supported yet"))
-        XCTAssertEqual(client.enqueued, [])
-    }
-
-    func testPackageDirectoryIsRefused() async throws {
-        let package = FileManager.default.temporaryDirectory
-            .appendingPathComponent("rabbithole-\(UUID().uuidString).app")
-        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: package) }
-
-        let client = FakeDaemonClient()
-        let model = makeViewModel(client: client, isRegularFile: TrayViewModel.isRegularFileOffMain)
-        await model.drop([package])
-
-        XCTAssertEqual(model.dropFeedback, .refused("Folders are not supported yet"))
-        XCTAssertEqual(client.enqueued, [])
-    }
-
-    func testRegularFileOnDiskIsAccepted() async throws {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("rabbithole-\(UUID().uuidString).txt")
-        try Data("hi".utf8).write(to: url)
-        defer { try? FileManager.default.removeItem(at: url) }
-
-        let client = FakeDaemonClient()
-        let model = makeViewModel(client: client, isRegularFile: TrayViewModel.isRegularFileOffMain)
-        await model.drop([url])
-
-        XCTAssertEqual(client.enqueued, [url.path])
-    }
-
-    func testMultipleItemsRefused() async {
+    func testSeveralItemsAndFoldersBecomeOneUpload() async {
         let client = FakeDaemonClient()
         let model = makeViewModel(client: client)
-        await model.drop([file, URL(fileURLWithPath: "/tmp/other.jpg")])
+        let folder = URL(fileURLWithPath: "/tmp/vacation-2026", isDirectory: true)
+        let other = URL(fileURLWithPath: "/tmp/other.jpg")
+        await model.drop([file, folder, other])
 
-        XCTAssertEqual(model.dropFeedback, .refused("Drop one file at a time"))
-        XCTAssertEqual(client.enqueued, [])
+        XCTAssertEqual(
+            client.requests, [EnqueueRequest(paths: ["/tmp/photo.jpg", "/tmp/vacation-2026", "/tmp/other.jpg"])],
+            "one enqueue call with every path, in the order they were handed over")
+        XCTAssertEqual(
+            model.state, .uploading(remaining: 3, total: 3, fraction: 0),
+            "until the daemon reports its count, each item stands for one file")
+        XCTAssertEqual(model.statusText, "3 of 3 files left")
+    }
+
+    func testEveryUploadCarriesTheSkipPatternsAndParallelFilesItIsBuiltWith() async {
+        let client = FakeDaemonClient()
+        let model = makeViewModel(
+            client: client,
+            makeRequest: { EnqueueRequest(paths: $0, skipPatterns: [".DS_Store", "*.tmp"], parallelFiles: 6) })
+        await model.drop([file])
+        model.apply(snapshot("up-1", .failed, error: "Bucket not found"))
+        await model.retry(model.uploads.ledger.records)
+
+        let expected = EnqueueRequest(paths: [file.path], skipPatterns: [".DS_Store", "*.tmp"], parallelFiles: 6)
+        XCTAssertEqual(client.requests, [expected, expected])
+    }
+
+    func testFilesLeftCountsFilesNotUploads() async {
+        let model = makeViewModel()
+        await model.drop([URL(fileURLWithPath: "/tmp/vacation-2026", isDirectory: true)])
+        XCTAssertEqual(model.statusText, "1 of 1 files left")
+
+        model.apply(.folder("up-1", "vacation-2026", files: 12, finished: 4, failed: 1, total: 1200, sent: 500, .uploading))
+        XCTAssertEqual(model.statusText, "7 of 12 files left")
+
+        await model.drop([file])
+        XCTAssertEqual(model.statusText, "8 of 13 files left", "a second upload joins the batch with its files")
+
+        model.apply(.folder("up-1", "vacation-2026", files: 12, finished: 11, failed: 1, total: 1200, sent: 1100, .failed, error: "1 of 12 files could not be sent"))
+        XCTAssertEqual(model.statusText, "1 of 13 files left")
+
+        model.apply(snapshot("up-2", .finished, sent: 100))
+        XCTAssertEqual(model.state, .failed("1 of 12 files could not be sent"))
+    }
+
+    func testConfirmationSaysHowManyItemsWereAdded() async {
+        var observed: (DropFeedback, String)?
+        var modelRef: TrayViewModel?
+        let model = TrayViewModel(
+            client: FakeDaemonClient(),
+            sleep: { _ in
+                if let model = modelRef { observed = (model.dropFeedback, TrayPresentation(model).dropTitle) }
+            })
+        modelRef = model
+        model.configured(with: settings)
+        await model.drop([file, URL(fileURLWithPath: "/tmp/a"), URL(fileURLWithPath: "/tmp/b")])
+
+        XCTAssertEqual(observed?.0, .confirmed)
+        XCTAssertEqual(observed?.1, "3 items added")
+        XCTAssertEqual(TrayPresentation(model).dropTitle, "Drop more to queue", "then back to normal")
     }
 
     func testConfirmationLastsTwoSeconds() async {
@@ -497,7 +480,7 @@ final class TrayViewModelTests: XCTestCase {
         var observed: DropFeedback?
         var modelRef: TrayViewModel?
         let model = TrayViewModel(
-            client: client, isRegularFile: { _ in true },
+            client: client,
             sleep: { _ in observed = modelRef?.dropFeedback }
         )
         modelRef = model

@@ -12,7 +12,8 @@ struct Shortcut: Equatable, Sendable {
 }
 
 /// App options kept in preferences. Nothing here is secret. Options whose function the engine
-/// does not have yet are still stored and restored, so the choice is there when it arrives.
+/// does not have yet are still stored and restored, so the choice is there when it arrives;
+/// the ones the engine acts on are marked below.
 @MainActor
 @Observable
 final class AppPreferences {
@@ -29,16 +30,20 @@ final class AppPreferences {
         }
     }
 
+    // Uploads: sent to the daemon with every upload, see `enqueueRequest(for:)`.
+    /// How many files of one upload are sent at the same time.
+    var simultaneousUploads: Int { didSet { defaults.set(simultaneousUploads, forKey: Key.simultaneous) } }
+    /// Comma-separated name patterns left out when a folder is walked.
+    var skipPatterns: String { didSet { defaults.set(skipPatterns, forKey: Key.skip) } }
+
     // Uploads: stored only, the engine does not act on them yet.
     var resumeAutomatically: Bool { didSet { defaults.set(resumeAutomatically, forKey: Key.resume) } }
     var retryFailed: Bool { didSet { defaults.set(retryFailed, forKey: Key.retry) } }
     var retryCount: Int { didSet { defaults.set(retryCount, forKey: Key.retryCount) } }
-    var simultaneousUploads: Int { didSet { defaults.set(simultaneousUploads, forKey: Key.simultaneous) } }
     var limitSpeed: Bool { didSet { defaults.set(limitSpeed, forKey: Key.limitSpeed) } }
     var speedLimitMBps: Int { didSet { defaults.set(speedLimitMBps, forKey: Key.speedLimit) } }
     var pauseOnBattery: Bool { didSet { defaults.set(pauseOnBattery, forKey: Key.battery) } }
     var checkAfterSending: Bool { didSet { defaults.set(checkAfterSending, forKey: Key.verify) } }
-    var skipPatterns: String { didSet { defaults.set(skipPatterns, forKey: Key.skip) } }
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -62,6 +67,19 @@ final class AppPreferences {
         pauseOnBattery = defaults.object(forKey: Key.battery) as? Bool ?? false
         checkAfterSending = defaults.object(forKey: Key.verify) as? Bool ?? true
         skipPatterns = defaults.string(forKey: Key.skip) ?? ".DS_Store, node_modules, *.tmp"
+    }
+
+    /// The daemon request for the paths of one upload, with the upload preferences applied.
+    func enqueueRequest(for paths: [String]) -> EnqueueRequest {
+        EnqueueRequest(
+            paths: paths, skipPatterns: Self.patterns(from: skipPatterns), parallelFiles: simultaneousUploads)
+    }
+
+    /// The patterns typed in "Skip these files": separated by commas, trimmed, empty ones dropped.
+    nonisolated static func patterns(from text: String) -> [String] {
+        text.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     static func clamp(_ value: Int, _ range: ClosedRange<Int>) -> Int {

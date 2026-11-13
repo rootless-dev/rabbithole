@@ -24,25 +24,42 @@ final class StubCredentialStore: CredentialStore, Sendable {
 
 final class StubDaemonClient: DaemonClient, Sendable {
     private struct Calls {
-        var enqueued: [String] = []
+        var requests: [EnqueueRequest] = []
         var nextID = 1
         var enqueueError: DaemonError?
+        var files: [String: [FileSnapshot]] = [:]
+        var filesError: DaemonError?
+        var watchedFiles: [String] = []
     }
 
     private let calls = Mutex(Calls())
 
-    var enqueued: [String] { calls.withLock { $0.enqueued } }
+    /// One request per upload, as the daemon would receive them.
+    var requests: [EnqueueRequest] { calls.withLock { $0.requests } }
+    /// The paths of every request, flattened.
+    var enqueued: [String] { requests.flatMap(\.paths) }
+    /// The upload ids whose files were asked for, in order.
+    var watchedFiles: [String] { calls.withLock { $0.watchedFiles } }
 
     func failEnqueue(with error: DaemonError?) {
         calls.withLock { $0.enqueueError = error }
     }
 
+    /// What the files stream of an upload delivers before it ends.
+    func setFiles(_ files: [FileSnapshot], of uploadID: String) {
+        calls.withLock { $0.files[uploadID] = files }
+    }
+
+    func failFiles(with error: DaemonError?) {
+        calls.withLock { $0.filesError = error }
+    }
+
     func configure(_ settings: AWSSettings) async throws {}
 
-    func enqueue(localPath: String) async throws -> String {
+    func enqueue(_ request: EnqueueRequest) async throws -> String {
         try calls.withLock { state in
             if let error = state.enqueueError { throw error }
-            state.enqueued.append(localPath)
+            state.requests.append(request)
             defer { state.nextID += 1 }
             return "up-\(state.nextID)"
         }
@@ -50,6 +67,17 @@ final class StubDaemonClient: DaemonClient, Sendable {
 
     func watch() -> AsyncThrowingStream<UploadSnapshot, Error> {
         AsyncThrowingStream { $0.finish() }
+    }
+
+    func watchFiles(uploadID: String) -> AsyncThrowingStream<FileSnapshot, Error> {
+        let (files, error) = calls.withLock { state in
+            state.watchedFiles.append(uploadID)
+            return (state.files[uploadID] ?? [], state.filesError)
+        }
+        return AsyncThrowingStream { continuation in
+            for file in files { continuation.yield(file) }
+            continuation.finish(throwing: error)
+        }
     }
 }
 
@@ -93,6 +121,41 @@ extension UploadSnapshot {
             id: id, fileName: name, localPath: "\(folder)/\(name)",
             objectKey: state == .queued ? "" : "quick-uploads/\(name)",
             bytesTotal: total, bytesSent: sent, state: state, errorMessage: error)
+    }
+
+    /// A folder handed over as one upload; `finished` and `failed` count its files.
+    static func folder(
+        _ id: String, _ name: String, in parent: String = "/Users/someone/Pictures",
+        files: Int, finished: Int = 0, failed: Int = 0, total: Int64, sent: Int64 = 0,
+        _ state: UploadState, error: String = ""
+    ) -> UploadSnapshot {
+        UploadSnapshot(
+            id: id, fileName: name, localPath: "\(parent)/\(name)", objectKey: "quick-uploads/\(name)/",
+            bytesTotal: total, bytesSent: sent, state: state, errorMessage: error, kind: .folder,
+            rootPaths: ["\(parent)/\(name)"], filesTotal: files, filesFinished: finished, filesFailed: failed)
+    }
+
+    /// Several items handed over as one upload, named after the first.
+    static func several(
+        _ id: String, _ paths: [String], files: Int? = nil, finished: Int = 0, failed: Int = 0,
+        total: Int64, sent: Int64 = 0, _ state: UploadState, error: String = ""
+    ) -> UploadSnapshot {
+        UploadSnapshot(
+            id: id, fileName: (paths[0] as NSString).lastPathComponent, localPath: paths[0], objectKey: "",
+            bytesTotal: total, bytesSent: sent, state: state, errorMessage: error, kind: .multiple,
+            rootPaths: paths, filesTotal: files ?? paths.count, filesFinished: finished, filesFailed: failed)
+    }
+}
+
+extension FileSnapshot {
+    static func make(
+        _ index: Int, _ path: String, of uploadID: String = "up-1", in folder: String = "/Users/someone/Pictures",
+        total: Int64, sent: Int64 = 0, _ state: UploadState, error: String = ""
+    ) -> FileSnapshot {
+        FileSnapshot(
+            uploadID: uploadID, index: index, relativePath: path, localPath: "\(folder)/\(path)",
+            objectKey: "quick-uploads/\(path)", bytesTotal: total, bytesSent: sent, state: state,
+            errorMessage: error)
     }
 }
 

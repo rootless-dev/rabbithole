@@ -85,14 +85,69 @@ enum UploadText {
     }
 
     /// The short status at the right of a file row in the upload detail.
-    static func fileLine(_ record: UploadRecord) -> Line {
-        switch record.state {
-        case .queued: Line(text: "Waiting, \(bytes(record.bytesTotal))", tone: .normal)
+    static func fileLine(_ file: FileSnapshot) -> Line {
+        switch file.state {
+        case .queued: Line(text: "Waiting, \(bytes(file.bytesTotal))", tone: .normal)
         case .uploading:
-            Line(text: "\(bytes(record.bytesSent)) of \(bytes(record.bytesTotal))", tone: .normal)
-        case .finished: Line(text: "Finished, \(bytes(record.bytesTotal))", tone: .ok)
-        case .failed: Line(text: "Failed, \(reason(record.errorMessage))", tone: .bad)
+            Line(text: "\(bytes(file.bytesSent)) of \(bytes(file.bytesTotal))", tone: .normal)
+        case .finished: Line(text: "Finished, \(bytes(file.bytesTotal))", tone: .ok)
+        case .failed: Line(text: "Failed, \(reason(file.errorMessage))", tone: .bad)
         }
+    }
+
+    /// The detail's Files fact: "5 of 12 sent".
+    static func filesSent(_ record: UploadRecord) -> String {
+        "\(record.filesFinished) of \(record.filesTotal) sent"
+    }
+
+    // MARK: Names
+
+    /// What an upload is called in lists: the file name, the folder name with a trailing
+    /// slash, or the first item and how many more came with it.
+    static func name(_ record: UploadRecord) -> String {
+        switch record.kind {
+        case .singleFile:
+            return record.fileName
+        case .folder:
+            return record.fileName.hasSuffix("/") ? record.fileName : record.fileName + "/"
+        case .multiple:
+            let more = record.handedPaths.count - 1
+            return more > 0 ? "\(record.fileName) and \(more) more" : record.fileName
+        }
+    }
+
+    /// Where an upload comes from: the path of the file or folder, or the folder that
+    /// several items share.
+    static func location(_ record: UploadRecord, home: String = NSHomeDirectory()) -> String {
+        switch record.kind {
+        case .singleFile, .folder: displayPath(record.localPath, home: home)
+        case .multiple: displayPath(commonFolder(of: record.handedPaths), home: home)
+        }
+    }
+
+    /// What every file of the upload starts with and the detail leaves out: a folder upload's
+    /// files all sit under the folder's name, which the screen already shows on top.
+    static func hiddenFilePrefix(_ record: UploadRecord) -> String {
+        record.kind == .folder ? record.fileName + "/" : ""
+    }
+
+    /// The name of a file inside its upload, without the prefix the screen already shows.
+    static func fileName(_ file: FileSnapshot, hiding prefix: String) -> String {
+        let path = file.relativePath
+        guard !prefix.isEmpty, path.hasPrefix(prefix), path.count > prefix.count else { return path }
+        return String(path.dropFirst(prefix.count))
+    }
+
+    /// The deepest folder that contains every one of `paths`.
+    static func commonFolder(of paths: [String]) -> String {
+        let parents = paths.map { (($0 as NSString).deletingLastPathComponent as NSString).pathComponents }
+        guard var common = parents.first else { return "" }
+        for parent in parents.dropFirst() {
+            var shared = 0
+            while shared < min(common.count, parent.count), common[shared] == parent[shared] { shared += 1 }
+            common = Array(common.prefix(shared))
+        }
+        return NSString.path(withComponents: common)
     }
 
     /// A daemon message placed after a comma: "No internet connection" reads
@@ -185,10 +240,22 @@ enum UploadText {
         return "~" + path.dropFirst(home.count)
     }
 
-    /// Where the upload lands in the bucket: the resolved key, or the folder and name before
-    /// the daemon has resolved one.
+    /// Where the upload lands in the bucket. A file shows its key, or the folder and name
+    /// before the daemon has resolved one. A folder shows the folder it lands in, and several
+    /// items show the folder they all go to, both written without the trailing slash.
     static func destination(_ record: UploadRecord, prefix: String) -> String {
-        record.objectKey.isEmpty ? prefix + record.fileName : record.objectKey
+        switch record.kind {
+        case .singleFile:
+            return record.objectKey.isEmpty ? prefix + record.fileName : record.objectKey
+        case .folder:
+            return withoutTrailingSlash(record.objectKey.isEmpty ? prefix + record.fileName : record.objectKey)
+        case .multiple:
+            return withoutTrailingSlash(record.objectKey.isEmpty ? prefix : record.objectKey)
+        }
+    }
+
+    private static func withoutTrailingSlash(_ key: String) -> String {
+        key.count > 1 && key.hasSuffix("/") ? String(key.dropLast()) : key
     }
 }
 
@@ -202,8 +269,13 @@ enum FileKind: String, CaseIterable, Sendable {
         "zip", "gz", "tgz", "tar", "bz2", "xz", "7z", "rar", "zst", "dmg", "iso",
     ]
 
-    /// The kind of a file, judged by its name only. The engine uploads single files, so
-    /// nothing is classified as a folder yet.
+    /// The kind of an upload: a folder is a folder, and a file, or several items, go by
+    /// the name of the first one.
+    static func of(_ record: UploadRecord) -> FileKind {
+        record.kind == .folder ? .folders : of(fileName: record.fileName)
+    }
+
+    /// The kind of a file, judged by its name only.
     static func of(fileName: String) -> FileKind {
         let ext = (fileName as NSString).pathExtension.lowercased()
         guard !ext.isEmpty else { return .other }

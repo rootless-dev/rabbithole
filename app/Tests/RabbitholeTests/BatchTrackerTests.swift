@@ -32,6 +32,30 @@ final class BatchTrackerTests: XCTestCase {
         XCTAssertTrue(tracker.isActive)
     }
 
+    func testTotalAndRemainingCountTheFilesOfEveryUploadInTheBatch() {
+        var tracker = BatchTracker()
+        tracker.register(id: "folder")
+        tracker.register(id: "items", items: 3)
+        XCTAssertEqual(tracker.total, 4, "until a snapshot arrives, each item handed over stands for one file")
+        XCTAssertEqual(tracker.remaining, 4)
+
+        tracker.apply(.folder("folder", "vacation-2026", files: 12, finished: 4, failed: 1, total: 1200, sent: 500, .uploading))
+        XCTAssertEqual(tracker.total, 15)
+        XCTAssertEqual(tracker.remaining, 10, "failed files are not left to send")
+
+        tracker.apply(.several("items", ["/tmp/a", "/tmp/photos", "/tmp/b"], files: 40, finished: 40, total: 400, sent: 400, .uploading))
+        XCTAssertEqual(tracker.total, 52)
+        XCTAssertEqual(tracker.remaining, 8, "an upload that is not done yet still has a file to go")
+        XCTAssertTrue(tracker.isActive)
+
+        tracker.apply(.several("items", ["/tmp/a", "/tmp/photos", "/tmp/b"], files: 40, finished: 40, total: 400, sent: 400, .finished))
+        tracker.apply(.folder("folder", "vacation-2026", files: 12, finished: 9, failed: 3, total: 1200, sent: 900, .failed, error: "3 of 12 files could not be sent"))
+        XCTAssertEqual(tracker.remaining, 0)
+        XCTAssertEqual(tracker.total, 52)
+        XCTAssertFalse(tracker.isActive)
+        XCTAssertEqual(tracker.firstError, "3 of 12 files could not be sent")
+    }
+
     func testFractionIsBytesSentOverTotal() {
         var tracker = BatchTracker()
         tracker.register(id: "a")

@@ -66,6 +66,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         } else {
             window = makeWindow(size: size)
         }
+        context.model.windowShowing(true)
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
     }
@@ -104,5 +105,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         // A setup that is closed drops what was typed, including the secret. If it had
         // already saved the account, the regular window is what opens next.
         context.model.setup = nil
+        // Nobody is looking at an upload's files any more: stop asking the daemon for them.
+        context.model.windowShowing(false)
     }
 }

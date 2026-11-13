@@ -143,9 +143,9 @@ struct UploadNotifier: Sendable {
     static func content(for record: UploadRecord) -> (title: String, body: String) {
         switch record.state {
         case .failed:
-            ("Upload failed", "\(record.fileName): \(record.errorMessage)")
+            ("Upload failed", "\(UploadText.name(record)): \(record.errorMessage)")
         default:
-            ("Upload finished", "\(record.fileName), \(UploadText.bytes(record.bytesTotal)) sent")
+            ("Upload finished", "\(UploadText.name(record)), \(UploadText.bytes(record.bytesTotal)) sent")
         }
     }
 

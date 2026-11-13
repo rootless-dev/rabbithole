@@ -31,12 +31,13 @@ enum DropFeedback: Equatable {
 final class TrayViewModel {
     private(set) var state: TrayState
     private(set) var dropFeedback: DropFeedback = .none
-    /// How many items are being held over the window while `dropFeedback` is `.hovering`.
-    private(set) var hoverItemCount = 1
+    /// How many items `dropFeedback` is about: the ones held over the window while it is
+    /// `.hovering`, the ones just added while it is `.confirmed`.
+    private(set) var feedbackItemCount = 1
     /// Every upload seen in this run; the main window and "Recent uploads" read it.
     let uploads: UploadStore
 
-    /// True when dropping or choosing a file can start an upload right now.
+    /// True when dropping or choosing files can start an upload right now.
     var acceptsUploads: Bool { refusalForState() == nil }
 
     var statusText: String {
@@ -61,20 +62,21 @@ final class TrayViewModel {
     /// True from a failed save-triggered configure (the daemon keeps its older settings) until
     /// a configure succeeds. The message waits for an active batch to end.
     @ObservationIgnored private var settingsNotApplied = false
-    @ObservationIgnored private let isRegularFile: @Sendable (URL) async -> Bool
+    /// Builds the daemon request for the paths of one upload, adding the saved preferences.
+    @ObservationIgnored private let makeRequest: ([String]) -> EnqueueRequest
     @ObservationIgnored private let sleep: (Duration) async throws -> Void
     @ObservationIgnored private var tracker = BatchTracker()
     @ObservationIgnored private var feedbackGeneration = 0
 
     init(
         client: DaemonClient?,
-        isRegularFile: @escaping @Sendable (URL) async -> Bool,
         sleep: @escaping (Duration) async throws -> Void,
-        uploads: UploadStore? = nil
+        uploads: UploadStore? = nil,
+        makeRequest: @escaping ([String]) -> EnqueueRequest = { EnqueueRequest(paths: $0) }
     ) {
         self.uploads = uploads ?? UploadStore()
         self.client = client
-        self.isRegularFile = isRegularFile
+        self.makeRequest = makeRequest
         self.sleep = sleep
         if client == nil {
             state = .restartRequired
@@ -83,44 +85,22 @@ final class TrayViewModel {
         }
     }
 
-    /// True for plain files; false for folders, packages and anything unreadable.
-    nonisolated static func isRegularFileOnDisk(_ url: URL) -> Bool {
-        (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
-    }
-
-    /// The same check, run off the main actor: it can block on a stalled network volume.
-    @Sendable
-    nonisolated static func isRegularFileOffMain(_ url: URL) async -> Bool {
-        await Task.detached { isRegularFileOnDisk(url) }.value
-    }
-
     func setHovering(_ over: Bool, itemCount: Int = 1) {
         if over {
-            hoverItemCount = max(itemCount, 1)
+            feedbackItemCount = max(itemCount, 1)
             setFeedback(.hovering)
         } else if dropFeedback == .hovering {
             setFeedback(.none)
         }
     }
 
+    /// Sends everything that was dropped, picked or copied as one upload. Files and folders
+    /// are told apart by the daemon, which walks the folders before it answers.
     func drop(_ urls: [URL]) async {
-        guard let url = urls.first else {
+        guard !urls.isEmpty else {
             setFeedback(.none)
             return
         }
-        if let message = refusalForState() {
-            refuse(message)
-            return
-        }
-        guard urls.count == 1 else {
-            refuse("Drop one file at a time")
-            return
-        }
-        guard await isRegularFile(url) else {
-            refuse("Folders are not supported yet")
-            return
-        }
-        // The check may have taken a while: the daemon can have changed state meanwhile.
         if let message = refusalForState() {
             refuse(message)
             return
@@ -132,7 +112,7 @@ final class TrayViewModel {
 
         let id: String
         do {
-            id = try await client.enqueue(localPath: url.path)
+            id = try await client.enqueue(makeRequest(urls.map(\.path)))
         } catch {
             setFeedback(.none)
             if refusalForState() == nil {
@@ -140,13 +120,14 @@ final class TrayViewModel {
             }
             return
         }
-        tracker.register(id: id)
+        tracker.register(id: id, items: urls.count)
         refreshState()
-        await confirm()
+        await confirm(itemCount: urls.count)
     }
 
-    /// "Upload from clipboard": uploads the file copied in Finder, if there is one. Clipboard
-    /// contents that are not a file (text, an image) cannot be uploaded yet and are refused.
+    /// "Upload from clipboard": uploads the files and folders copied in Finder, if there are
+    /// any. Clipboard contents that are not files (text, an image) cannot be uploaded yet and
+    /// are refused.
     func uploadFromClipboard(_ urls: [URL]) async {
         guard !urls.isEmpty else {
             refuse("The clipboard has no file to upload")
@@ -155,8 +136,8 @@ final class TrayViewModel {
         await drop(urls)
     }
 
-    /// Sends failed uploads again: each local file is enqueued as a new upload. Returns how
-    /// many were enqueued.
+    /// Sends failed uploads again: everything a failed upload was handed is enqueued as one
+    /// new upload. Returns how many uploads were enqueued.
     @discardableResult
     func retry(_ records: [UploadRecord]) async -> Int {
         uploads.clearCondition()
@@ -164,8 +145,8 @@ final class TrayViewModel {
         var enqueued = 0
         for record in records {
             do {
-                let id = try await client.enqueue(localPath: record.localPath)
-                tracker.register(id: id)
+                let id = try await client.enqueue(makeRequest(record.handedPaths))
+                tracker.register(id: id, items: record.handedPaths.count)
                 refreshState()
                 enqueued += 1
             } catch {
@@ -317,7 +298,8 @@ final class TrayViewModel {
         }
     }
 
-    private func confirm() async {
+    private func confirm(itemCount: Int) async {
+        feedbackItemCount = max(itemCount, 1)
         setFeedback(.confirmed)
         let generation = feedbackGeneration
         try? await sleep(.seconds(2))
@@ -330,7 +312,8 @@ final class TrayViewModel {
         switch error as? DaemonError {
         case .notConfigured: "Connect your AWS account first"
         case .unavailable: "Uploads are unavailable"
-        case .invalidArgument: "This file cannot be read"
+        // The daemon says which path it could not use, or that there was nothing to send.
+        case .invalidArgument(let message): message.isEmpty ? "This file cannot be read" : message
         default: "Upload could not be started"
         }
     }

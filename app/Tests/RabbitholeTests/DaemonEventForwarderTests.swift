@@ -71,8 +71,12 @@ private final class ScriptedClient: DaemonClient, Sendable {
         }
     }
 
-    func enqueue(localPath: String) async throws -> String {
+    func enqueue(_ request: EnqueueRequest) async throws -> String {
         "up-\(state.withLock { state -> Int in state.enqueueCount += 1; return state.enqueueCount })"
+    }
+
+    func watchFiles(uploadID: String) -> AsyncThrowingStream<FileSnapshot, Error> {
+        AsyncThrowingStream { $0.finish() }
     }
 
     func watch() -> AsyncThrowingStream<UploadSnapshot, Error> {
@@ -125,7 +129,7 @@ final class DaemonEventForwarderTests: XCTestCase {
     ) -> Rig {
         let (events, continuation) = AsyncStream<DaemonEvent>.makeStream()
         let sleeps = SleepLog()
-        let viewModel = TrayViewModel(client: client, isRegularFile: { _ in true }, sleep: { _ in })
+        let viewModel = TrayViewModel(client: client, sleep: { _ in })
         let forwarder = DaemonEventForwarder(
             client: client, events: events, viewModel: viewModel,
             loadSettings: saved,

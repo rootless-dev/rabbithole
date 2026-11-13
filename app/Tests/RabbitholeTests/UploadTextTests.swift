@@ -108,10 +108,75 @@ final class UploadTextTests: XCTestCase {
     }
 
     func testFileLines() {
-        XCTAssertEqual(UploadText.fileLine(record(.uploading, total: 8_000_000, sent: 5_100_000)).text, "5.1 MB of 8.0 MB")
-        XCTAssertEqual(UploadText.fileLine(record(.queued, total: 7_400_000, sent: 0)).text, "Waiting, 7.4 MB")
-        XCTAssertEqual(UploadText.fileLine(record(.finished, total: 7_800_000)).text, "Finished, 7.8 MB")
-        XCTAssertEqual(UploadText.fileLine(record(.failed, error: "")).text, "Failed, upload failed")
+        func line(_ state: UploadState, total: Int64, sent: Int64 = 0, error: String = "") -> UploadText.Line {
+            UploadText.fileLine(.make(0, "IMG_4410.jpg", total: total, sent: sent, state, error: error))
+        }
+        XCTAssertEqual(line(.uploading, total: 8_000_000, sent: 5_100_000).text, "5.1 MB of 8.0 MB")
+        XCTAssertEqual(line(.queued, total: 7_400_000).text, "Waiting, 7.4 MB")
+        XCTAssertEqual(line(.finished, total: 7_800_000), .init(text: "Finished, 7.8 MB", tone: .ok))
+        XCTAssertEqual(line(.failed, total: 1, error: ""), .init(text: "Failed, upload failed", tone: .bad))
+        XCTAssertEqual(line(.failed, total: 1, error: "Connection lost").text, "Failed, connection lost")
+    }
+
+    func testAFolderIsNamedWithASlashAndSeveralItemsAfterTheFirstPlusHowManyMore() {
+        var upload = record(.uploading)
+        XCTAssertEqual(UploadText.name(upload), "vacation.zip")
+        XCTAssertEqual(UploadText.location(upload, home: "/Users/x"), "~/vacation.zip")
+
+        upload.kind = .folder
+        upload.fileName = "vacation-2026"
+        upload.localPath = "/Users/x/Pictures/vacation-2026"
+        upload.rootPaths = ["/Users/x/Pictures/vacation-2026"]
+        XCTAssertEqual(UploadText.name(upload), "vacation-2026/")
+        XCTAssertEqual(UploadText.location(upload, home: "/Users/x"), "~/Pictures/vacation-2026")
+
+        upload.kind = .multiple
+        upload.fileName = "report-q3.pdf"
+        upload.localPath = "/Users/x/Downloads/report-q3.pdf"
+        upload.rootPaths = ["report-q3.pdf", "a.png", "b.png", "c", "d", "e", "f", "g"].map { "/Users/x/Downloads/\($0)" }
+        XCTAssertEqual(UploadText.name(upload), "report-q3.pdf and 7 more")
+        XCTAssertEqual(UploadText.location(upload, home: "/Users/x"), "~/Downloads")
+
+        upload.rootPaths = ["/Users/x/Downloads/report-q3.pdf", "/Users/x/Documents/legal/contract.pdf"]
+        XCTAssertEqual(UploadText.name(upload), "report-q3.pdf and 1 more")
+        XCTAssertEqual(UploadText.location(upload, home: "/Users/x"), "~", "items from different folders share an ancestor")
+        XCTAssertEqual(UploadText.commonFolder(of: ["/a/b/c.txt", "/a/b/d/e.txt"]), "/a/b")
+        XCTAssertEqual(UploadText.commonFolder(of: ["/a/x.txt", "/b/y.txt"]), "/")
+    }
+
+    func testFilesFactAndTheLineOfAnUploadWhoseFilesPartlyFailed() {
+        var upload = record(.uploading)
+        upload.kind = .folder
+        upload.filesTotal = 12
+        upload.filesFinished = 5
+        upload.filesFailed = 1
+        XCTAssertEqual(UploadText.filesSent(upload), "5 of 12 sent")
+        XCTAssertEqual(UploadText.filesSent(record(.queued)), "0 of 1 sent")
+
+        upload.state = .failed
+        upload.errorMessage = "3 of 12 files could not be sent"
+        XCTAssertEqual(UploadText.progressLine(upload).text, "Failed, 3 of 12 files could not be sent")
+    }
+
+    func testFilesOfAFolderAreListedWithoutTheFoldersOwnName() {
+        var folder = record(.uploading)
+        folder.kind = .folder
+        folder.fileName = "vacation-2026"
+        let prefix = UploadText.hiddenFilePrefix(folder)
+        XCTAssertEqual(prefix, "vacation-2026/")
+        XCTAssertEqual(
+            UploadText.fileName(.make(0, "vacation-2026/IMG_4410.jpg", total: 1, .queued), hiding: prefix), "IMG_4410.jpg")
+        XCTAssertEqual(
+            UploadText.fileName(.make(1, "vacation-2026/day1/beach.mp4", total: 1, .queued), hiding: prefix),
+            "day1/beach.mp4")
+
+        var several = record(.uploading)
+        several.kind = .multiple
+        XCTAssertEqual(UploadText.hiddenFilePrefix(several), "")
+        XCTAssertEqual(
+            UploadText.fileName(.make(0, "photos/a.jpg", total: 1, .queued), hiding: ""), "photos/a.jpg",
+            "several items keep their folder, which tells them apart")
+        XCTAssertEqual(UploadText.hiddenFilePrefix(record(.uploading)), "")
     }
 
     func testAges() {
@@ -138,5 +203,16 @@ final class UploadTextTests: XCTestCase {
         XCTAssertEqual(UploadText.destination(queued, prefix: "inbox/"), "inbox/vacation.zip")
         queued.objectKey = "inbox/vacation-20261112-120000.zip"
         XCTAssertEqual(UploadText.destination(queued, prefix: "inbox/"), "inbox/vacation-20261112-120000.zip")
+
+        var folder = record(.queued)
+        folder.kind = .folder
+        folder.fileName = "vacation-2026"
+        XCTAssertEqual(UploadText.destination(folder, prefix: "inbox/"), "inbox/vacation-2026")
+        folder.objectKey = "inbox/vacation-2026-1/"
+        XCTAssertEqual(UploadText.destination(folder, prefix: "inbox/"), "inbox/vacation-2026-1")
+
+        var several = record(.queued)
+        several.kind = .multiple
+        XCTAssertEqual(UploadText.destination(several, prefix: "inbox/"), "inbox")
     }
 }

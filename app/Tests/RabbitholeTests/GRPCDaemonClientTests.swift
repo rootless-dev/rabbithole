@@ -102,7 +102,7 @@ final class GRPCDaemonClientTests: XCTestCase {
         let client = GRPCDaemonClient(socketPath: daemon.socketPath)
 
         do {
-            _ = try await withTimeout(10) { try await client.enqueue(localPath: "/tmp/none") }
+            _ = try await withTimeout(10) { try await client.enqueue(EnqueueRequest(paths: ["/tmp/none"])) }
             XCTFail("expected an error")
         } catch let error as DaemonError {
             XCTAssertEqual(error, .notConfigured)
@@ -154,7 +154,7 @@ final class GRPCDaemonClientTests: XCTestCase {
 
         // The daemon is still serving after the client went away.
         do {
-            _ = try await withTimeout(10) { try await client.enqueue(localPath: "/tmp/none") }
+            _ = try await withTimeout(10) { try await client.enqueue(EnqueueRequest(paths: ["/tmp/none"])) }
             XCTFail("expected an error")
         } catch let error as DaemonError {
             XCTAssertEqual(error, .notConfigured)
@@ -165,7 +165,7 @@ final class GRPCDaemonClientTests: XCTestCase {
         // Fail fast before the daemon exists.
         let client = GRPCDaemonClient(socketPath: daemon.socketPath)
         do {
-            _ = try await withTimeout(10) { try await client.enqueue(localPath: "/tmp/none") }
+            _ = try await withTimeout(10) { try await client.enqueue(EnqueueRequest(paths: ["/tmp/none"])) }
             XCTFail("expected an error")
         } catch let error as DaemonError {
             XCTAssertEqual(error, .unavailable)
@@ -182,7 +182,7 @@ final class GRPCDaemonClientTests: XCTestCase {
         var last: DaemonError?
         while ContinuousClock.now - started < .seconds(3) {
             do {
-                _ = try await withTimeout(10) { try await client.enqueue(localPath: "/tmp/none") }
+                _ = try await withTimeout(10) { try await client.enqueue(EnqueueRequest(paths: ["/tmp/none"])) }
                 XCTFail("expected an error")
             } catch let error as DaemonError {
                 last = error
@@ -220,6 +220,74 @@ final class GRPCDaemonClientTests: XCTestCase {
         ] {
             message.state = wire
             XCTAssertEqual(try UploadSnapshot(message).state, expected)
+        }
+    }
+
+    func testSnapshotMappingCarriesTheKindTheRootPathsAndTheFileCounters() throws {
+        var message = Rabbithole_V1_UploadSnapshot()
+        message.uploadID = "id-2"
+        message.fileName = "vacation-2026"
+        message.localPath = "/tmp/vacation-2026"
+        message.objectKey = "quick/vacation-2026/"
+        message.bytesTotal = 1900
+        message.bytesSent = 800
+        message.state = .uploading
+        message.kind = .folder
+        message.rootPaths = ["/tmp/vacation-2026"]
+        message.filesTotal = 12
+        message.filesFinished = 5
+        message.filesFailed = 1
+
+        let folder = try UploadSnapshot(message)
+        XCTAssertEqual(folder.kind, .folder)
+        XCTAssertEqual(folder.rootPaths, ["/tmp/vacation-2026"])
+        XCTAssertEqual([folder.filesTotal, folder.filesFinished, folder.filesFailed], [12, 5, 1])
+
+        message.kind = .multiple
+        message.objectKey = ""
+        message.rootPaths = ["/tmp/a.pdf", "/tmp/photos"]
+        let several = try UploadSnapshot(message)
+        XCTAssertEqual(several.kind, .multiple)
+        XCTAssertEqual(several.rootPaths, ["/tmp/a.pdf", "/tmp/photos"])
+
+        message.kind = .singleFile
+        XCTAssertEqual(try UploadSnapshot(message).kind, .singleFile)
+    }
+
+    func testFileSnapshotMapping() throws {
+        var message = Rabbithole_V1_FileSnapshot()
+        message.uploadID = "id-2"
+        message.index = 7
+        message.relativePath = "vacation-2026/day1/IMG_4410.jpg"
+        message.localPath = "/tmp/vacation-2026/day1/IMG_4410.jpg"
+        message.objectKey = "quick/vacation-2026/day1/IMG_4410.jpg"
+        message.bytesTotal = 8_000_000
+        message.bytesSent = 5_100_000
+        message.state = .failed
+        message.errorMessage = "Connection lost"
+
+        XCTAssertEqual(
+            try FileSnapshot(message),
+            FileSnapshot(
+                uploadID: "id-2", index: 7, relativePath: "vacation-2026/day1/IMG_4410.jpg",
+                localPath: "/tmp/vacation-2026/day1/IMG_4410.jpg",
+                objectKey: "quick/vacation-2026/day1/IMG_4410.jpg", bytesTotal: 8_000_000,
+                bytesSent: 5_100_000, state: .failed, errorMessage: "Connection lost"))
+
+        message.state = .unspecified
+        XCTAssertThrowsError(try FileSnapshot(message))
+    }
+
+    func testWatchingTheFilesOfAnUnknownUploadFailsAndIsNotMistakenForAnOutage() async throws {
+        try daemon.start()
+        let client = GRPCDaemonClient(socketPath: daemon.socketPath)
+        do {
+            try await withTimeout(10) {
+                for try await _ in client.watchFiles(uploadID: "no-such-upload") {}
+            }
+            XCTFail("expected an error")
+        } catch let error as DaemonError {
+            XCTAssertNotEqual(error, .unavailable)
         }
     }
 

@@ -69,29 +69,56 @@ final class GRPCDaemonClient: DaemonClient {
         }
     }
 
-    func enqueue(localPath: String) async throws -> String {
+    func enqueue(_ request: EnqueueRequest) async throws -> String {
         let stub = try requireStub()
-        var request = Rabbithole_V1_EnqueueUploadRequest()
-        request.localPath = localPath
+        var message = Rabbithole_V1_EnqueueUploadRequest()
+        message.localPaths = request.paths
+        // The daemon ignores this when `local_paths` is set; it keeps a single file working
+        // against a daemon from before uploads could hold several paths.
+        message.localPath = request.paths.first ?? ""
+        message.skipPatterns = request.skipPatterns
+        message.parallelFiles = Int32(clamping: max(request.parallelFiles, 0))
         do {
-            return try await stub.enqueueUpload(request).uploadID
+            return try await stub.enqueueUpload(message).uploadID
         } catch {
             throw Self.map(error)
         }
     }
 
     func watch() -> AsyncThrowingStream<UploadSnapshot, Error> {
+        stream { stub, yield in
+            try await stub.watchUploads(Rabbithole_V1_WatchUploadsRequest()) { response in
+                for try await message in response.messages {
+                    yield(try UploadSnapshot(message))
+                }
+            }
+        }
+    }
+
+    func watchFiles(uploadID: String) -> AsyncThrowingStream<FileSnapshot, Error> {
+        stream { stub, yield in
+            var request = Rabbithole_V1_WatchUploadFilesRequest()
+            request.uploadID = uploadID
+            try await stub.watchUploadFiles(request) { response in
+                for try await message in response.messages {
+                    yield(try FileSnapshot(message))
+                }
+            }
+        }
+    }
+
+    /// Runs a server-streaming call in a task that lives as long as the returned stream is
+    /// consumed. Cancelling the consumer ends the call quietly; any other failure is mapped.
+    private func stream<Element: Sendable>(
+        _ call: @escaping @Sendable (Stub, @escaping @Sendable (Element) -> Void) async throws -> Void
+    ) -> AsyncThrowingStream<Element, Error> {
         let stub = stub
         let setupError = setupError
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     guard let stub else { throw DaemonError.other(setupError ?? "client not initialised") }
-                    try await stub.watchUploads(Rabbithole_V1_WatchUploadsRequest()) { response in
-                        for try await message in response.messages {
-                            continuation.yield(try UploadSnapshot(message))
-                        }
-                    }
+                    try await call(stub) { continuation.yield($0) }
                     continuation.finish()
                 } catch {
                     if Task.isCancelled {
@@ -114,6 +141,7 @@ final class GRPCDaemonClient: DaemonClient {
             case .failedPrecondition: return .notConfigured
             case .invalidArgument: return .invalidArgument(rpcError.message)
             case .unavailable: return .unavailable
+            case .notFound: return .notFound
             default: return .other("\(rpcError.code): \(rpcError.message)")
             }
         }
@@ -121,18 +149,37 @@ final class GRPCDaemonClient: DaemonClient {
     }
 }
 
-extension UploadSnapshot {
-    /// Maps a wire message. An unspecified or unrecognised state is a protocol
-    /// violation, so it throws rather than guessing a state.
-    init(_ message: Rabbithole_V1_UploadSnapshot) throws {
-        let state: UploadState
-        switch message.state {
-        case .queued: state = .queued
-        case .uploading: state = .uploading
-        case .finished: state = .finished
-        case .failed: state = .failed
+extension UploadState {
+    /// Maps a wire state. An unspecified or unrecognised state is a protocol violation, so it
+    /// throws rather than guessing a state.
+    fileprivate init(_ state: Rabbithole_V1_UploadState, of what: String) throws {
+        switch state {
+        case .queued: self = .queued
+        case .uploading: self = .uploading
+        case .finished: self = .finished
+        case .failed: self = .failed
         case .unspecified, .UNRECOGNIZED:
-            throw DaemonError.other("snapshot \(message.uploadID) has unspecified or unknown state")
+            throw DaemonError.other("\(what) has unspecified or unknown state")
+        }
+    }
+}
+
+extension UploadSnapshot {
+    /// Maps a wire message; see `UploadState.init` for the states that throw. A message
+    /// without a kind comes from a daemon that only knows single files and is read as one.
+    init(_ message: Rabbithole_V1_UploadSnapshot) throws {
+        let state = try UploadState(message.state, of: "snapshot \(message.uploadID)")
+        let kind: UploadKind
+        switch message.kind {
+        case .singleFile: kind = .singleFile
+        case .folder: kind = .folder
+        case .multiple: kind = .multiple
+        case .unspecified, .UNRECOGNIZED:
+            self.init(
+                id: message.uploadID, fileName: message.fileName, localPath: message.localPath,
+                objectKey: message.objectKey, bytesTotal: message.bytesTotal,
+                bytesSent: message.bytesSent, state: state, errorMessage: message.errorMessage)
+            return
         }
         self.init(
             id: message.uploadID,
@@ -142,6 +189,26 @@ extension UploadSnapshot {
             bytesTotal: message.bytesTotal,
             bytesSent: message.bytesSent,
             state: state,
+            errorMessage: message.errorMessage,
+            kind: kind,
+            rootPaths: message.rootPaths.isEmpty ? [message.localPath] : message.rootPaths,
+            filesTotal: Int(message.filesTotal),
+            filesFinished: Int(message.filesFinished),
+            filesFailed: Int(message.filesFailed))
+    }
+}
+
+extension FileSnapshot {
+    init(_ message: Rabbithole_V1_FileSnapshot) throws {
+        self.init(
+            uploadID: message.uploadID,
+            index: Int(message.index),
+            relativePath: message.relativePath,
+            localPath: message.localPath,
+            objectKey: message.objectKey,
+            bytesTotal: message.bytesTotal,
+            bytesSent: message.bytesSent,
+            state: try UploadState(message.state, of: "file \(message.index) of \(message.uploadID)"),
             errorMessage: message.errorMessage)
     }
 }

@@ -64,8 +64,11 @@ private final class FakeLauncher: ProcessLauncher, Sendable {
 
 private final class FakeClient: DaemonClient {
     func configure(_ settings: AWSSettings) async throws {}
-    func enqueue(localPath: String) async throws -> String { "id" }
+    func enqueue(_ request: EnqueueRequest) async throws -> String { "id" }
     func watch() -> AsyncThrowingStream<UploadSnapshot, Error> {
+        AsyncThrowingStream { $0.finish() }
+    }
+    func watchFiles(uploadID: String) -> AsyncThrowingStream<FileSnapshot, Error> {
         AsyncThrowingStream { $0.finish() }
     }
 }

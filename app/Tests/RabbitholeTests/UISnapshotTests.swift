@@ -26,13 +26,14 @@ final class UIFixture {
             accessKeyID: "AKIAIOSFODNN7EXAMPLE", secretAccessKey: "not-a-real-secret",
             region: "sa-east-1", bucket: "example-backups")
         if configured { try? store.save(settings) }
-        tray = TrayViewModel(
-            client: client, isRegularFile: { _ in true }, sleep: sleep,
-            uploads: UploadStore(now: { clock.now }))
+        tray = TrayViewModel(client: client, sleep: sleep, uploads: UploadStore(now: { clock.now }))
         tray.configured(with: configured ? settings : nil)
         let account = AccountModel(store: store, onSaved: { _ in })
+        // Files are shown as soon as they arrive, so a render does not wait for the interval.
+        let model = MainWindowModel(detailFiles: UploadFilesModel(publishInterval: .zero))
+        model.watchFiles = { [client] in client.watchFiles(uploadID: $0) }
         context = MainContext(
-            model: MainWindowModel(), tray: tray, account: account,
+            model: model, tray: tray, account: account,
             preferences: AppPreferences(defaults: scratch.defaults),
             loginItem: LoginItemModel(service: StubLoginItemService(enabled: true)),
             actions: AppActions())
@@ -47,10 +48,51 @@ final class UIFixture {
         }
     }
 
-    /// Six uploads in every state, like the list in the dashboard mockup.
+    /// The eight items sent together as one upload, like "report-q3.pdf and 7 more" in the
+    /// mockups. The pile shows the first three.
+    static let severalPaths = [
+        "report-q3.pdf", "summary-q3.pdf", "cover.png", "chart-revenue.png", "chart-costs.png",
+        "notes.txt", "budget.xlsx", "appendix.pdf",
+    ].map { "\(home)/Downloads/\($0)" }
+
+    /// The twelve files of the "vacation-2026" folder, as the upload detail mockup lists them.
+    static let vacationFiles: [FileSnapshot] = {
+        let rows: [(String, Int64, Int64, UploadState, String)] = [
+            ("IMG_4401.jpg", 7_800_000, 7_800_000, .finished, ""),
+            ("IMG_4402.jpg", 8_300_000, 8_300_000, .finished, ""),
+            ("IMG_4403.jpg", 6_600_000, 6_600_000, .finished, ""),
+            ("IMG_4404.jpg", 7_100_000, 7_100_000, .finished, ""),
+            ("IMG_4405.jpg", 7_900_000, 7_900_000, .finished, ""),
+            ("IMG_4407.jpg", 7_600_000, 2_900_000, .failed, "Connection lost"),
+            ("IMG_4410.jpg", 8_000_000, 5_100_000, .uploading, ""),
+            ("beach-day.mp4", 860_000_000, 180_000_000, .uploading, ""),
+            ("IMG_4412.jpg", 7_400_000, 0, .queued, ""),
+            ("IMG_4413.jpg", 6_900_000, 0, .queued, ""),
+            ("IMG_4414.jpg", 7_200_000, 0, .queued, ""),
+            ("sunset.mov", 940_000_000, 0, .queued, ""),
+        ]
+        return rows.enumerated().map { index, row in
+            .make(
+                index, "vacation-2026/\(row.0)", of: "up-7", in: "\(home)/Pictures", total: row.1, sent: row.2,
+                row.3, error: row.4)
+        }
+    }()
+
+    /// Seven uploads in every state and of every kind, like the lists in the dashboard and
+    /// history mockups: a folder being sent, a file, several items sent together, a folder
+    /// waiting, two finished files and a failed one.
     func loadMixedUploads() async {
-        await enqueue(6)
+        await enqueue(7)
         let documents = "\(Self.home)/Documents"
+        let pictures = "\(Self.home)/Pictures"
+        let clientWork = "\(Self.home)/Work/client"
+        client.setFiles(Self.vacationFiles, of: "up-7")
+        client.setFiles(
+            Self.severalPaths.enumerated().map { index, path in
+                .make(
+                    index, (path as NSString).lastPathComponent, of: "up-4", in: "\(Self.home)/Downloads",
+                    total: 60_000_000, sent: index < 5 ? 60_000_000 : 5_000_000, index < 5 ? .finished : .uploading)
+            }, of: "up-4")
         clock.advance(-3600 * 26)
         tray.apply(.make("up-6", "armadillo.png", in: "\(Self.home)/Downloads", total: 900_000, sent: 300_000, .failed, error: "No internet connection"))
         clock.advance(3600 * 26 - 900)
@@ -58,29 +100,45 @@ final class UIFixture {
         clock.advance(600)
         tray.apply(.make("up-1", "invoice-october.pdf", in: "\(documents)/finance", total: 184_000, sent: 184_000, .finished))
         clock.advance(170)
+        tray.apply(.folder("up-7", "vacation-2026", in: pictures, files: 12, finished: 5, failed: 1, total: 1_900_000_000, sent: 738_000_000, .uploading))
         tray.apply(.make("up-3", "db-dump.sql.gz", in: "\(Self.home)/Work/backups", total: 4_200_000_000, sent: 1_240_000_000, .uploading))
-        tray.apply(.make("up-4", "report-q3.pdf", in: "\(Self.home)/Downloads", total: 480_000_000, sent: 280_000_000, .uploading))
+        tray.apply(.several("up-4", Self.severalPaths, finished: 5, total: 480_000_000, sent: 280_000_000, .uploading))
         clock.advance(10)
+        tray.apply(.folder("up-7", "vacation-2026", in: pictures, files: 12, finished: 5, failed: 1, total: 1_900_000_000, sent: 800_000_000, .uploading))
         tray.apply(.make("up-3", "db-dump.sql.gz", in: "\(Self.home)/Work/backups", total: 4_200_000_000, sent: 1_300_000_000, .uploading))
-        tray.apply(.make("up-4", "report-q3.pdf", in: "\(Self.home)/Downloads", total: 480_000_000, sent: 310_000_000, .uploading))
-        tray.apply(.make("up-5", "design-assets.zip", in: "\(Self.home)/Work/client", total: 640_000_000, .queued))
+        tray.apply(.several("up-4", Self.severalPaths, finished: 5, total: 480_000_000, sent: 310_000_000, .uploading))
+        tray.apply(.folder("up-5", "design-assets", in: clientWork, files: 24, total: 640_000_000, .queued))
         clock.advance(120)
         await warmThumbnails()
     }
 
     /// Generates the stand-in previews before drawing, as they would be on a second look.
-    private func warmThumbnails() async {
+    func warmThumbnails(also extra: [String] = []) async {
         let sides: [CGFloat] = [26, 30, 50]
+        let paths = (tray.uploads.ledger.records.flatMap(\.handedPaths) + extra)
+            .filter { ["png", "jpg"].contains(($0 as NSString).pathExtension) }
         for _ in 0..<50 {
             var missing = false
-            for record in tray.uploads.ledger.records where ["png", "jpg"].contains((record.fileName as NSString).pathExtension) {
-                for side in sides where thumbnails.image(for: record.localPath, side: side, scale: 2) == nil {
+            for path in paths {
+                for side in sides where thumbnails.image(for: path, side: side, scale: 2) == nil {
                     missing = true
                 }
             }
             if !missing { return }
             try? await Task.sleep(for: .milliseconds(10))
         }
+    }
+
+    /// Opens an upload's detail and waits for its files to arrive, as they do a moment
+    /// after the screen opens.
+    func openDetail(_ id: String, from origin: MainSection, expecting count: Int) async throws {
+        context.model.openDetail(id: id, from: origin)
+        let files = context.model.detailFiles
+        for _ in 0..<200 where files.uploadID != id || files.count < count {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(files.count, count)
+        await warmThumbnails(also: files.indexes(.all).compactMap { files.file(at: $0)?.localPath })
     }
 
     /// Two uploads that failed for the same reason, which raises that service condition.
@@ -146,12 +204,13 @@ final class UISnapshotTests: XCTestCase {
 
     func testTrayDragStates() async throws {
         let over = await UIFixture()
-        over.tray.setHovering(true, itemCount: 1)
+        over.tray.setHovering(true, itemCount: 3)
         try both("tray-drag-over") { over.trayView() }
 
         // The confirmation lasts as long as the injected sleep: hold it while drawing.
         let dropped = await UIFixture(sleep: { _ in try await Task.sleep(for: .seconds(600)) })
-        let drop = Task { await dropped.tray.drop([URL(fileURLWithPath: "/tmp/file-1")]) }
+        let items = (1...3).map { URL(fileURLWithPath: "/tmp/file-\($0)") }
+        let drop = Task { await dropped.tray.drop(items) }
         while dropped.tray.dropFeedback != .confirmed { await Task.yield() }
         try both("tray-just-dropped") { dropped.trayView() }
         drop.cancel()
@@ -204,6 +263,39 @@ final class UISnapshotTests: XCTestCase {
         try both("upload-detail", size: MainView.size) { fixture.mainView() }
         fixture.context.model.openDetail(id: "up-6", from: .history)
         try both("upload-detail-failed", size: MainView.size) { fixture.mainView() }
+    }
+
+    func testFolderAndSeveralItemsDetail() async throws {
+        let fixture = await UIFixture()
+        await fixture.loadMixedUploads()
+        try await fixture.openDetail("up-7", from: .history, expecting: 12)
+        try both("upload-detail-folder", size: MainView.size) { fixture.mainView() }
+
+        fixture.context.model.detailFilter = .waiting
+        try both("upload-detail-folder-waiting", size: MainView.size) { fixture.mainView() }
+
+        try await fixture.openDetail("up-4", from: .overview, expecting: 8)
+        try both("upload-detail-several", size: MainView.size) { fixture.mainView() }
+    }
+
+    /// The rows the mockups draw for a folder and for several items, alone and enlarged
+    /// enough to compare the thumbnails point by point.
+    func testFolderAndSeveralItemsRows() async throws {
+        let fixture = await UIFixture()
+        await fixture.loadMixedUploads()
+        let ledger = fixture.tray.uploads.ledger
+        for (name, id) in [("row-folder", "up-7"), ("row-several", "up-4"), ("row-folder-waiting", "up-5")] {
+            let record = try XCTUnwrap(ledger[id])
+            XCTAssertNotEqual(record.kind, .singleFile)
+            try both(name, size: CGSize(width: 754, height: 72)) {
+                UploadRow(record: record, line: UploadText.progressLine(record))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.ink)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Theme.main)
+                    .environment(fixture.thumbnails)
+            }
+        }
     }
 
     func testSettingsPanes() async throws {
