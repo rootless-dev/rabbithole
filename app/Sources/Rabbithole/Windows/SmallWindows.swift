@@ -69,7 +69,7 @@ struct AboutView: View {
 
     var body: some View {
         SmallWindowBody(width: 270, alignment: .center) {
-            AppIconPlaceholder()
+            AppIconView()
                 .padding(.top, 6)
                 .padding(.bottom, 12)
             Text("Rabbithole").font(.system(size: 18, weight: .semibold))
@@ -99,27 +99,20 @@ struct AboutView: View {
     }
 }
 
-/// The placeholder app icon of the mockup: rings going down a hole.
-struct AppIconPlaceholder: View {
+/// The app's own icon, sized so that its tile is the 72 points the mockup gives the icon.
+/// The artwork keeps the macOS margin around the tile (824 of 1024 points) and carries its
+/// own shadow, so the image is drawn larger than its layout frame.
+struct AppIconView: View {
+    private static let tile: CGFloat = 72
+    private static let image: CGFloat = tile * 1024 / 824
+
     var body: some View {
-        RoundedRectangle(cornerRadius: 17)
-            .fill(
-                RadialGradient(
-                    stops: [
-                        .init(color: Theme.dynamic(0x0D0F1C, 0x0D0F1C), location: 0.15),
-                        .init(color: Theme.dynamic(0x2B2A66, 0x2B2A66), location: 0.16),
-                        .init(color: Theme.dynamic(0x2B2A66, 0x2B2A66), location: 0.30),
-                        .init(color: Theme.dynamic(0x4A3FD0, 0x4A3FD0), location: 0.31),
-                        .init(color: Theme.dynamic(0x4A3FD0, 0x4A3FD0), location: 0.46),
-                        .init(color: Theme.dynamic(0x8D7BF5, 0x8D7BF5), location: 0.47),
-                        .init(color: Theme.dynamic(0x8D7BF5, 0x8D7BF5), location: 0.63),
-                        .init(color: Theme.dynamic(0xCFC6FF, 0xCFC6FF), location: 0.64),
-                    ],
-                    center: UnitPoint(x: 0.5, y: 0.54), startRadius: 0, endRadius: 53)
-            )
-            .overlay { RoundedRectangle(cornerRadius: 17).strokeBorder(.white.opacity(0.25), lineWidth: 1) }
-            .frame(width: 72, height: 72)
-            .shadow(color: .black.opacity(0.35), radius: 8, y: 6)
+        Image(nsImage: NSApp.applicationIconImage)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: Self.image, height: Self.image)
+            .frame(width: Self.tile, height: Self.tile)
+            .accessibilityHidden(true)
     }
 }
 

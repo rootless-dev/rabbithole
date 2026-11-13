@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Rabbithole app icon: rabbit ears coming out of the hole (option C1, approved).
+     1024 x 1024 canvas with the macOS tile of 824 x 824 centred in it. The PNGs in
+     app/Sources/Rabbithole/Assets.xcassets/AppIcon.appiconset are rendered from this file. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9a89fb"/>
+      <stop offset="1" stop-color="#4a3fd0"/>
+    </linearGradient>
+    <linearGradient id="ear" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6e1ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <!-- Everything above the front edge of the hole: the ears are cut by it. -->
+    <clipPath id="into">
+      <path d="M0 0H1024V660H782A270 100 0 0 1 242 660H0Z"/>
+    </clipPath>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)" filter="url(#shadow)"/>
+  <ellipse cx="512" cy="660" rx="306" ry="122" fill="#372fa8"/>
+  <ellipse cx="512" cy="660" rx="270" ry="100" fill="#0d0f1c"/>
+  <g clip-path="url(#into)">
+    <g transform="rotate(-11 430 700)">
+      <ellipse cx="430" cy="450" rx="74" ry="262" fill="url(#ear)"/>
+      <ellipse cx="430" cy="470" rx="34" ry="196" fill="#b9adff"/>
+    </g>
+    <g transform="rotate(11 594 700)">
+      <ellipse cx="594" cy="450" rx="74" ry="262" fill="url(#ear)"/>
+      <ellipse cx="594" cy="470" rx="34" ry="196" fill="#b9adff"/>
+    </g>
+  </g>
+</svg>

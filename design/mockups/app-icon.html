@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbithole: app icon options</title>
+<style>
+  body { margin:0; padding:28px; background:#eef0f5; color:#161a26; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+  .ic { max-width:1040px; margin:0 auto; }
+  .ic h2 { font-size:22px; margin:0 0 6px; }
+  .ic .subtitle { margin:0 0 18px; color:#5b6278; font-size:14px; line-height:1.5; max-width:70ch; }
+  .ic-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+  .ic-card { background:#fff; border-radius:12px; padding:18px 20px 20px; border:1px solid rgba(22,26,38,.1); }
+  .ic-card h3 { margin:0; font-size:16px; }
+  .ic-card p { margin:4px 0 14px; color:#5b6278; font-size:13px; line-height:1.45; }
+  .ic-row { display:flex; align-items:flex-end; gap:18px; padding:16px 18px; border-radius:10px; }
+  .ic-row + .ic-row { margin-top:8px; }
+  .ic-row.light { background:linear-gradient(150deg,#9fc4f2,#6f8fe0 55%,#8a6fd6); }
+  .ic-row.dark { background:linear-gradient(150deg,#1d2a52,#151a36 55%,#2a1b4d); }
+  .ic-row svg { display:block; filter:drop-shadow(0 3px 6px rgba(0,0,0,.3)); }
+  .ic-row span { color:#fff; font-size:11px; opacity:.85; margin-left:auto; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-lav" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ece8ff"/><stop offset="1" stop-color="#c3b8ff"/></linearGradient>
+    <linearGradient id="g-vio" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9a89fb"/><stop offset="1" stop-color="#4a3fd0"/></linearGradient>
+    <linearGradient id="g-night" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34317a"/><stop offset="1" stop-color="#14162a"/></linearGradient>
+    <linearGradient id="g-ear" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e6e1ff"/></linearGradient>
+    <linearGradient id="g-ear-night" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e3ddff"/><stop offset="1" stop-color="#9a89fb"/></linearGradient>
+    <linearGradient id="g-ear-deep" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6a5ce6"/><stop offset="1" stop-color="#3a31b0"/></linearGradient>
+    <!-- Everything above the front edge of the hole: what comes out is cut by it. -->
+    <clipPath id="c-into"><path d="M0 0H1024V660H782A270 100 0 0 1 242 660H0Z"/></clipPath>
+    <clipPath id="c-into-wide"><path d="M0 0H1024V670H832A320 116 0 0 1 192 670H0Z"/></clipPath>
+
+    <!-- C1. The original: two straight ears on the violet tile -->
+    <symbol id="icon-c1" viewBox="0 0 1024 1024">
+      <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#g-vio)"/>
+      <ellipse cx="512" cy="660" rx="306" ry="122" fill="#372fa8"/>
+      <ellipse cx="512" cy="660" rx="270" ry="100" fill="#0d0f1c"/>
+      <g clip-path="url(#c-into)">
+        <g transform="rotate(-11 430 700)"><ellipse cx="430" cy="450" rx="74" ry="262" fill="url(#g-ear)"/><ellipse cx="430" cy="470" rx="34" ry="196" fill="#b9adff"/></g>
+        <g transform="rotate(11 594 700)"><ellipse cx="594" cy="450" rx="74" ry="262" fill="url(#g-ear)"/><ellipse cx="594" cy="470" rx="34" ry="196" fill="#b9adff"/></g>
+      </g>
+    </symbol>
+
+    <!-- C2. Bold: wider ears and a wider hole, for the small sizes -->
+    <symbol id="icon-c2" viewBox="0 0 1024 1024">
+      <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#g-vio)"/>
+      <ellipse cx="512" cy="670" rx="356" ry="140" fill="#372fa8"/>
+      <ellipse cx="512" cy="670" rx="320" ry="116" fill="#0d0f1c"/>
+      <g clip-path="url(#c-into-wide)">
+        <g transform="rotate(-13 410 720)"><ellipse cx="410" cy="455" rx="100" ry="280" fill="url(#g-ear)"/><ellipse cx="410" cy="480" rx="46" ry="206" fill="#b9adff"/></g>
+        <g transform="rotate(13 614 720)"><ellipse cx="614" cy="455" rx="100" ry="280" fill="url(#g-ear)"/><ellipse cx="614" cy="480" rx="46" ry="206" fill="#b9adff"/></g>
+      </g>
+    </symbol>
+
+    <!-- C3. Floppy: one ear folded over -->
+    <symbol id="icon-c3" viewBox="0 0 1024 1024">
+      <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#g-vio)"/>
+      <ellipse cx="512" cy="660" rx="306" ry="122" fill="#372fa8"/>
+      <ellipse cx="512" cy="660" rx="270" ry="100" fill="#0d0f1c"/>
+      <g clip-path="url(#c-into)">
+        <g transform="rotate(-11 430 700)"><ellipse cx="430" cy="450" rx="74" ry="262" fill="url(#g-ear)"/><ellipse cx="430" cy="470" rx="34" ry="196" fill="#b9adff"/></g>
+        <g transform="rotate(11 594 700)">
+          <path d="M520 700V470a74 110 0 0 1 148 0V700Z" fill="url(#g-ear)"/>
+          <path d="M560 700V480a34 70 0 0 1 68 0V700Z" fill="#b9adff"/>
+        </g>
+        <g transform="rotate(62 650 380)"><ellipse cx="716" cy="380" rx="126" ry="72" fill="#f4f1ff"/></g>
+      </g>
+    </symbol>
+
+    <!-- C4. Peeking: the top of the head and the eyes show too -->
+    <symbol id="icon-c4" viewBox="0 0 1024 1024">
+      <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#g-vio)"/>
+      <ellipse cx="512" cy="690" rx="306" ry="122" fill="#372fa8"/>
+      <ellipse cx="512" cy="690" rx="270" ry="100" fill="#0d0f1c"/>
+      <g clip-path="url(#c-into)" transform="translate(0 30)">
+        <g transform="rotate(-12 440 560)"><ellipse cx="440" cy="370" rx="66" ry="210" fill="url(#g-ear)"/><ellipse cx="440" cy="386" rx="30" ry="156" fill="#b9adff"/></g>
+        <g transform="rotate(12 584 560)"><ellipse cx="584" cy="370" rx="66" ry="210" fill="url(#g-ear)"/><ellipse cx="584" cy="386" rx="30" ry="156" fill="#b9adff"/></g>
+        <ellipse cx="512" cy="700" rx="196" ry="178" fill="#ffffff"/>
+        <circle cx="444" cy="640" r="24" fill="#14162a"/>
+        <circle cx="580" cy="640" r="24" fill="#14162a"/>
+      </g>
+    </symbol>
+
+    <!-- C5. Night: dark tile, lavender ears -->
+    <symbol id="icon-c5" viewBox="0 0 1024 1024">
+      <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#g-night)"/>
+      <ellipse cx="512" cy="660" rx="306" ry="122" fill="#5a4fe0"/>
+      <ellipse cx="512" cy="660" rx="270" ry="100" fill="#07080f"/>
+      <g clip-path="url(#c-into)">
+        <g transform="rotate(-11 430 700)"><ellipse cx="430" cy="450" rx="74" ry="262" fill="url(#g-ear-night)"/><ellipse cx="430" cy="470" rx="34" ry="196" fill="#5a4fe0"/></g>
+        <g transform="rotate(11 594 700)"><ellipse cx="594" cy="450" rx="74" ry="262" fill="url(#g-ear-night)"/><ellipse cx="594" cy="470" rx="34" ry="196" fill="#5a4fe0"/></g>
+      </g>
+    </symbol>
+
+    <!-- C6. Light: lavender tile, violet ears -->
+    <symbol id="icon-c6" viewBox="0 0 1024 1024">
+      <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#g-lav)"/>
+      <ellipse cx="512" cy="660" rx="306" ry="122" fill="#8d7bf5"/>
+      <ellipse cx="512" cy="660" rx="270" ry="100" fill="#14162a"/>
+      <g clip-path="url(#c-into)">
+        <g transform="rotate(-11 430 700)"><ellipse cx="430" cy="450" rx="74" ry="262" fill="url(#g-ear-deep)"/><ellipse cx="430" cy="470" rx="34" ry="196" fill="#b9adff"/></g>
+        <g transform="rotate(11 594 700)"><ellipse cx="594" cy="450" rx="74" ry="262" fill="url(#g-ear-deep)"/><ellipse cx="594" cy="470" rx="34" ry="196" fill="#b9adff"/></g>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="ic">
+<h2>Rabbithole app icon (variations of the rabbit ears)</h2>
+<p class="subtitle"><b>C1 was chosen</b>; the final artwork is design/icon/app-icon.svg. Six takes on the chosen direction: ears coming out of the hole. Each is shown at 128, 64, 32 and 16 points, over a light and a dark desktop, because the Dock, Finder lists and the About window all use different sizes.</p>
+
+<div class="ic-grid" id="ic-grid"></div>
+</div>
+
+<script>
+  var options = [
+    ['c1', 'C1. Original', 'The first version: two straight ears on the violet tile.'],
+    ['c2', 'C2. Bold', 'Wider ears and a wider hole. Holds its shape best at the small sizes.'],
+    ['c3', 'C3. Floppy', 'One ear folded over. More character, less symmetry.'],
+    ['c4', 'C4. Peeking', 'The top of the head and the eyes show too. The friendliest, and the busiest.'],
+    ['c5', 'C5. Night', 'Dark tile with lavender ears. Stands apart from light icons in the Dock.'],
+    ['c6', 'C6. Light', 'Lavender tile with violet ears. The softest of the six.']
+  ];
+  var sizes = [128, 64, 32, 16];
+  var grid = document.getElementById('ic-grid');
+  options.forEach(function (o) {
+    var rows = ['light', 'dark'].map(function (theme) {
+      var icons = sizes.map(function (s) {
+        return '<svg width="' + s + '" height="' + s + '"><use href="#icon-' + o[0] + '"/></svg>';
+      }).join('');
+      return '<div class="ic-row ' + theme + '">' + icons + '<span>' + sizes.join(' · ') + ' pt</span></div>';
+    }).join('');
+    grid.insertAdjacentHTML('beforeend', '<div class="ic-card"><h3>' + o[1] + '</h3><p>' + o[2] + '</p>' + rows + '</div>');
+  });
+</script>
+</body>
+</html>
