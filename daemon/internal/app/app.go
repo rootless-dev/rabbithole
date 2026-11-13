@@ -21,13 +21,14 @@ import (
 	"google.golang.org/grpc/grpclog"
 
 	"rabbithole/daemon/internal/awss3"
+	"rabbithole/daemon/internal/buckets"
+	"rabbithole/daemon/internal/download"
 	pb "rabbithole/daemon/internal/gen/rabbithole/v1"
 	"rabbithole/daemon/internal/history"
 	"rabbithole/daemon/internal/logging"
 	"rabbithole/daemon/internal/queue"
 	"rabbithole/daemon/internal/reconcile"
 	"rabbithole/daemon/internal/server"
-	"rabbithole/daemon/internal/uploader"
 )
 
 const (
@@ -52,6 +53,10 @@ type options struct {
 	newS3   s3Factory        // default: awss3.New
 	runner  queue.Runner     // default: *runner over newS3
 	objects bucketObjects    // default: the same *runner; nil when runner is replaced
+	buckets buckets.Service  // default: awss3.NewBuckets()
+	sources download.Opener  // default: a client per download, built with newS3
+
+	transfers *transfers // the speed limit and verification; built by withDefaults
 }
 
 // bucketObjects is what the daemon does with the bucket besides uploading:
@@ -71,8 +76,17 @@ func (o options) withDefaults(log *logging.Logger) (options, func()) {
 	if o.newS3 == nil {
 		o.newS3 = awss3.New
 	}
+	if o.buckets == nil {
+		o.buckets = awss3.NewBuckets()
+	}
+	if o.sources == nil {
+		o.sources = sourceOpener(o.newS3)
+	}
+	if o.transfers == nil {
+		o.transfers = newTransfers()
+	}
 	if o.runner == nil {
-		r := &runner{uploader: uploader.New(time.Now), newS3: o.newS3, log: log}
+		r := &runner{uploader: o.transfers.uploaderFor(time.Now), newS3: o.newS3, log: log}
 		o.runner = r
 		if o.objects == nil {
 			o.objects = r
@@ -130,7 +144,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 		return exitError
 	}
 
-	svc, err := startServices(ctx, ln, opts.runner, opts.objects, store, log)
+	svc, err := startServices(ctx, ln, opts.deps(), store, log)
 	if err != nil {
 		_ = ln.Close()
 		_ = store.Close()
@@ -152,21 +166,36 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 	return code
 }
 
+// deps is what the services are built from.
+type deps struct {
+	runner    queue.Runner
+	objects   bucketObjects
+	buckets   buckets.Service
+	sources   download.Opener
+	transfers *transfers
+}
+
+func (o options) deps() deps {
+	return deps{runner: o.runner, objects: o.objects, buckets: o.buckets, sources: o.sources, transfers: o.transfers}
+}
+
 // services is the running part of the daemon: the upload queue, the
-// reconciliation of its history with the bucket, and the gRPC server in front
-// of them.
+// reconciliation of its history with the bucket, the downloads, and the gRPC
+// server in front of them.
 type services struct {
 	grpcServer    *grpc.Server
 	cancelUploads context.CancelFunc
 	queueDone     <-chan struct{} // closed when the queue has stopped
 	reconcileDone <-chan struct{} // closed when the reconciliation has stopped
+	downloadsDone <-chan struct{} // closed when the downloads have stopped
 	serveErr      <-chan error    // receives the error that ended Serve
 }
 
-// startServices loads the stored history, starts the queue and the
-// reconciliation and serves the gRPC API on ln. Without objects the daemon
-// neither deletes from the bucket nor reconciles with it.
-func startServices(ctx context.Context, ln net.Listener, r queue.Runner, objects bucketObjects, store queue.Store, log *logging.Logger) (*services, error) {
+// startServices loads the stored history, starts the queue, the
+// reconciliation and the downloads and serves the gRPC API on ln. Without
+// objects the daemon neither deletes from the bucket nor reconciles with it.
+func startServices(ctx context.Context, ln net.Listener, d deps, store queue.Store, log *logging.Logger) (*services, error) {
+	r, objects := d.runner, d.objects
 	// Set below, before the queue runs; an upload ending is what triggers it.
 	var reconciler *reconcile.Reconciler
 	q := queue.New(r, time.Now, queue.WithStore(store, log), queue.WithOnEnded(func() {
@@ -190,6 +219,13 @@ func startServices(ctx context.Context, ln net.Listener, r queue.Runner, objects
 	} else {
 		close(reconcileDone)
 	}
+	downloads := download.New(d.sources, q, log)
+	downloadsDone := make(chan struct{})
+	go func() {
+		defer close(downloadsDone)
+		downloads.Run(uploadCtx) // on shutdown it cancels the downloads and waits for them
+	}()
+	serverOpts = append(serverOpts, server.WithTransfers(d.transfers), server.WithDownloads(downloads), server.WithBuckets(d.buckets))
 	grpcServer := grpc.NewServer()
 	pb.RegisterDaemonServer(grpcServer, server.New(q, log, serverOpts...))
 
@@ -202,7 +238,8 @@ func startServices(ctx context.Context, ln net.Listener, r queue.Runner, objects
 	go func() { serveErr <- grpcServer.Serve(ln) }()
 
 	return &services{
-		grpcServer: grpcServer, cancelUploads: cancelUploads, queueDone: queueDone, reconcileDone: reconcileDone, serveErr: serveErr,
+		grpcServer: grpcServer, cancelUploads: cancelUploads, queueDone: queueDone, reconcileDone: reconcileDone,
+		downloadsDone: downloadsDone, serveErr: serveErr,
 	}, nil
 }
 
@@ -248,8 +285,10 @@ func (s *services) stop(log *logging.Logger) bool {
 		log.Warn("graceful stop timed out; stopping server")
 	}
 	s.grpcServer.Stop()
-	// The queue and the reconciliation are the only writers of the history.
-	for name, done := range map[string]<-chan struct{}{"upload": s.queueDone, "reconciliation": s.reconcileDone} {
+	// The queue and the reconciliation are the only writers of the history; the
+	// downloads must have removed their temporary files before the process ends.
+	stopping := map[string]<-chan struct{}{"upload": s.queueDone, "reconciliation": s.reconcileDone, "download": s.downloadsDone}
+	for name, done := range stopping {
 		select {
 		case <-done:
 		case <-deadline.Done():

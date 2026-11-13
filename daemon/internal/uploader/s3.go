@@ -40,6 +40,18 @@ var (
 	// denied (missing s3:ListMultipartUploadParts). It is not fatal: the file
 	// starts over.
 	ErrListPartsDenied = errors.New("listing parts denied")
+	// ErrChecksumMismatch means S3 found that what it received differs from the
+	// checksum computed from the local file. It fails that file only.
+	ErrChecksumMismatch = errors.New("The file in the bucket does not match the local file")
+	// ErrVerifyUnsupported means verification was asked for but the S3 client
+	// cannot send checksums.
+	ErrVerifyUnsupported = errors.New("verification is not supported by this S3 client")
+	// ErrReadDenied means reading an object was denied (missing s3:GetObject).
+	ErrReadDenied = errors.New("read denied")
+	// ErrObjectNotFound means the object is not in the bucket.
+	ErrObjectNotFound = errors.New("object not found")
+	// ErrListBucketsDenied means listing the buckets of the account was denied.
+	ErrListBucketsDenied = errors.New("listing buckets denied")
 	// ErrFileUnreadable means the local file vanished, could not be opened, or
 	// ended before the size recorded at the start of the upload.
 	ErrFileUnreadable = errors.New("file unreadable")

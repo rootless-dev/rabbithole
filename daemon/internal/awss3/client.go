@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 
+	"rabbithole/daemon/internal/buckets"
 	"rabbithole/daemon/internal/uploader"
 )
 
@@ -156,24 +157,8 @@ func (c *client) AbortMultipart(ctx context.Context, key, uploadID string) error
 // time. It needs s3:ListMultipartUploadParts: a denied call maps to
 // ErrListPartsDenied, and an upload id S3 does not know to ErrNoSuchUpload.
 func (c *client) ListParts(ctx context.Context, key, uploadID string) ([]uploader.HeldPart, error) {
-	pages := s3.NewListPartsPaginator(c.s3, &s3.ListPartsInput{
-		Bucket:   aws.String(c.bucket),
-		Key:      aws.String(key),
-		UploadId: aws.String(uploadID),
-	})
-	var held []uploader.HeldPart
-	for pages.HasMorePages() {
-		page, err := pages.NextPage(ctx)
-		if err != nil {
-			return nil, mapErrorWithDenial(err, uploader.ErrListPartsDenied)
-		}
-		for _, p := range page.Parts {
-			held = append(held, uploader.HeldPart{
-				Number: aws.ToInt32(p.PartNumber), ETag: aws.ToString(p.ETag), Size: aws.ToInt64(p.Size),
-			})
-		}
-	}
-	return held, nil
+	held, _, err := c.ListPartsChecked(ctx, key, uploadID)
+	return held, err
 }
 
 // DeleteObjects deletes the keys in one request. S3 reports a missing key as
@@ -310,4 +295,13 @@ var sentinelByCode = map[string]error{
 	"PermanentRedirect":            uploader.ErrWrongRegion,
 	"AuthorizationHeaderMalformed": uploader.ErrWrongRegion,
 	"AllAccessDisabled":            uploader.ErrBucketInaccessible,
+	"NoSuchKey":                    uploader.ErrObjectNotFound,
+	// S3 answers these when the checksum sent with a body is not the one it
+	// computed from the body it received.
+	"BadDigest":                 uploader.ErrChecksumMismatch,
+	"XAmzContentSHA256Mismatch": uploader.ErrChecksumMismatch,
+	"BucketAlreadyExists":       buckets.ErrNameTaken,
+	"BucketAlreadyOwnedByYou":   buckets.ErrOwnedByYou,
+	"InvalidBucketName":         buckets.ErrInvalidName,
+	"TooManyBuckets":            buckets.ErrTooManyBucket,
 }

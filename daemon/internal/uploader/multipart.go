@@ -27,6 +27,9 @@ type HeldPart struct {
 	Number int32
 	ETag   string
 	Size   int64
+	// SHA256 is the base64 SHA-256 S3 stored for the part; empty when the part
+	// was sent without a checksum.
+	SHA256 string
 }
 
 // recorded hands the full record of the multipart upload to cb.
@@ -61,11 +64,7 @@ func discard(ctx context.Context, s3 S3, m Multipart, cb Callbacks) {
 // ended. When handled is true, err is how the continued upload ended.
 func resumeMultipart(ctx context.Context, s3 S3, req Request, info os.FileInfo, progress *progressTracker, cb Callbacks) (handled bool, err error) {
 	m := *req.Resume
-	if !UseMultipart(info.Size()) || m.FileSize != info.Size() || m.ModTimeNanos != modTimeNanos(info) {
-		discard(ctx, s3, m, cb)
-		return false, nil
-	}
-	held, start, err := heldParts(ctx, s3, m, cb)
+	held, start, err := resumable(ctx, s3, m, info, progress, cb)
 	if start {
 		return false, nil
 	}
@@ -81,6 +80,38 @@ func resumeMultipart(ctx context.Context, s3 S3, req Request, info os.FileInfo, 
 	if cb.KeyResolved != nil {
 		cb.KeyResolved(m.Key)
 	}
+	if held.checksummed {
+		// S3 holds the upload as one with checksums: every part still to be
+		// sent needs its own, whether verification is on now or not.
+		return true, resumeChecked(ctx, s3.(CheckedS3), f, m, held.parts, progress, cb)
+	}
+	return true, resumePlain(ctx, s3, f, m, held.parts, progress, cb)
+}
+
+// resumable decides whether the upload of m can be continued, and lists what S3
+// holds for it. startOver is set when it cannot: the file changed, S3 does not
+// know the upload, or S3 would not say what it holds. The old upload is then
+// gone and its record ended.
+func resumable(ctx context.Context, s3 S3, m Multipart, info os.FileInfo, progress *progressTracker, cb Callbacks) (held heldListing, startOver bool, err error) {
+	if !UseMultipart(info.Size()) || m.FileSize != info.Size() || m.ModTimeNanos != modTimeNanos(info) {
+		discard(ctx, s3, m, cb)
+		return heldListing{}, true, nil
+	}
+	held, startOver, err = heldParts(ctx, s3, m, cb)
+	if startOver || err != nil {
+		return held, startOver, err
+	}
+	// Parts sent without a checksum cannot be verified by S3: with verification
+	// on, the upload starts over instead of finishing unverified.
+	if progress.verify && !held.checksummed {
+		discard(ctx, s3, m, cb)
+		return heldListing{}, true, nil
+	}
+	return held, false, nil
+}
+
+// resumePlain continues an upload without checksums with the parts S3 holds.
+func resumePlain(ctx context.Context, s3 S3, f *os.File, m Multipart, held []HeldPart, progress *progressTracker, cb Callbacks) error {
 	have := validParts(held, m.FileSize, m.PartSize)
 	m.Parts = m.Parts[:0:0]
 	for number := int32(1); int64(number-1)*m.PartSize < m.FileSize; number++ {
@@ -89,23 +120,34 @@ func resumeMultipart(ctx context.Context, s3 S3, req Request, info os.FileInfo, 
 		}
 	}
 	recorded(cb, m)
-	return true, sendParts(ctx, s3, f, m, progress, cb)
+	return sendParts(ctx, s3, f, m, progress, cb)
 }
 
 // heldParts asks S3 which parts it holds for m. startOver is set when the upload
 // cannot be continued: S3 does not know it (nothing to abort), or would not say
 // what it holds (the upload is aborted). Either way its record has ended.
-func heldParts(ctx context.Context, s3 S3, m Multipart, cb Callbacks) (held []HeldPart, startOver bool, err error) {
-	held, err = s3.ListParts(ctx, m.Key, m.UploadID)
+func heldParts(ctx context.Context, s3 S3, m Multipart, cb Callbacks) (held heldListing, startOver bool, err error) {
+	if c, ok := s3.(CheckedS3); ok {
+		held.parts, held.checksummed, err = c.ListPartsChecked(ctx, m.Key, m.UploadID)
+	} else {
+		held.parts, err = s3.ListParts(ctx, m.Key, m.UploadID)
+	}
 	switch {
 	case errors.Is(err, ErrNoSuchUpload):
 		recordEnded(cb)
-		return nil, true, nil
+		return heldListing{}, true, nil
 	case errors.Is(err, ErrListPartsDenied):
 		discard(ctx, s3, m, cb)
-		return nil, true, nil
+		return heldListing{}, true, nil
 	}
 	return held, false, err
+}
+
+// heldListing is what S3 reports for a multipart upload: its parts, and
+// whether it was started with a checksum algorithm.
+type heldListing struct {
+	parts       []HeldPart
+	checksummed bool
 }
 
 // validParts returns the ETag of each held part that has the size it must have
@@ -168,7 +210,7 @@ func sendParts(ctx context.Context, s3 S3, f *os.File, m Multipart, progress *pr
 			size:   length,
 			onRead: func(n int64) { progress.advance(base + n) },
 		}
-		etag, err := s3.UploadPart(ctx, m.Key, m.UploadID, number, body, length)
+		etag, err := s3.UploadPart(ctx, m.Key, m.UploadID, number, progress.limit(ctx, body), length)
 		if err != nil {
 			return err
 		}

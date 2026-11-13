@@ -23,12 +23,20 @@ func (s *Server) configured() (uploader.Settings, error) {
 	return s.settings, nil
 }
 
-// SetOptions applies the options that apply to every upload. Only hold_uploads
-// does anything yet; the speed limit and the verification are accepted and
-// ignored.
+// SetOptions applies the options that apply to every upload: the speed limit
+// and the verification, which take effect on files already being sent, and the
+// hold. None of them is stored.
 func (s *Server) SetOptions(_ context.Context, req *pb.SetOptionsRequest) (*pb.SetOptionsResponse, error) {
+	if req.GetSpeedLimitBytesPerSecond() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "speed_limit_bytes_per_second must not be negative")
+	}
+	if s.transfers != nil {
+		s.transfers.SetSpeedLimit(req.GetSpeedLimitBytesPerSecond())
+		s.transfers.SetVerifyUploads(req.GetVerifyUploads())
+	}
 	s.queue.SetHold(req.GetHoldUploads())
-	s.log.Info("options set", "hold_uploads", req.GetHoldUploads())
+	s.log.Info("options set", "speed_limit_bytes_per_second", req.GetSpeedLimitBytesPerSecond(),
+		"verify_uploads", req.GetVerifyUploads(), "hold_uploads", req.GetHoldUploads())
 	return &pb.SetOptionsResponse{}, nil
 }
 

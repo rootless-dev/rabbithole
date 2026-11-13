@@ -38,9 +38,24 @@ var messages = []struct {
 	{ErrWriteDenied, "AWS denied permission to write to the bucket"},
 	{ErrDeleteDenied, "AWS denied permission to delete from the bucket: the access key needs the s3:DeleteObject permission"},
 	{ErrListPartsDenied, "AWS denied listing the uploaded parts: the access key needs the s3:ListMultipartUploadParts permission"},
+	{ErrReadDenied, "AWS denied permission to read from the bucket: the access key needs the s3:GetObject permission"},
+	{ErrObjectNotFound, "The file is no longer in the bucket"},
+	{ErrListBucketsDenied, "AWS denied permission to list buckets: the access key needs the s3:ListAllMyBuckets permission"},
+	{ErrChecksumMismatch, "The file in the bucket does not match the local file"},
 	{ErrPreconditionFailed, "An object with this name appeared during the upload"},
 	{ErrNoFreeName, "Could not find a free name for this file"},
 	{ErrFileUnreadable, "File could not be read"},
+}
+
+// HasMessage reports whether err matches a sentinel that has its own sentence,
+// as opposed to one Message can only describe with its fallback.
+func HasMessage(err error) bool {
+	for _, m := range messages {
+		if errors.Is(err, m.err) {
+			return true
+		}
+	}
+	return false
 }
 
 // Message turns an upload error into a short, readable sentence for the user.

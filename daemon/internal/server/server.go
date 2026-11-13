@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"rabbithole/daemon/internal/buckets"
 	pb "rabbithole/daemon/internal/gen/rabbithole/v1"
 	"rabbithole/daemon/internal/logging"
 	"rabbithole/daemon/internal/queue"
@@ -25,6 +26,9 @@ type Server struct {
 	log          *logging.Logger
 	objects      Objects
 	onConfigured func(uploader.Settings)
+	transfers    Transfers
+	downloads    Downloads
+	buckets      buckets.Service
 
 	mu       sync.Mutex
 	settings uploader.Settings

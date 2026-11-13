@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"rabbithole/daemon/internal/ratelimit"
 )
 
 const abortTimeout = 1 * time.Second
@@ -57,12 +59,29 @@ type Callbacks struct {
 
 // Uploader uploads local files to S3 with conditional writes.
 type Uploader struct {
-	now func() time.Time
+	now     func() time.Time
+	limiter *ratelimit.Limiter
+	verify  func() bool
 }
 
+// Option changes how New builds an Uploader.
+type Option func(*Uploader)
+
+// WithLimiter makes every body the uploader sends go through l, so all the
+// files and parts sent in parallel share one speed limit.
+func WithLimiter(l *ratelimit.Limiter) Option { return func(u *Uploader) { u.limiter = l } }
+
+// WithVerify makes the uploader ask enabled, at the start of each file, whether
+// S3 must check the file against a checksum of the local bytes.
+func WithVerify(enabled func() bool) Option { return func(u *Uploader) { u.verify = enabled } }
+
 // New returns an Uploader that reads the current time from now.
-func New(now func() time.Time) *Uploader {
-	return &Uploader{now: now}
+func New(now func() time.Time, opts ...Option) *Uploader {
+	u := &Uploader{now: now}
+	for _, opt := range opts {
+		opt(u)
+	}
+	return u
 }
 
 // Upload sends the file at req.LocalPath to s3 under a key that does not exist yet.
@@ -77,7 +96,10 @@ func (u *Uploader) Upload(ctx context.Context, s3 S3, req Request, cb Callbacks)
 		name = filepath.Base(req.LocalPath)
 	}
 	modNanos := modTimeNanos(info)
-	progress := &progressTracker{total: size, report: cb.Progress}
+	progress, err := u.tracker(s3, size, cb)
+	if err != nil {
+		return err
+	}
 
 	if req.Resume != nil {
 		handled, err := resumeMultipart(ctx, s3, req, info, progress, cb)
@@ -106,6 +128,19 @@ func (u *Uploader) Upload(ctx context.Context, s3 S3, req Request, cb Callbacks)
 	return ErrNoFreeName
 }
 
+// tracker builds the progress tracker of one file, deciding now whether it is
+// verified: the setting is read once per file.
+func (u *Uploader) tracker(s3 S3, size int64, cb Callbacks) (*progressTracker, error) {
+	p := &progressTracker{total: size, report: cb.Progress, limiter: u.limiter}
+	if u.verify != nil && u.verify() {
+		if _, ok := s3.(CheckedS3); !ok {
+			return nil, ErrVerifyUnsupported
+		}
+		p.verify = true
+	}
+	return p, nil
+}
+
 // sendUnder tries to write the file under key. It reports taken when the key
 // is already in use, so the caller moves on to the next candidate.
 func sendUnder(ctx context.Context, s3 S3, key string, req Request, size, modNanos int64, progress *progressTracker, cb Callbacks) (taken bool, err error) {
@@ -122,9 +157,9 @@ func sendUnder(ctx context.Context, s3 S3, key string, req Request, size, modNan
 		cb.KeyResolved(key)
 	}
 	if multipart {
-		return false, uploadMultipart(ctx, s3, key, req.LocalPath, size, modNanos, progress, cb)
+		return false, startMultipart(ctx, s3, key, req.LocalPath, size, modNanos, progress, cb)
 	}
-	err = uploadSingle(ctx, s3, key, req.LocalPath, size, progress)
+	err = putSingle(ctx, s3, key, req.LocalPath, size, progress)
 	if errors.Is(err, ErrPreconditionFailed) {
 		return true, nil // the name was taken after the check
 	}
@@ -160,7 +195,7 @@ func uploadSingle(ctx context.Context, s3 S3, key, path string, size int64, prog
 	defer f.Close()
 
 	body := &sectionBody{r: io.NewSectionReader(f, 0, size), size: size, onRead: func(n int64) { progress.advance(n) }}
-	return s3.PutObject(ctx, key, body, size)
+	return s3.PutObject(ctx, key, progress.limit(ctx, body), size)
 }
 
 // cancelOr reports the context error when the context ended, because S3
@@ -193,11 +228,23 @@ func (b *sectionBody) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// progressTracker reports monotonic progress clamped to the total.
+// progressTracker reports monotonic progress clamped to the total. It also
+// carries what the bodies of the upload go through: the shared speed limiter,
+// and whether S3 verifies them.
 type progressTracker struct {
-	total  int64
-	sent   int64
-	report func(sent int64)
+	total   int64
+	sent    int64
+	report  func(sent int64)
+	limiter *ratelimit.Limiter // nil: no limit
+	verify  bool
+}
+
+// limit routes body through the speed limiter, when there is one.
+func (p *progressTracker) limit(ctx context.Context, body io.Reader) io.Reader {
+	if p.limiter == nil {
+		return body
+	}
+	return p.limiter.Reader(ctx, body)
 }
 
 func (p *progressTracker) advance(sent int64) {
