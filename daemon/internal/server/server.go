@@ -73,17 +73,64 @@ func (s *Server) EnqueueUpload(_ context.Context, req *pb.EnqueueUploadRequest) 
 		return nil, status.Error(codes.FailedPrecondition, "daemon is not configured: call Configure first")
 	}
 
-	id, err := s.queue.Enqueue(st, req.GetLocalPath())
+	paths := req.GetLocalPaths()
+	if len(paths) == 0 {
+		paths = []string{req.GetLocalPath()}
+	}
+	first := paths[0]
+
+	id, err := s.queue.Enqueue(st, queue.EnqueueRequest{
+		Paths:         paths,
+		SkipPatterns:  req.GetSkipPatterns(),
+		ParallelFiles: int(req.GetParallelFiles()),
+	})
 	if err != nil {
-		if errors.Is(err, queue.ErrInvalidPath) {
-			s.log.Warn("enqueue rejected", "path", req.GetLocalPath(), "reason", err.Error())
+		switch {
+		case errors.Is(err, queue.ErrInvalidPath):
+			s.log.Warn("enqueue rejected", "path", first, "reason", err.Error())
 			return nil, status.Error(codes.InvalidArgument, err.Error())
+		case errors.Is(err, queue.ErrNoFiles):
+			s.log.Warn("enqueue rejected", "path", first, "reason", err.Error())
+			return nil, status.Error(codes.InvalidArgument, "There are no files to send")
 		}
-		s.log.Error("enqueue failed", "path", req.GetLocalPath(), "error", err.Error())
+		s.log.Error("enqueue failed", "path", first, "error", err.Error())
 		return nil, status.Error(codes.Internal, "could not enqueue upload")
 	}
-	s.log.Info("upload enqueued", "upload_id", id, "path", req.GetLocalPath())
+	s.log.Info("upload enqueued", "upload_id", id, "path", first, "items", len(paths))
 	return &pb.EnqueueUploadResponse{UploadId: id}, nil
+}
+
+// WatchUploadFiles sends one snapshot per file of an upload, then a snapshot
+// whenever one of them changes, until the client goes away.
+func (s *Server) WatchUploadFiles(req *pb.WatchUploadFilesRequest, stream pb.Daemon_WatchUploadFilesServer) error {
+	initial, updates, cancel, err := s.queue.SubscribeFiles(req.GetUploadId())
+	if err != nil {
+		if errors.Is(err, queue.ErrUnknownUpload) {
+			return status.Error(codes.NotFound, "unknown upload")
+		}
+		s.log.Error("watch files failed", "upload_id", req.GetUploadId(), "error", err.Error())
+		return status.Error(codes.Internal, "could not watch upload files")
+	}
+	defer cancel()
+
+	for _, snap := range initial {
+		if err := stream.Send(toProtoFile(snap)); err != nil {
+			return err
+		}
+	}
+	for {
+		select {
+		case snap, ok := <-updates:
+			if !ok {
+				return nil
+			}
+			if err := stream.Send(toProtoFile(snap)); err != nil {
+				return err
+			}
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
 }
 
 // WatchUploads sends one snapshot per known upload, then a snapshot whenever
@@ -114,14 +161,46 @@ func (s *Server) WatchUploads(_ *pb.WatchUploadsRequest, stream pb.Daemon_WatchU
 
 func toProto(s queue.Snapshot) *pb.UploadSnapshot {
 	return &pb.UploadSnapshot{
-		UploadId:     s.ID,
-		FileName:     s.FileName,
-		LocalPath:    s.LocalPath,
-		ObjectKey:    s.ObjectKey,
-		BytesTotal:   s.BytesTotal,
-		BytesSent:    s.BytesSent,
-		State:        toProtoState(s.State),
-		ErrorMessage: s.ErrorMessage,
+		UploadId:      s.ID,
+		FileName:      s.FileName,
+		LocalPath:     s.LocalPath,
+		ObjectKey:     s.ObjectKey,
+		BytesTotal:    s.BytesTotal,
+		BytesSent:     s.BytesSent,
+		State:         toProtoState(s.State),
+		ErrorMessage:  s.ErrorMessage,
+		Kind:          toProtoKind(s.Kind),
+		RootPaths:     s.RootPaths,
+		FilesTotal:    int32(s.FilesTotal),
+		FilesFinished: int32(s.FilesFinished),
+		FilesFailed:   int32(s.FilesFailed),
+	}
+}
+
+func toProtoFile(f queue.FileSnapshot) *pb.FileSnapshot {
+	return &pb.FileSnapshot{
+		UploadId:     f.UploadID,
+		Index:        int32(f.Index),
+		RelativePath: f.RelativePath,
+		LocalPath:    f.LocalPath,
+		ObjectKey:    f.ObjectKey,
+		BytesTotal:   f.BytesTotal,
+		BytesSent:    f.BytesSent,
+		State:        toProtoState(f.State),
+		ErrorMessage: f.ErrorMessage,
+	}
+}
+
+func toProtoKind(k queue.Kind) pb.UploadKind {
+	switch k {
+	case queue.SingleFile:
+		return pb.UploadKind_SINGLE_FILE
+	case queue.Folder:
+		return pb.UploadKind_FOLDER
+	case queue.Multiple:
+		return pb.UploadKind_MULTIPLE
+	default:
+		return pb.UploadKind_UPLOAD_KIND_UNSPECIFIED
 	}
 }
 

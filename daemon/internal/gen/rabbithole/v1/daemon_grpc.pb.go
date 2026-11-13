@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Daemon_Configure_FullMethodName     = "/rabbithole.v1.Daemon/Configure"
-	Daemon_EnqueueUpload_FullMethodName = "/rabbithole.v1.Daemon/EnqueueUpload"
-	Daemon_WatchUploads_FullMethodName  = "/rabbithole.v1.Daemon/WatchUploads"
+	Daemon_Configure_FullMethodName        = "/rabbithole.v1.Daemon/Configure"
+	Daemon_EnqueueUpload_FullMethodName    = "/rabbithole.v1.Daemon/EnqueueUpload"
+	Daemon_WatchUploads_FullMethodName     = "/rabbithole.v1.Daemon/WatchUploads"
+	Daemon_WatchUploadFiles_FullMethodName = "/rabbithole.v1.Daemon/WatchUploadFiles"
 )
 
 // DaemonClient is the client API for Daemon service.
@@ -32,10 +33,13 @@ const (
 type DaemonClient interface {
 	// Configure supplies S3 credentials and destination settings.
 	Configure(ctx context.Context, in *ConfigureRequest, opts ...grpc.CallOption) (*ConfigureResponse, error)
-	// EnqueueUpload queues a local file for upload.
+	// EnqueueUpload queues local files and folders as one upload.
 	EnqueueUpload(ctx context.Context, in *EnqueueUploadRequest, opts ...grpc.CallOption) (*EnqueueUploadResponse, error)
 	// WatchUploads streams a snapshot whenever an upload changes state or progresses.
 	WatchUploads(ctx context.Context, in *WatchUploadsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[UploadSnapshot], error)
+	// WatchUploadFiles streams every file of one upload once, then a snapshot
+	// whenever one of its files changes state or progresses.
+	WatchUploadFiles(ctx context.Context, in *WatchUploadFilesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileSnapshot], error)
 }
 
 type daemonClient struct {
@@ -85,6 +89,25 @@ func (c *daemonClient) WatchUploads(ctx context.Context, in *WatchUploadsRequest
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Daemon_WatchUploadsClient = grpc.ServerStreamingClient[UploadSnapshot]
 
+func (c *daemonClient) WatchUploadFiles(ctx context.Context, in *WatchUploadFilesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileSnapshot], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Daemon_ServiceDesc.Streams[1], Daemon_WatchUploadFiles_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchUploadFilesRequest, FileSnapshot]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Daemon_WatchUploadFilesClient = grpc.ServerStreamingClient[FileSnapshot]
+
 // DaemonServer is the server API for Daemon service.
 // All implementations must embed UnimplementedDaemonServer
 // for forward compatibility.
@@ -93,10 +116,13 @@ type Daemon_WatchUploadsClient = grpc.ServerStreamingClient[UploadSnapshot]
 type DaemonServer interface {
 	// Configure supplies S3 credentials and destination settings.
 	Configure(context.Context, *ConfigureRequest) (*ConfigureResponse, error)
-	// EnqueueUpload queues a local file for upload.
+	// EnqueueUpload queues local files and folders as one upload.
 	EnqueueUpload(context.Context, *EnqueueUploadRequest) (*EnqueueUploadResponse, error)
 	// WatchUploads streams a snapshot whenever an upload changes state or progresses.
 	WatchUploads(*WatchUploadsRequest, grpc.ServerStreamingServer[UploadSnapshot]) error
+	// WatchUploadFiles streams every file of one upload once, then a snapshot
+	// whenever one of its files changes state or progresses.
+	WatchUploadFiles(*WatchUploadFilesRequest, grpc.ServerStreamingServer[FileSnapshot]) error
 	mustEmbedUnimplementedDaemonServer()
 }
 
@@ -115,6 +141,9 @@ func (UnimplementedDaemonServer) EnqueueUpload(context.Context, *EnqueueUploadRe
 }
 func (UnimplementedDaemonServer) WatchUploads(*WatchUploadsRequest, grpc.ServerStreamingServer[UploadSnapshot]) error {
 	return status.Error(codes.Unimplemented, "method WatchUploads not implemented")
+}
+func (UnimplementedDaemonServer) WatchUploadFiles(*WatchUploadFilesRequest, grpc.ServerStreamingServer[FileSnapshot]) error {
+	return status.Error(codes.Unimplemented, "method WatchUploadFiles not implemented")
 }
 func (UnimplementedDaemonServer) mustEmbedUnimplementedDaemonServer() {}
 func (UnimplementedDaemonServer) testEmbeddedByValue()                {}
@@ -184,6 +213,17 @@ func _Daemon_WatchUploads_Handler(srv interface{}, stream grpc.ServerStream) err
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Daemon_WatchUploadsServer = grpc.ServerStreamingServer[UploadSnapshot]
 
+func _Daemon_WatchUploadFiles_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchUploadFilesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DaemonServer).WatchUploadFiles(m, &grpc.GenericServerStream[WatchUploadFilesRequest, FileSnapshot]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Daemon_WatchUploadFilesServer = grpc.ServerStreamingServer[FileSnapshot]
+
 // Daemon_ServiceDesc is the grpc.ServiceDesc for Daemon service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -204,6 +244,11 @@ var Daemon_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchUploads",
 			Handler:       _Daemon_WatchUploads_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchUploadFiles",
+			Handler:       _Daemon_WatchUploadFiles_Handler,
 			ServerStreams: true,
 		},
 	},

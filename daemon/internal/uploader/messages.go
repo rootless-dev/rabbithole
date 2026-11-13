@@ -2,30 +2,51 @@ package uploader
 
 import "errors"
 
+// fatalErrors are the errors that will hit every other file of the same
+// upload too.
+var fatalErrors = []error{
+	ErrBadCredentials, ErrBucketNotFound, ErrBucketInaccessible, ErrWrongRegion,
+	ErrNoNetwork, ErrForbidden, ErrWriteDenied,
+}
+
+// IsFatal reports whether err will hit every other file of the same upload
+// too, so the upload should stop instead of failing one file at a time.
+func IsFatal(err error) bool {
+	for _, fatal := range fatalErrors {
+		if errors.Is(err, fatal) {
+			return true
+		}
+	}
+	return false
+}
+
+// fallbackMessage describes an error that matches no sentinel.
+const fallbackMessage = "Upload failed"
+
+// messages pairs each sentinel with its sentence, in the order they are
+// tested: an error wrapping several sentinels is described by the first match.
+var messages = []struct {
+	err  error
+	text string
+}{
+	{ErrBadCredentials, "AWS rejected the access key"},
+	{ErrBucketNotFound, "Bucket not found"},
+	{ErrBucketInaccessible, "AWS blocked access to this bucket: check that the bucket name is yours"},
+	{ErrWrongRegion, "The bucket is in a different region"},
+	{ErrNoNetwork, "No internet connection"},
+	{ErrForbidden, "AWS denied the existence check: the access key needs the s3:ListBucket permission"},
+	{ErrWriteDenied, "AWS denied permission to write to the bucket"},
+	{ErrPreconditionFailed, "An object with this name appeared during the upload"},
+	{ErrNoFreeName, "Could not find a free name for this file"},
+	{ErrFileUnreadable, "File could not be read"},
+}
+
 // Message turns an upload error into a short, readable sentence for the user.
 func Message(err error) string {
-	switch {
-	case errors.Is(err, ErrBadCredentials):
-		return "AWS rejected the access key"
-	case errors.Is(err, ErrBucketNotFound):
-		return "Bucket not found"
-	case errors.Is(err, ErrBucketInaccessible):
-		return "AWS blocked access to this bucket: check that the bucket name is yours"
-	case errors.Is(err, ErrWrongRegion):
-		return "The bucket is in a different region"
-	case errors.Is(err, ErrNoNetwork):
-		return "No internet connection"
-	case errors.Is(err, ErrForbidden):
-		return "AWS denied the existence check: the access key needs the s3:ListBucket permission"
-	case errors.Is(err, ErrWriteDenied):
-		return "AWS denied permission to write to the bucket"
-	case errors.Is(err, ErrPreconditionFailed):
-		return "An object with this name appeared during the upload"
-	case errors.Is(err, ErrNoFreeName):
-		return "Could not find a free name for this file"
-	case errors.Is(err, ErrFileUnreadable):
-		return "File could not be read"
-	default:
-		return "Upload failed"
+	for _, m := range messages {
+		if errors.Is(err, m.err) {
+			return m.text
+		}
 	}
+	return fallbackMessage
 }

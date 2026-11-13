@@ -530,7 +530,7 @@ func TestGRPCLibraryNeverWritesNonJSONToStderr(t *testing.T) {
 }
 
 const (
-	leakTestKeyID = "AKIATESTKEYID123456"
+	leakTestKeyID  = "AKIATESTKEYID123456"
 	leakTestSecret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYTESTSECRET"
 )
 
@@ -692,6 +692,7 @@ func (fakeS3) PutObject(_ context.Context, _ string, body io.Reader, _ int64) er
 	_, err := io.Copy(io.Discard, body)
 	return err
 }
+func (fakeS3) PrefixExists(context.Context, string) (bool, error)      { return false, nil }
 func (fakeS3) CreateMultipart(context.Context, string) (string, error) { return "id", nil }
 func (fakeS3) UploadPart(_ context.Context, _, _ string, _ int32, body io.Reader, _ int64) (string, error) {
 	_, err := io.Copy(io.Discard, body)

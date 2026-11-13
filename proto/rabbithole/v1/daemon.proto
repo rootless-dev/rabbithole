@@ -8,10 +8,13 @@ option go_package = "rabbithole/daemon/internal/gen/rabbithole/v1;rabbitholev1";
 service Daemon {
   // Configure supplies S3 credentials and destination settings.
   rpc Configure(ConfigureRequest) returns (ConfigureResponse);
-  // EnqueueUpload queues a local file for upload.
+  // EnqueueUpload queues local files and folders as one upload.
   rpc EnqueueUpload(EnqueueUploadRequest) returns (EnqueueUploadResponse);
   // WatchUploads streams a snapshot whenever an upload changes state or progresses.
   rpc WatchUploads(WatchUploadsRequest) returns (stream UploadSnapshot);
+  // WatchUploadFiles streams every file of one upload once, then a snapshot
+  // whenever one of its files changes state or progresses.
+  rpc WatchUploadFiles(WatchUploadFilesRequest) returns (stream FileSnapshot);
 }
 
 message ConfigureRequest {
@@ -25,7 +28,17 @@ message ConfigureRequest {
 message ConfigureResponse {}
 
 message EnqueueUploadRequest {
+  // A single file or folder. Ignored when local_paths is not empty.
   string local_path = 1;
+  // The files and folders that together become one upload.
+  repeated string local_paths = 2;
+  // Name patterns (shell globs matched against a single path element) of files
+  // and folders left out when walking a folder. They never apply to a path
+  // listed in local_paths itself.
+  repeated string skip_patterns = 3;
+  // How many files of this upload are sent at the same time. Zero selects the
+  // daemon's default.
+  int32 parallel_files = 4;
 }
 
 message EnqueueUploadResponse {
@@ -33,6 +46,10 @@ message EnqueueUploadResponse {
 }
 
 message WatchUploadsRequest {}
+
+message WatchUploadFilesRequest {
+  string upload_id = 1;
+}
 
 enum UploadState {
   UPLOAD_STATE_UNSPECIFIED = 0;
@@ -42,13 +59,51 @@ enum UploadState {
   FAILED = 4;
 }
 
+// What the user handed over as one upload.
+enum UploadKind {
+  UPLOAD_KIND_UNSPECIFIED = 0;
+  // One file.
+  SINGLE_FILE = 1;
+  // One folder.
+  FOLDER = 2;
+  // Several files, folders or both.
+  MULTIPLE = 3;
+}
+
 message UploadSnapshot {
   string upload_id = 1;
+  // The file name, the folder name, or the name of the first item of several.
   string file_name = 2;
+  // The first path the upload was enqueued with.
   string local_path = 3;
+  // The object key of a single file; the key prefix (ending in "/") a folder
+  // lands under; empty for several items and while nothing is resolved.
   string object_key = 4;
+  // Sum over every file of the upload.
   int64 bytes_total = 5;
   int64 bytes_sent = 6;
   UploadState state = 7;
   string error_message = 8;
+  UploadKind kind = 9;
+  // Every path the upload was enqueued with, in order.
+  repeated string root_paths = 10;
+  int32 files_total = 11;
+  int32 files_finished = 12;
+  int32 files_failed = 13;
+}
+
+// One file of an upload.
+message FileSnapshot {
+  string upload_id = 1;
+  // Position of the file inside its upload, stable for the upload's life.
+  int32 index = 2;
+  // Path shown to the user: the file name for a file handed over directly,
+  // "<folder name>/<path inside it>" for a file found inside a folder.
+  string relative_path = 3;
+  string local_path = 4;
+  string object_key = 5;
+  int64 bytes_total = 6;
+  int64 bytes_sent = 7;
+  UploadState state = 8;
+  string error_message = 9;
 }

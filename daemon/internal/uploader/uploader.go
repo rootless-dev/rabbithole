@@ -19,6 +19,13 @@ const maxKeyAttempts = 1000
 type Request struct {
 	Prefix    string
 	LocalPath string
+	// Name is the destination file name. Empty means the base name of LocalPath.
+	Name string
+	// SkipExistenceCheck sends files below the multipart threshold straight to
+	// the conditional PUT, without asking S3 whether the key exists first. It is
+	// for files inside a folder whose destination was just found empty. A
+	// rejected write still falls back to the next candidate key.
+	SkipExistenceCheck bool
 }
 
 // Callbacks receive upload events. Either field may be nil.
@@ -51,42 +58,76 @@ func (u *Uploader) Upload(ctx context.Context, s3 S3, req Request, cb Callbacks)
 		return fmt.Errorf("%w: %v", ErrFileUnreadable, err)
 	}
 	size := info.Size()
-	name := filepath.Base(req.LocalPath)
+	name := req.Name
+	if name == "" {
+		name = filepath.Base(req.LocalPath)
+	}
 	progress := &progressTracker{total: size, report: cb.Progress}
 
 	// One timestamp for every candidate, so "-2", "-3" extend the same stamp.
 	stamp := u.now()
-	for attempt := 0; attempt < maxKeyAttempts; attempt++ {
+	for attempt := range maxKeyAttempts {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		key := CandidateKey(req.Prefix, name, stamp, attempt)
-		exists, err := s3.ObjectExists(ctx, key)
+		taken, err := sendUnder(ctx, s3, key, req, size, progress, cb)
 		if err != nil {
 			return cancelOr(ctx, err)
 		}
-		if exists {
+		if taken {
 			continue
-		}
-		if cb.KeyResolved != nil {
-			cb.KeyResolved(key)
-		}
-
-		if UseMultipart(size) {
-			err = uploadMultipart(ctx, s3, key, req.LocalPath, size, progress, cb.AbortFailed)
-		} else {
-			err = uploadSingle(ctx, s3, key, req.LocalPath, size, progress)
-			if errors.Is(err, ErrPreconditionFailed) {
-				continue // the name was taken after the check; try the next candidate
-			}
-		}
-		if err != nil {
-			return cancelOr(ctx, err)
 		}
 		progress.advance(size)
 		return nil
 	}
 	return ErrNoFreeName
+}
+
+// sendUnder tries to write the file under key. It reports taken when the key
+// is already in use, so the caller moves on to the next candidate.
+func sendUnder(ctx context.Context, s3 S3, key string, req Request, size int64, progress *progressTracker, cb Callbacks) (taken bool, err error) {
+	multipart := UseMultipart(size)
+	// A rejected conditional write moves on to the next candidate, so the
+	// check is only needed where a rejection would be a failure: multipart.
+	if multipart || !req.SkipExistenceCheck {
+		exists, err := s3.ObjectExists(ctx, key)
+		if err != nil || exists {
+			return exists, err
+		}
+	}
+	if cb.KeyResolved != nil {
+		cb.KeyResolved(key)
+	}
+	if multipart {
+		return false, uploadMultipart(ctx, s3, key, req.LocalPath, size, progress, cb.AbortFailed)
+	}
+	err = uploadSingle(ctx, s3, key, req.LocalPath, size, progress)
+	if errors.Is(err, ErrPreconditionFailed) {
+		return true, nil // the name was taken after the check
+	}
+	return false, err
+}
+
+// ResolveFolder finds the destination folder name for a folder called name:
+// the first candidate with nothing under prefix + candidate + "/". The
+// caller puts the folder's files under it.
+func (u *Uploader) ResolveFolder(ctx context.Context, s3 S3, prefix, name string) (string, error) {
+	stamp := u.now()
+	for attempt := 0; attempt < maxKeyAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		candidate := CandidateFolderName(name, stamp, attempt)
+		exists, err := s3.PrefixExists(ctx, prefix+candidate+"/")
+		if err != nil {
+			return "", cancelOr(ctx, err)
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+	return "", ErrNoFreeName
 }
 
 func uploadSingle(ctx context.Context, s3 S3, key, path string, size int64, progress *progressTracker) error {

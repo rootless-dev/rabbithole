@@ -32,6 +32,7 @@ type fakeS3 struct {
 	readBodyTwice bool
 
 	calls         []string
+	prefixes      []string
 	putKeys       []string
 	putSizes      []int64
 	partSizes     []int64
@@ -53,7 +54,7 @@ func newFake(existing ...string) *fakeS3 {
 func (f *fakeS3) writeCalls() int {
 	n := 0
 	for _, c := range f.calls {
-		if c != "exists" {
+		if c != "exists" && c != "prefix" {
 			n++
 		}
 	}
@@ -83,6 +84,20 @@ func (f *fakeS3) ObjectExists(ctx context.Context, key string) (bool, error) {
 		return false, f.existsErr
 	}
 	return f.existing[key], nil
+}
+
+func (f *fakeS3) PrefixExists(ctx context.Context, prefix string) (bool, error) {
+	f.calls = append(f.calls, "prefix")
+	f.prefixes = append(f.prefixes, prefix)
+	if f.existsErr != nil {
+		return false, f.existsErr
+	}
+	for k := range f.existing {
+		if strings.HasPrefix(k, prefix) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (f *fakeS3) PutObject(ctx context.Context, key string, body io.Reader, size int64) error {

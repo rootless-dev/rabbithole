@@ -224,6 +224,33 @@ func TestObjectExistsMapsErrors(t *testing.T) {
 	}
 }
 
+func TestPrefixExistsListsOneKeyUnderThePrefix(t *testing.T) {
+	c, stub := newTestClient(t, func(r *http.Request) *http.Response { return reply(200, listXML("p/photos/a.jpg"), nil) })
+	exists, err := c.PrefixExists(context.Background(), "p/photos/")
+	if err != nil || !exists {
+		t.Fatalf("PrefixExists = %v, %v; want true, nil", exists, err)
+	}
+	q := stub.requests()[0].URL.Query()
+	if q.Get("list-type") != "2" || q.Get("prefix") != "p/photos/" || q.Get("max-keys") != "1" {
+		t.Fatalf("unexpected list query: %v", q)
+	}
+}
+
+func TestPrefixExistsFalseWhenNothingMatches(t *testing.T) {
+	c, _ := newTestClient(t, func(r *http.Request) *http.Response { return reply(200, listXML(), nil) })
+	exists, err := c.PrefixExists(context.Background(), "p/photos/")
+	if err != nil || exists {
+		t.Fatalf("PrefixExists = %v, %v; want false, nil", exists, err)
+	}
+}
+
+func TestPrefixExistsMapsAccessDeniedToForbidden(t *testing.T) {
+	c, _ := newTestClient(t, func(r *http.Request) *http.Response { return reply(403, errorXML("AccessDenied"), nil) })
+	if _, err := c.PrefixExists(context.Background(), "p/photos/"); !errors.Is(err, uploader.ErrForbidden) {
+		t.Fatalf("err = %v, want ErrForbidden", err)
+	}
+}
+
 func TestObjectExistsNeverSendsHead(t *testing.T) {
 	for _, resp := range []func() *http.Response{
 		func() *http.Response { return reply(200, listXML("k"), nil) },

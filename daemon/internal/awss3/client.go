@@ -74,6 +74,20 @@ func (c *client) ObjectExists(ctx context.Context, key string) (bool, error) {
 	return len(out.Contents) > 0 && aws.ToString(out.Contents[0].Key) == key, nil
 }
 
+// PrefixExists reports whether any object lives under prefix. Like
+// ObjectExists it needs only s3:ListBucket.
+func (c *client) PrefixExists(ctx context.Context, prefix string) (bool, error) {
+	out, err := c.s3.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket:  aws.String(c.bucket),
+		Prefix:  aws.String(prefix),
+		MaxKeys: aws.Int32(1),
+	})
+	if err != nil {
+		return false, mapErrorWithDenial(err, uploader.ErrForbidden)
+	}
+	return len(out.Contents) > 0, nil
+}
+
 func (c *client) PutObject(ctx context.Context, key string, body io.Reader, size int64) error {
 	_, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(c.bucket),
@@ -169,19 +183,12 @@ func mapErrorWithDenial(err error, denied error) error {
 	}
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
-		switch apiErr.ErrorCode() {
-		case "NoSuchBucket":
-			return fmt.Errorf("%w: %w", uploader.ErrBucketNotFound, err)
-		case "InvalidAccessKeyId", "SignatureDoesNotMatch":
-			return fmt.Errorf("%w: %w", uploader.ErrBadCredentials, err)
-		case "PreconditionFailed", "ConditionalRequestConflict":
-			return fmt.Errorf("%w: %w", uploader.ErrPreconditionFailed, err)
-		case "PermanentRedirect", "AuthorizationHeaderMalformed":
-			return fmt.Errorf("%w: %w", uploader.ErrWrongRegion, err)
-		case "AllAccessDisabled":
-			return fmt.Errorf("%w: %w", uploader.ErrBucketInaccessible, err)
-		case "AccessDenied":
+		code := apiErr.ErrorCode()
+		if code == accessDeniedCode {
 			return fmt.Errorf("%w: %w", denied, err)
+		}
+		if sentinel, known := sentinelByCode[code]; known {
+			return fmt.Errorf("%w: %w", sentinel, err)
 		}
 	}
 	var netErr net.Error
@@ -189,4 +196,20 @@ func mapErrorWithDenial(err error, denied error) error {
 		return fmt.Errorf("%w: %w", uploader.ErrNoNetwork, err)
 	}
 	return err
+}
+
+// accessDeniedCode is the AWS error code whose meaning depends on the call.
+const accessDeniedCode = "AccessDenied"
+
+// sentinelByCode maps the AWS error codes that mean the same for every call
+// to the uploader sentinel that describes them.
+var sentinelByCode = map[string]error{
+	"NoSuchBucket":                 uploader.ErrBucketNotFound,
+	"InvalidAccessKeyId":           uploader.ErrBadCredentials,
+	"SignatureDoesNotMatch":        uploader.ErrBadCredentials,
+	"PreconditionFailed":           uploader.ErrPreconditionFailed,
+	"ConditionalRequestConflict":   uploader.ErrPreconditionFailed,
+	"PermanentRedirect":            uploader.ErrWrongRegion,
+	"AuthorizationHeaderMalformed": uploader.ErrWrongRegion,
+	"AllAccessDisabled":            uploader.ErrBucketInaccessible,
 }

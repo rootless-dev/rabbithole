@@ -45,6 +45,9 @@ func okRunner() runnerFunc {
 	return func(context.Context, uploader.Settings, uploader.Request, uploader.Callbacks) error { return nil }
 }
 
+// req is an enqueue request for the given paths with every default.
+func req(paths ...string) EnqueueRequest { return EnqueueRequest{Paths: paths} }
+
 func writeFile(t *testing.T, name string, size int) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), name)
@@ -74,9 +77,9 @@ func startRun(t *testing.T, q *Queue) {
 }
 
 // collectUntil reads snapshots until stop returns true for one, and returns all read.
-func collectUntil(t *testing.T, ch <-chan Snapshot, stop func(Snapshot) bool) []Snapshot {
+func collectUntil[T any](t *testing.T, ch <-chan T, stop func(T) bool) []T {
 	t.Helper()
-	var got []Snapshot
+	var got []T
 	for {
 		select {
 		case s, ok := <-ch:
@@ -124,7 +127,7 @@ func TestFIFOOrderOneAtATime(t *testing.T) {
 	_, updates, cancel := q.Subscribe()
 	defer cancel()
 	for _, n := range []string{"a", "b", "c"} {
-		if _, err := q.Enqueue(uploader.Settings{}, writeFile(t, n, 1)); err != nil {
+		if _, err := q.Enqueue(uploader.Settings{}, req(writeFile(t, n, 1))); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -182,7 +185,7 @@ func TestSnapshotSequenceSuccess(t *testing.T) {
 	_, updates, cancel := q.Subscribe()
 	defer cancel()
 	path := writeFile(t, "a.bin", 10)
-	id, err := q.Enqueue(uploader.Settings{}, path)
+	id, err := q.Enqueue(uploader.Settings{}, req(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +233,7 @@ func TestSnapshotSequenceFailure(t *testing.T) {
 	q := New(r, newFakeClock().Now)
 	_, updates, cancel := q.Subscribe()
 	defer cancel()
-	if _, err := q.Enqueue(uploader.Settings{}, writeFile(t, "a.bin", 10)); err != nil {
+	if _, err := q.Enqueue(uploader.Settings{}, req(writeFile(t, "a.bin", 10))); err != nil {
 		t.Fatal(err)
 	}
 	startRun(t, q)
@@ -263,7 +266,7 @@ func TestProgressThrottledToTenPerSecond(t *testing.T) {
 	q := New(r, clock.Now)
 	_, updates, cancel := q.Subscribe()
 	defer cancel()
-	if _, err := q.Enqueue(uploader.Settings{}, writeFile(t, "a.bin", 100)); err != nil {
+	if _, err := q.Enqueue(uploader.Settings{}, req(writeFile(t, "a.bin", 100))); err != nil {
 		t.Fatal(err)
 	}
 	startRun(t, q)
@@ -300,8 +303,8 @@ func TestProgressThrottledToTenPerSecond(t *testing.T) {
 
 func TestSubscribeReplaysKnownUploads(t *testing.T) {
 	q := New(okRunner(), newFakeClock().Now)
-	a, _ := q.Enqueue(uploader.Settings{}, writeFile(t, "a", 1))
-	b, _ := q.Enqueue(uploader.Settings{}, writeFile(t, "b", 1))
+	a, _ := q.Enqueue(uploader.Settings{}, req(writeFile(t, "a", 1)))
+	b, _ := q.Enqueue(uploader.Settings{}, req(writeFile(t, "b", 1)))
 
 	initial, updates, cancel := q.Subscribe()
 	defer cancel()
@@ -340,8 +343,8 @@ func TestSlowSubscriberNeverBlocksRunner(t *testing.T) {
 	defer cancelSlow()
 	_, fast, cancelFast := q.Subscribe()
 	defer cancelFast()
-	a, _ := q.Enqueue(uploader.Settings{}, writeFile(t, "a", 2000))
-	b, _ := q.Enqueue(uploader.Settings{}, writeFile(t, "b", 2000))
+	a, _ := q.Enqueue(uploader.Settings{}, req(writeFile(t, "a", 2000)))
+	b, _ := q.Enqueue(uploader.Settings{}, req(writeFile(t, "b", 2000)))
 	startRun(t, q)
 
 	// The fast subscriber seeing both uploads finish proves the runner was not blocked.
@@ -387,7 +390,7 @@ func TestSlowSubscriberMemoryBoundedByUploads(t *testing.T) {
 	q := New(r, clock.Now)
 	_, fast, cancelFast := q.Subscribe()
 	defer cancelFast()
-	if _, err := q.Enqueue(uploader.Settings{}, writeFile(t, "a", 1000)); err != nil {
+	if _, err := q.Enqueue(uploader.Settings{}, req(writeFile(t, "a", 1000))); err != nil {
 		t.Fatal(err)
 	}
 	// Subscribe after enqueue so the slow subscriber starts with one queued upload.
@@ -402,13 +405,13 @@ func TestSlowSubscriberMemoryBoundedByUploads(t *testing.T) {
 	}
 }
 
-func TestEnqueueRejectsDirectoryAndMissingFile(t *testing.T) {
+func TestEnqueueRejectsEmptyFolderAndMissingFile(t *testing.T) {
 	q := New(okRunner(), newFakeClock().Now)
-	if _, err := q.Enqueue(uploader.Settings{}, t.TempDir()); !errors.Is(err, ErrInvalidPath) {
-		t.Errorf("directory: err = %v, want ErrInvalidPath", err)
+	if _, err := q.Enqueue(uploader.Settings{}, req(t.TempDir())); !errors.Is(err, ErrNoFiles) {
+		t.Errorf("empty folder: err = %v, want ErrNoFiles", err)
 	}
 	missing := filepath.Join(t.TempDir(), "nope")
-	if _, err := q.Enqueue(uploader.Settings{}, missing); !errors.Is(err, ErrInvalidPath) {
+	if _, err := q.Enqueue(uploader.Settings{}, req(missing)); !errors.Is(err, ErrInvalidPath) {
 		t.Errorf("missing: err = %v, want ErrInvalidPath", err)
 	}
 	if initial, _, cancel := q.Subscribe(); len(initial) != 0 {
@@ -422,7 +425,7 @@ func TestZeroByteFileAccepted(t *testing.T) {
 	q := New(okRunner(), newFakeClock().Now) // the runner makes no Progress call, like the uploader
 	_, updates, cancel := q.Subscribe()
 	defer cancel()
-	if _, err := q.Enqueue(uploader.Settings{}, writeFile(t, "empty", 0)); err != nil {
+	if _, err := q.Enqueue(uploader.Settings{}, req(writeFile(t, "empty", 0))); err != nil {
 		t.Fatal(err)
 	}
 	startRun(t, q)
@@ -447,8 +450,8 @@ func TestSettingsCapturedAtEnqueue(t *testing.T) {
 	defer cancel()
 	s1 := uploader.Settings{Bucket: "one", Prefix: "p1"}
 	s2 := uploader.Settings{Bucket: "two", Prefix: "p2"}
-	q.Enqueue(s1, writeFile(t, "a", 1))
-	q.Enqueue(s2, writeFile(t, "b", 1))
+	q.Enqueue(s1, req(writeFile(t, "a", 1)))
+	q.Enqueue(s2, req(writeFile(t, "b", 1)))
 	startRun(t, q)
 	collectUntil(t, updates, finishedCount(2)())
 
@@ -469,7 +472,7 @@ func TestRequestCarriesPrefixAndPath(t *testing.T) {
 	_, updates, cancel := q.Subscribe()
 	defer cancel()
 	path := writeFile(t, "a", 1)
-	q.Enqueue(uploader.Settings{Prefix: "pfx"}, path)
+	q.Enqueue(uploader.Settings{Prefix: "pfx"}, req(path))
 	startRun(t, q)
 	collectUntil(t, updates, finishedCount(1)())
 	if got.Prefix != "pfx" || got.LocalPath != path {
@@ -485,7 +488,7 @@ func TestRunCancelsCurrentUpload(t *testing.T) {
 		return ctx.Err()
 	})
 	q := New(r, newFakeClock().Now)
-	if _, err := q.Enqueue(uploader.Settings{}, writeFile(t, "a", 1)); err != nil {
+	if _, err := q.Enqueue(uploader.Settings{}, req(writeFile(t, "a", 1))); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

@@ -12,7 +12,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -42,58 +41,35 @@ const (
 	exitUsage = 2
 )
 
-// s3Factory builds an S3 client for one upload from its settings.
-type s3Factory func(ctx context.Context, s uploader.Settings) (uploader.S3, error)
-
-// runner is the queue.Runner used in production: it builds an S3 client from
-// the job's settings and hands it to the uploader.
-type runner struct {
-	uploader *uploader.Uploader
-	newS3    s3Factory
-	log      *logging.Logger
-}
-
-// Run performs one upload and logs one line if it fails. The line carries the
-// readable reason, the AWS error code and HTTP status when the error has them,
-// and the file name; never the error's own text, which may echo request content.
-func (r *runner) Run(ctx context.Context, s uploader.Settings, req uploader.Request, cb uploader.Callbacks) error {
-	name := filepath.Base(req.LocalPath)
-	cb.AbortFailed = func(err error) {
-		r.logFailure(ctx, "multipart abort failed", name, err)
-	}
-	client, err := r.newS3(ctx, s)
-	if err == nil {
-		err = r.uploader.Upload(ctx, client, req, cb)
-	}
-	if err != nil {
-		r.logFailure(ctx, "upload failed", name, err)
-	}
-	return err
-}
-
-func (r *runner) logFailure(ctx context.Context, msg, file string, err error) {
-	kv := []any{"file", file, "reason", uploader.Message(err)}
-	code, status := awss3.ErrorDetails(err)
-	if code != "" {
-		kv = append(kv, "aws_code", code)
-	}
-	if status != 0 {
-		kv = append(kv, "http_status", status)
-	}
-	if ctx.Err() != nil {
-		r.log.Warn(msg, kv...) // shutdown cancelled the work; not a defect
-		return
-	}
-	r.log.Error(msg, kv...)
-}
-
 // options holds the seams tests replace; the zero value selects production
 // behavior.
 type options struct {
-	signals <-chan os.Signal                                    // default: SIGTERM and SIGINT from the OS
-	listen  func(network, address string) (net.Listener, error) // default: net.Listen
-	newS3   s3Factory                                           // default: awss3.New
-	runner  queue.Runner                                        // default: *runner over newS3
+	signals <-chan os.Signal // default: SIGTERM and SIGINT from the OS
+	listen  listenFunc       // default: net.Listen
+	newS3   s3Factory        // default: awss3.New
+	runner  queue.Runner     // default: *runner over newS3
+}
+
+// withDefaults fills every unset seam with its production value. The returned
+// function releases what the defaults acquired.
+func (o options) withDefaults(log *logging.Logger) (options, func()) {
+	release := func() {}
+	if o.listen == nil {
+		o.listen = net.Listen
+	}
+	if o.newS3 == nil {
+		o.newS3 = awss3.New
+	}
+	if o.runner == nil {
+		o.runner = &runner{uploader: uploader.New(time.Now), newS3: o.newS3, log: log}
+	}
+	if o.signals == nil {
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
+		release = func() { signal.Stop(sigs) }
+		o.signals = sigs
+	}
+	return o, release
 }
 
 // Run runs the daemon until stdin reaches end of file, SIGTERM or SIGINT
@@ -122,22 +98,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 		return exitUsage
 	}
 	log := logging.New(stderr, os.Getenv(logLevelEnv), serviceName)
-
-	if opts.listen == nil {
-		opts.listen = net.Listen
-	}
-	if opts.newS3 == nil {
-		opts.newS3 = awss3.New
-	}
-	if opts.runner == nil {
-		opts.runner = &runner{uploader: uploader.New(time.Now), newS3: opts.newS3, log: log}
-	}
-	if opts.signals == nil {
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
-		defer signal.Stop(sigs)
-		opts.signals = sigs
-	}
+	opts, release := opts.withDefaults(log)
+	defer release()
 
 	silenceGRPCLog()
 
@@ -147,12 +109,32 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 		return exitError
 	}
 
-	q := queue.New(opts.runner, time.Now)
+	svc := startServices(ctx, ln, opts.runner, log)
+	log.Info("listening", "socket", socketPath)
+	code := awaitShutdown(ctx, log, stdin, opts.signals, svc.serveErr)
+	svc.stop(log)
+
+	removeOwnSocket(log, socketPath, socketInfo)
+	log.Info("stopped")
+	return code
+}
+
+// services is the running part of the daemon: the upload queue and the gRPC
+// server in front of it.
+type services struct {
+	grpcServer    *grpc.Server
+	cancelUploads context.CancelFunc
+	queueDone     <-chan struct{} // closed when the queue has stopped
+	serveErr      <-chan error    // receives the error that ended Serve
+}
+
+// startServices starts the queue and serves the gRPC API on ln.
+func startServices(ctx context.Context, ln net.Listener, r queue.Runner, log *logging.Logger) *services {
+	q := queue.New(r, time.Now)
 	grpcServer := grpc.NewServer()
 	pb.RegisterDaemonServer(grpcServer, server.New(q, log))
 
 	uploadCtx, cancelUploads := context.WithCancel(ctx)
-	defer cancelUploads()
 	queueDone := make(chan struct{})
 	go func() {
 		defer close(queueDone)
@@ -160,34 +142,43 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 	}()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- grpcServer.Serve(ln) }()
+
+	return &services{grpcServer: grpcServer, cancelUploads: cancelUploads, queueDone: queueDone, serveErr: serveErr}
+}
+
+// awaitShutdown blocks until something ends the daemon, logs what it was and
+// returns the exit code that reason deserves.
+func awaitShutdown(ctx context.Context, log *logging.Logger, stdin io.Reader, signals <-chan os.Signal, serveErr <-chan error) int {
 	stdinDone := make(chan struct{})
 	go func() {
 		defer close(stdinDone)
 		_, _ = io.Copy(io.Discard, stdin)
 	}()
 
-	log.Info("listening", "socket", socketPath)
-	code := exitOK
 	select {
 	case <-stdinDone:
 		log.Info("shutting down", "reason", "stdin closed")
-	case sig := <-opts.signals:
+	case sig := <-signals:
 		log.Info("shutting down", "reason", "signal", "signal", sig.String())
 	case <-ctx.Done():
 		log.Info("shutting down", "reason", "context cancelled")
 	case err := <-serveErr:
 		log.Error("server stopped unexpectedly", "error", fmt.Sprint(err))
-		code = exitError
+		return exitError
 	}
+	return exitOK
+}
 
-	// The deadline runs from the moment shutdown started.
+// stop cancels the uploads and stops the server, waiting for both at most
+// shutdownTimeout, counted from this call.
+func (s *services) stop(log *logging.Logger) {
 	deadline, cancelDeadline := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancelDeadline()
 
-	cancelUploads()
+	s.cancelUploads()
 	graceful := make(chan struct{})
 	go func() {
-		grpcServer.GracefulStop()
+		s.grpcServer.GracefulStop()
 		close(graceful)
 	}()
 	select {
@@ -195,34 +186,11 @@ func run(ctx context.Context, args []string, stdin io.Reader, stderr io.Writer, 
 	case <-deadline.Done():
 		log.Warn("graceful stop timed out; stopping server")
 	}
-	grpcServer.Stop()
+	s.grpcServer.Stop()
 	select {
-	case <-queueDone:
+	case <-s.queueDone:
 	case <-deadline.Done():
 		log.Warn("upload did not stop before the deadline")
-	}
-
-	removeOwnSocket(log, socketPath, socketInfo)
-	log.Info("stopped")
-	return code
-}
-
-// removeOwnSocket removes path only if it is still the socket file this
-// process created.
-func removeOwnSocket(log *logging.Logger, path string, created os.FileInfo) {
-	current, err := os.Lstat(path)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			log.Warn("could not inspect socket", "error", err.Error())
-		}
-		return
-	}
-	if !os.SameFile(created, current) {
-		log.Info("socket was replaced; leaving it in place")
-		return
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Warn("could not remove socket", "error", err.Error())
 	}
 }
 
@@ -239,44 +207,4 @@ func parseArgs(args []string) (string, error) {
 		return "", errors.New("missing required flag --socket")
 	}
 	return *socket, nil
-}
-
-// listenUnix creates the socket directory (mode 0700 even when it already
-// existed), removes a stale file at path, listens on a Unix socket created
-// with mode 0600 from the start, and returns the identity of the socket file
-// this process created. The listener does not unlink the path on close: the
-// caller removes it only if it is still the same file, so an exiting daemon
-// never deletes a socket a newer daemon created at the same path.
-func listenUnix(path string, listen func(network, address string) (net.Listener, error)) (net.Listener, os.FileInfo, error) {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, nil, fmt.Errorf("create socket directory: %w", err)
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
-		return nil, nil, fmt.Errorf("restrict socket directory permissions: %w", err)
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, nil, fmt.Errorf("remove stale socket: %w", err)
-	}
-
-	// bind creates the socket file with the umask applied: 0177 yields 0600.
-	oldMask := syscall.Umask(0o177)
-	ln, err := listen("unix", path)
-	syscall.Umask(oldMask)
-	if err != nil {
-		return nil, nil, fmt.Errorf("listen on %s: %w", path, err)
-	}
-	if unixLn, ok := ln.(*net.UnixListener); ok {
-		unixLn.SetUnlinkOnClose(false)
-	}
-	if err := os.Chmod(path, 0o600); err != nil { // backstop for listeners that ignore the umask
-		_ = ln.Close()
-		return nil, nil, fmt.Errorf("restrict socket permissions: %w", err)
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		_ = ln.Close()
-		return nil, nil, fmt.Errorf("stat socket: %w", err)
-	}
-	return ln, info, nil
 }

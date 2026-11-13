@@ -65,6 +65,8 @@ type CompletedPart struct {
 // ErrPreconditionFailed.
 type S3 interface {
 	ObjectExists(ctx context.Context, key string) (bool, error)
+	// PrefixExists reports whether any object lives under prefix.
+	PrefixExists(ctx context.Context, prefix string) (bool, error)
 	PutObject(ctx context.Context, key string, body io.Reader, size int64) error
 	CreateMultipart(ctx context.Context, key string) (uploadID string, err error)
 	UploadPart(ctx context.Context, key, uploadID string, number int32, body io.Reader, size int64) (etag string, err error)
