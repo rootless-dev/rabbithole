@@ -52,7 +52,8 @@ the settings and the credentials, which it hands to the daemon over the socket.
 
 - macOS 26.0 or later (the deployment target in `app/project.yml`).
 - Swift 6.0 and Xcode, to build the app.
-- Go 1.27.1 (the version in `daemon/go.mod`).
+- Go 1.27.4 or later (the version in `daemon/go.mod`). An older Go 1.27 downloads it
+  by itself on the first build.
 - `xcodegen`, which the build targets use to generate the Xcode project.
 - For `make generate` only: `buf`, `protoc-gen-swift` and `protoc-gen-grpc-swift-2`,
   installed with Homebrew. The Go protoc plugins are installed by `make tools`.
