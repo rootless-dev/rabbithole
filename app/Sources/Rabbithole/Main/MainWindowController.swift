@@ -1,19 +1,29 @@
 import AppKit
 import SwiftUI
 
-/// Owns the main window. The app has no Dock icon, so showing the window activates the app
-/// and makes the window key explicitly. The window is created on first use and kept.
+/// Owns the main window. The app lives in the menu bar and shows its Dock icon only while
+/// this window is open (minimized counts as open, since the Dock is where it sits then).
+/// The window is created on first use and kept.
 @MainActor
 final class MainWindowController: NSObject, NSWindowDelegate {
     private let context: MainContext
     private let thumbnails: ThumbnailCache
     private let makeSetup: () -> SetupModel
+    private let setDockIconVisible: (Bool) -> Void
     private var window: NSWindow?
 
-    init(context: MainContext, thumbnails: ThumbnailCache, makeSetup: @escaping () -> SetupModel) {
+    /// `setDockIconVisible` is replaced in tests; by default it switches the app between a
+    /// regular app (Dock icon, menu bar) and a menu bar accessory.
+    init(
+        context: MainContext, thumbnails: ThumbnailCache, makeSetup: @escaping () -> SetupModel,
+        setDockIconVisible: @escaping (Bool) -> Void = { visible in
+            NSApp.setActivationPolicy(visible ? .regular : .accessory)
+        }
+    ) {
         self.context = context
         self.thumbnails = thumbnails
         self.makeSetup = makeSetup
+        self.setDockIconVisible = setDockIconVisible
     }
 
     /// Brings the window forward on `section`, or on the first-launch setup while no AWS
@@ -67,6 +77,8 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             window = makeWindow(size: size)
         }
         context.model.windowShowing(true)
+        // Before activating, so the app comes forward already as a regular app.
+        setDockIconVisible(true)
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
     }
@@ -107,5 +119,6 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         context.model.setup = nil
         // Nobody is looking at an upload's files any more: stop asking the daemon for them.
         context.model.windowShowing(false)
+        setDockIconVisible(false)
     }
 }
