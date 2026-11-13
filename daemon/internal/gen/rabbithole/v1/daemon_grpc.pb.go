@@ -25,6 +25,15 @@ const (
 	Daemon_WatchUploadFiles_FullMethodName = "/rabbithole.v1.Daemon/WatchUploadFiles"
 	Daemon_RetryUpload_FullMethodName      = "/rabbithole.v1.Daemon/RetryUpload"
 	Daemon_RemoveUpload_FullMethodName     = "/rabbithole.v1.Daemon/RemoveUpload"
+	Daemon_SetOptions_FullMethodName       = "/rabbithole.v1.Daemon/SetOptions"
+	Daemon_PauseUpload_FullMethodName      = "/rabbithole.v1.Daemon/PauseUpload"
+	Daemon_ResumeUpload_FullMethodName     = "/rabbithole.v1.Daemon/ResumeUpload"
+	Daemon_CancelUpload_FullMethodName     = "/rabbithole.v1.Daemon/CancelUpload"
+	Daemon_StartDownload_FullMethodName    = "/rabbithole.v1.Daemon/StartDownload"
+	Daemon_CancelDownload_FullMethodName   = "/rabbithole.v1.Daemon/CancelDownload"
+	Daemon_WatchDownloads_FullMethodName   = "/rabbithole.v1.Daemon/WatchDownloads"
+	Daemon_ListBuckets_FullMethodName      = "/rabbithole.v1.Daemon/ListBuckets"
+	Daemon_CreateBucket_FullMethodName     = "/rabbithole.v1.Daemon/CreateBucket"
 )
 
 // DaemonClient is the client API for Daemon service.
@@ -47,6 +56,27 @@ type DaemonClient interface {
 	// RemoveUpload takes an upload, or some of its files, out of the history,
 	// and deletes their objects from the bucket when asked to.
 	RemoveUpload(ctx context.Context, in *RemoveUploadRequest, opts ...grpc.CallOption) (*RemoveUploadResponse, error)
+	// SetOptions replaces the options that apply to every upload.
+	SetOptions(ctx context.Context, in *SetOptionsRequest, opts ...grpc.CallOption) (*SetOptionsResponse, error)
+	// PauseUpload stops sending an upload and keeps what was already sent.
+	PauseUpload(ctx context.Context, in *PauseUploadRequest, opts ...grpc.CallOption) (*PauseUploadResponse, error)
+	// ResumeUpload puts an upload the user paused back in the queue.
+	ResumeUpload(ctx context.Context, in *ResumeUploadRequest, opts ...grpc.CallOption) (*ResumeUploadResponse, error)
+	// CancelUpload stops an upload for good. Files it already sent stay in the
+	// bucket and in the history; the rest become canceled.
+	CancelUpload(ctx context.Context, in *CancelUploadRequest, opts ...grpc.CallOption) (*CancelUploadResponse, error)
+	// StartDownload copies files of an upload from the bucket to a local folder.
+	StartDownload(ctx context.Context, in *StartDownloadRequest, opts ...grpc.CallOption) (*StartDownloadResponse, error)
+	// CancelDownload stops a download and removes the file it was writing.
+	CancelDownload(ctx context.Context, in *CancelDownloadRequest, opts ...grpc.CallOption) (*CancelDownloadResponse, error)
+	// WatchDownloads streams a snapshot whenever a download changes or progresses.
+	// Downloads live only as long as the daemon: they are not kept in the history.
+	WatchDownloads(ctx context.Context, in *WatchDownloadsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadSnapshot], error)
+	// ListBuckets lists the buckets the given access key can see. It works
+	// before Configure, so the bucket can be chosen while setting the account up.
+	ListBuckets(ctx context.Context, in *ListBucketsRequest, opts ...grpc.CallOption) (*ListBucketsResponse, error)
+	// CreateBucket creates a private bucket. It works before Configure.
+	CreateBucket(ctx context.Context, in *CreateBucketRequest, opts ...grpc.CallOption) (*CreateBucketResponse, error)
 }
 
 type daemonClient struct {
@@ -135,6 +165,105 @@ func (c *daemonClient) RemoveUpload(ctx context.Context, in *RemoveUploadRequest
 	return out, nil
 }
 
+func (c *daemonClient) SetOptions(ctx context.Context, in *SetOptionsRequest, opts ...grpc.CallOption) (*SetOptionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetOptionsResponse)
+	err := c.cc.Invoke(ctx, Daemon_SetOptions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonClient) PauseUpload(ctx context.Context, in *PauseUploadRequest, opts ...grpc.CallOption) (*PauseUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PauseUploadResponse)
+	err := c.cc.Invoke(ctx, Daemon_PauseUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonClient) ResumeUpload(ctx context.Context, in *ResumeUploadRequest, opts ...grpc.CallOption) (*ResumeUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResumeUploadResponse)
+	err := c.cc.Invoke(ctx, Daemon_ResumeUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonClient) CancelUpload(ctx context.Context, in *CancelUploadRequest, opts ...grpc.CallOption) (*CancelUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelUploadResponse)
+	err := c.cc.Invoke(ctx, Daemon_CancelUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonClient) StartDownload(ctx context.Context, in *StartDownloadRequest, opts ...grpc.CallOption) (*StartDownloadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartDownloadResponse)
+	err := c.cc.Invoke(ctx, Daemon_StartDownload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonClient) CancelDownload(ctx context.Context, in *CancelDownloadRequest, opts ...grpc.CallOption) (*CancelDownloadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelDownloadResponse)
+	err := c.cc.Invoke(ctx, Daemon_CancelDownload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonClient) WatchDownloads(ctx context.Context, in *WatchDownloadsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadSnapshot], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Daemon_ServiceDesc.Streams[2], Daemon_WatchDownloads_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchDownloadsRequest, DownloadSnapshot]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Daemon_WatchDownloadsClient = grpc.ServerStreamingClient[DownloadSnapshot]
+
+func (c *daemonClient) ListBuckets(ctx context.Context, in *ListBucketsRequest, opts ...grpc.CallOption) (*ListBucketsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBucketsResponse)
+	err := c.cc.Invoke(ctx, Daemon_ListBuckets_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonClient) CreateBucket(ctx context.Context, in *CreateBucketRequest, opts ...grpc.CallOption) (*CreateBucketResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateBucketResponse)
+	err := c.cc.Invoke(ctx, Daemon_CreateBucket_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DaemonServer is the server API for Daemon service.
 // All implementations must embed UnimplementedDaemonServer
 // for forward compatibility.
@@ -155,6 +284,27 @@ type DaemonServer interface {
 	// RemoveUpload takes an upload, or some of its files, out of the history,
 	// and deletes their objects from the bucket when asked to.
 	RemoveUpload(context.Context, *RemoveUploadRequest) (*RemoveUploadResponse, error)
+	// SetOptions replaces the options that apply to every upload.
+	SetOptions(context.Context, *SetOptionsRequest) (*SetOptionsResponse, error)
+	// PauseUpload stops sending an upload and keeps what was already sent.
+	PauseUpload(context.Context, *PauseUploadRequest) (*PauseUploadResponse, error)
+	// ResumeUpload puts an upload the user paused back in the queue.
+	ResumeUpload(context.Context, *ResumeUploadRequest) (*ResumeUploadResponse, error)
+	// CancelUpload stops an upload for good. Files it already sent stay in the
+	// bucket and in the history; the rest become canceled.
+	CancelUpload(context.Context, *CancelUploadRequest) (*CancelUploadResponse, error)
+	// StartDownload copies files of an upload from the bucket to a local folder.
+	StartDownload(context.Context, *StartDownloadRequest) (*StartDownloadResponse, error)
+	// CancelDownload stops a download and removes the file it was writing.
+	CancelDownload(context.Context, *CancelDownloadRequest) (*CancelDownloadResponse, error)
+	// WatchDownloads streams a snapshot whenever a download changes or progresses.
+	// Downloads live only as long as the daemon: they are not kept in the history.
+	WatchDownloads(*WatchDownloadsRequest, grpc.ServerStreamingServer[DownloadSnapshot]) error
+	// ListBuckets lists the buckets the given access key can see. It works
+	// before Configure, so the bucket can be chosen while setting the account up.
+	ListBuckets(context.Context, *ListBucketsRequest) (*ListBucketsResponse, error)
+	// CreateBucket creates a private bucket. It works before Configure.
+	CreateBucket(context.Context, *CreateBucketRequest) (*CreateBucketResponse, error)
 	mustEmbedUnimplementedDaemonServer()
 }
 
@@ -182,6 +332,33 @@ func (UnimplementedDaemonServer) RetryUpload(context.Context, *RetryUploadReques
 }
 func (UnimplementedDaemonServer) RemoveUpload(context.Context, *RemoveUploadRequest) (*RemoveUploadResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveUpload not implemented")
+}
+func (UnimplementedDaemonServer) SetOptions(context.Context, *SetOptionsRequest) (*SetOptionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetOptions not implemented")
+}
+func (UnimplementedDaemonServer) PauseUpload(context.Context, *PauseUploadRequest) (*PauseUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PauseUpload not implemented")
+}
+func (UnimplementedDaemonServer) ResumeUpload(context.Context, *ResumeUploadRequest) (*ResumeUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResumeUpload not implemented")
+}
+func (UnimplementedDaemonServer) CancelUpload(context.Context, *CancelUploadRequest) (*CancelUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelUpload not implemented")
+}
+func (UnimplementedDaemonServer) StartDownload(context.Context, *StartDownloadRequest) (*StartDownloadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartDownload not implemented")
+}
+func (UnimplementedDaemonServer) CancelDownload(context.Context, *CancelDownloadRequest) (*CancelDownloadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelDownload not implemented")
+}
+func (UnimplementedDaemonServer) WatchDownloads(*WatchDownloadsRequest, grpc.ServerStreamingServer[DownloadSnapshot]) error {
+	return status.Error(codes.Unimplemented, "method WatchDownloads not implemented")
+}
+func (UnimplementedDaemonServer) ListBuckets(context.Context, *ListBucketsRequest) (*ListBucketsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBuckets not implemented")
+}
+func (UnimplementedDaemonServer) CreateBucket(context.Context, *CreateBucketRequest) (*CreateBucketResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateBucket not implemented")
 }
 func (UnimplementedDaemonServer) mustEmbedUnimplementedDaemonServer() {}
 func (UnimplementedDaemonServer) testEmbeddedByValue()                {}
@@ -298,6 +475,161 @@ func _Daemon_RemoveUpload_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Daemon_SetOptions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetOptionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServer).SetOptions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Daemon_SetOptions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServer).SetOptions(ctx, req.(*SetOptionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Daemon_PauseUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PauseUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServer).PauseUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Daemon_PauseUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServer).PauseUpload(ctx, req.(*PauseUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Daemon_ResumeUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResumeUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServer).ResumeUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Daemon_ResumeUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServer).ResumeUpload(ctx, req.(*ResumeUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Daemon_CancelUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServer).CancelUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Daemon_CancelUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServer).CancelUpload(ctx, req.(*CancelUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Daemon_StartDownload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartDownloadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServer).StartDownload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Daemon_StartDownload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServer).StartDownload(ctx, req.(*StartDownloadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Daemon_CancelDownload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelDownloadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServer).CancelDownload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Daemon_CancelDownload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServer).CancelDownload(ctx, req.(*CancelDownloadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Daemon_WatchDownloads_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchDownloadsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DaemonServer).WatchDownloads(m, &grpc.GenericServerStream[WatchDownloadsRequest, DownloadSnapshot]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Daemon_WatchDownloadsServer = grpc.ServerStreamingServer[DownloadSnapshot]
+
+func _Daemon_ListBuckets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBucketsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServer).ListBuckets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Daemon_ListBuckets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServer).ListBuckets(ctx, req.(*ListBucketsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Daemon_CreateBucket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateBucketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServer).CreateBucket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Daemon_CreateBucket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServer).CreateBucket(ctx, req.(*CreateBucketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Daemon_ServiceDesc is the grpc.ServiceDesc for Daemon service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -321,6 +653,38 @@ var Daemon_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "RemoveUpload",
 			Handler:    _Daemon_RemoveUpload_Handler,
 		},
+		{
+			MethodName: "SetOptions",
+			Handler:    _Daemon_SetOptions_Handler,
+		},
+		{
+			MethodName: "PauseUpload",
+			Handler:    _Daemon_PauseUpload_Handler,
+		},
+		{
+			MethodName: "ResumeUpload",
+			Handler:    _Daemon_ResumeUpload_Handler,
+		},
+		{
+			MethodName: "CancelUpload",
+			Handler:    _Daemon_CancelUpload_Handler,
+		},
+		{
+			MethodName: "StartDownload",
+			Handler:    _Daemon_StartDownload_Handler,
+		},
+		{
+			MethodName: "CancelDownload",
+			Handler:    _Daemon_CancelDownload_Handler,
+		},
+		{
+			MethodName: "ListBuckets",
+			Handler:    _Daemon_ListBuckets_Handler,
+		},
+		{
+			MethodName: "CreateBucket",
+			Handler:    _Daemon_CreateBucket_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -331,6 +695,11 @@ var Daemon_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchUploadFiles",
 			Handler:       _Daemon_WatchUploadFiles_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchDownloads",
+			Handler:       _Daemon_WatchDownloads_Handler,
 			ServerStreams: true,
 		},
 	},

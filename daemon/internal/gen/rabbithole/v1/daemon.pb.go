@@ -21,6 +21,64 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type DownloadState int32
+
+const (
+	DownloadState_DOWNLOAD_STATE_UNSPECIFIED DownloadState = 0
+	DownloadState_DOWNLOAD_QUEUED            DownloadState = 1
+	DownloadState_DOWNLOADING                DownloadState = 2
+	DownloadState_DOWNLOAD_FINISHED          DownloadState = 3
+	DownloadState_DOWNLOAD_FAILED            DownloadState = 4
+	DownloadState_DOWNLOAD_CANCELED          DownloadState = 5
+)
+
+// Enum value maps for DownloadState.
+var (
+	DownloadState_name = map[int32]string{
+		0: "DOWNLOAD_STATE_UNSPECIFIED",
+		1: "DOWNLOAD_QUEUED",
+		2: "DOWNLOADING",
+		3: "DOWNLOAD_FINISHED",
+		4: "DOWNLOAD_FAILED",
+		5: "DOWNLOAD_CANCELED",
+	}
+	DownloadState_value = map[string]int32{
+		"DOWNLOAD_STATE_UNSPECIFIED": 0,
+		"DOWNLOAD_QUEUED":            1,
+		"DOWNLOADING":                2,
+		"DOWNLOAD_FINISHED":          3,
+		"DOWNLOAD_FAILED":            4,
+		"DOWNLOAD_CANCELED":          5,
+	}
+)
+
+func (x DownloadState) Enum() *DownloadState {
+	p := new(DownloadState)
+	*p = x
+	return p
+}
+
+func (x DownloadState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DownloadState) Descriptor() protoreflect.EnumDescriptor {
+	return file_rabbithole_v1_daemon_proto_enumTypes[0].Descriptor()
+}
+
+func (DownloadState) Type() protoreflect.EnumType {
+	return &file_rabbithole_v1_daemon_proto_enumTypes[0]
+}
+
+func (x DownloadState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DownloadState.Descriptor instead.
+func (DownloadState) EnumDescriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{0}
+}
+
 type UploadState int32
 
 const (
@@ -29,6 +87,11 @@ const (
 	UploadState_UPLOADING                UploadState = 2
 	UploadState_FINISHED                 UploadState = 3
 	UploadState_FAILED                   UploadState = 4
+	// Not sending, with what was already sent kept: the user paused it, or
+	// every upload is on hold. It goes back to QUEUED when that ends.
+	UploadState_PAUSED UploadState = 5
+	// The user stopped it for good. Like FAILED it can be retried.
+	UploadState_CANCELED UploadState = 6
 )
 
 // Enum value maps for UploadState.
@@ -39,6 +102,8 @@ var (
 		2: "UPLOADING",
 		3: "FINISHED",
 		4: "FAILED",
+		5: "PAUSED",
+		6: "CANCELED",
 	}
 	UploadState_value = map[string]int32{
 		"UPLOAD_STATE_UNSPECIFIED": 0,
@@ -46,6 +111,8 @@ var (
 		"UPLOADING":                2,
 		"FINISHED":                 3,
 		"FAILED":                   4,
+		"PAUSED":                   5,
+		"CANCELED":                 6,
 	}
 )
 
@@ -60,11 +127,11 @@ func (x UploadState) String() string {
 }
 
 func (UploadState) Descriptor() protoreflect.EnumDescriptor {
-	return file_rabbithole_v1_daemon_proto_enumTypes[0].Descriptor()
+	return file_rabbithole_v1_daemon_proto_enumTypes[1].Descriptor()
 }
 
 func (UploadState) Type() protoreflect.EnumType {
-	return &file_rabbithole_v1_daemon_proto_enumTypes[0]
+	return &file_rabbithole_v1_daemon_proto_enumTypes[1]
 }
 
 func (x UploadState) Number() protoreflect.EnumNumber {
@@ -73,7 +140,59 @@ func (x UploadState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use UploadState.Descriptor instead.
 func (UploadState) EnumDescriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{0}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{1}
+}
+
+// Why an upload is PAUSED.
+type PauseReason int32
+
+const (
+	PauseReason_PAUSE_REASON_UNSPECIFIED PauseReason = 0
+	// The user paused this upload.
+	PauseReason_PAUSED_BY_USER PauseReason = 1
+	// Every upload is on hold (SetOptionsRequest.hold_uploads).
+	PauseReason_PAUSED_ON_HOLD PauseReason = 2
+)
+
+// Enum value maps for PauseReason.
+var (
+	PauseReason_name = map[int32]string{
+		0: "PAUSE_REASON_UNSPECIFIED",
+		1: "PAUSED_BY_USER",
+		2: "PAUSED_ON_HOLD",
+	}
+	PauseReason_value = map[string]int32{
+		"PAUSE_REASON_UNSPECIFIED": 0,
+		"PAUSED_BY_USER":           1,
+		"PAUSED_ON_HOLD":           2,
+	}
+)
+
+func (x PauseReason) Enum() *PauseReason {
+	p := new(PauseReason)
+	*p = x
+	return p
+}
+
+func (x PauseReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PauseReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_rabbithole_v1_daemon_proto_enumTypes[2].Descriptor()
+}
+
+func (PauseReason) Type() protoreflect.EnumType {
+	return &file_rabbithole_v1_daemon_proto_enumTypes[2]
+}
+
+func (x PauseReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PauseReason.Descriptor instead.
+func (PauseReason) EnumDescriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{2}
 }
 
 // What the user handed over as one upload.
@@ -116,11 +235,11 @@ func (x UploadKind) String() string {
 }
 
 func (UploadKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_rabbithole_v1_daemon_proto_enumTypes[1].Descriptor()
+	return file_rabbithole_v1_daemon_proto_enumTypes[3].Descriptor()
 }
 
 func (UploadKind) Type() protoreflect.EnumType {
-	return &file_rabbithole_v1_daemon_proto_enumTypes[1]
+	return &file_rabbithole_v1_daemon_proto_enumTypes[3]
 }
 
 func (x UploadKind) Number() protoreflect.EnumNumber {
@@ -129,7 +248,971 @@ func (x UploadKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use UploadKind.Descriptor instead.
 func (UploadKind) EnumDescriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{3}
+}
+
+type SetOptionsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The most bytes per second all uploads together may send. Zero means no limit.
+	SpeedLimitBytesPerSecond int64 `protobuf:"varint,1,opt,name=speed_limit_bytes_per_second,json=speedLimitBytesPerSecond,proto3" json:"speed_limit_bytes_per_second,omitempty"`
+	// Have S3 check every upload against a checksum computed from the local
+	// file, so an upload only finishes when the stored object matches it.
+	VerifyUploads bool `protobuf:"varint,2,opt,name=verify_uploads,json=verifyUploads,proto3" json:"verify_uploads,omitempty"`
+	// Hold every upload: nothing is sent until this is false again. The app
+	// sets it while the computer runs on battery, when the user asked for that.
+	HoldUploads   bool `protobuf:"varint,3,opt,name=hold_uploads,json=holdUploads,proto3" json:"hold_uploads,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetOptionsRequest) Reset() {
+	*x = SetOptionsRequest{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetOptionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetOptionsRequest) ProtoMessage() {}
+
+func (x *SetOptionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetOptionsRequest.ProtoReflect.Descriptor instead.
+func (*SetOptionsRequest) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *SetOptionsRequest) GetSpeedLimitBytesPerSecond() int64 {
+	if x != nil {
+		return x.SpeedLimitBytesPerSecond
+	}
+	return 0
+}
+
+func (x *SetOptionsRequest) GetVerifyUploads() bool {
+	if x != nil {
+		return x.VerifyUploads
+	}
+	return false
+}
+
+func (x *SetOptionsRequest) GetHoldUploads() bool {
+	if x != nil {
+		return x.HoldUploads
+	}
+	return false
+}
+
+type SetOptionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetOptionsResponse) Reset() {
+	*x = SetOptionsResponse{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetOptionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetOptionsResponse) ProtoMessage() {}
+
+func (x *SetOptionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetOptionsResponse.ProtoReflect.Descriptor instead.
+func (*SetOptionsResponse) Descriptor() ([]byte, []int) {
 	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{1}
+}
+
+type PauseUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UploadId      string                 `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PauseUploadRequest) Reset() {
+	*x = PauseUploadRequest{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PauseUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PauseUploadRequest) ProtoMessage() {}
+
+func (x *PauseUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PauseUploadRequest.ProtoReflect.Descriptor instead.
+func (*PauseUploadRequest) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PauseUploadRequest) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+type PauseUploadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PauseUploadResponse) Reset() {
+	*x = PauseUploadResponse{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PauseUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PauseUploadResponse) ProtoMessage() {}
+
+func (x *PauseUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PauseUploadResponse.ProtoReflect.Descriptor instead.
+func (*PauseUploadResponse) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{3}
+}
+
+type ResumeUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UploadId      string                 `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResumeUploadRequest) Reset() {
+	*x = ResumeUploadRequest{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResumeUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResumeUploadRequest) ProtoMessage() {}
+
+func (x *ResumeUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResumeUploadRequest.ProtoReflect.Descriptor instead.
+func (*ResumeUploadRequest) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ResumeUploadRequest) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+type ResumeUploadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResumeUploadResponse) Reset() {
+	*x = ResumeUploadResponse{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResumeUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResumeUploadResponse) ProtoMessage() {}
+
+func (x *ResumeUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResumeUploadResponse.ProtoReflect.Descriptor instead.
+func (*ResumeUploadResponse) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{5}
+}
+
+type CancelUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UploadId      string                 `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelUploadRequest) Reset() {
+	*x = CancelUploadRequest{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelUploadRequest) ProtoMessage() {}
+
+func (x *CancelUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelUploadRequest.ProtoReflect.Descriptor instead.
+func (*CancelUploadRequest) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CancelUploadRequest) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+type CancelUploadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelUploadResponse) Reset() {
+	*x = CancelUploadResponse{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelUploadResponse) ProtoMessage() {}
+
+func (x *CancelUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelUploadResponse.ProtoReflect.Descriptor instead.
+func (*CancelUploadResponse) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{7}
+}
+
+type StartDownloadRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	UploadId string                 `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	// The files to download, by FileSnapshot.index. Empty means every finished
+	// file of the upload.
+	FileIndexes []int32 `protobuf:"varint,2,rep,packed,name=file_indexes,json=fileIndexes,proto3" json:"file_indexes,omitempty"`
+	// The local folder the files are written into. A single file lands directly
+	// in it; a folder upload is recreated inside it under the folder's name.
+	// Nothing existing is overwritten: a taken name gets a suffix.
+	DestinationDir string `protobuf:"bytes,3,opt,name=destination_dir,json=destinationDir,proto3" json:"destination_dir,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *StartDownloadRequest) Reset() {
+	*x = StartDownloadRequest{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartDownloadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartDownloadRequest) ProtoMessage() {}
+
+func (x *StartDownloadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartDownloadRequest.ProtoReflect.Descriptor instead.
+func (*StartDownloadRequest) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *StartDownloadRequest) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *StartDownloadRequest) GetFileIndexes() []int32 {
+	if x != nil {
+		return x.FileIndexes
+	}
+	return nil
+}
+
+func (x *StartDownloadRequest) GetDestinationDir() string {
+	if x != nil {
+		return x.DestinationDir
+	}
+	return ""
+}
+
+type StartDownloadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DownloadId    string                 `protobuf:"bytes,1,opt,name=download_id,json=downloadId,proto3" json:"download_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartDownloadResponse) Reset() {
+	*x = StartDownloadResponse{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartDownloadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartDownloadResponse) ProtoMessage() {}
+
+func (x *StartDownloadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartDownloadResponse.ProtoReflect.Descriptor instead.
+func (*StartDownloadResponse) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *StartDownloadResponse) GetDownloadId() string {
+	if x != nil {
+		return x.DownloadId
+	}
+	return ""
+}
+
+type CancelDownloadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DownloadId    string                 `protobuf:"bytes,1,opt,name=download_id,json=downloadId,proto3" json:"download_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelDownloadRequest) Reset() {
+	*x = CancelDownloadRequest{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelDownloadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelDownloadRequest) ProtoMessage() {}
+
+func (x *CancelDownloadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelDownloadRequest.ProtoReflect.Descriptor instead.
+func (*CancelDownloadRequest) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CancelDownloadRequest) GetDownloadId() string {
+	if x != nil {
+		return x.DownloadId
+	}
+	return ""
+}
+
+type CancelDownloadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelDownloadResponse) Reset() {
+	*x = CancelDownloadResponse{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelDownloadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelDownloadResponse) ProtoMessage() {}
+
+func (x *CancelDownloadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelDownloadResponse.ProtoReflect.Descriptor instead.
+func (*CancelDownloadResponse) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{11}
+}
+
+type WatchDownloadsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchDownloadsRequest) Reset() {
+	*x = WatchDownloadsRequest{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchDownloadsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchDownloadsRequest) ProtoMessage() {}
+
+func (x *WatchDownloadsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchDownloadsRequest.ProtoReflect.Descriptor instead.
+func (*WatchDownloadsRequest) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{12}
+}
+
+type DownloadSnapshot struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	DownloadId string                 `protobuf:"bytes,1,opt,name=download_id,json=downloadId,proto3" json:"download_id,omitempty"`
+	UploadId   string                 `protobuf:"bytes,2,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	// The files being downloaded, by FileSnapshot.index, as resolved at the start.
+	FileIndexes []int32 `protobuf:"varint,3,rep,packed,name=file_indexes,json=fileIndexes,proto3" json:"file_indexes,omitempty"`
+	// What is shown for the download: the file name or the folder name.
+	Name string `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
+	// Where the result is: the file for a single file, the folder otherwise.
+	DestinationPath string        `protobuf:"bytes,5,opt,name=destination_path,json=destinationPath,proto3" json:"destination_path,omitempty"`
+	BytesTotal      int64         `protobuf:"varint,6,opt,name=bytes_total,json=bytesTotal,proto3" json:"bytes_total,omitempty"`
+	BytesDone       int64         `protobuf:"varint,7,opt,name=bytes_done,json=bytesDone,proto3" json:"bytes_done,omitempty"`
+	FilesTotal      int32         `protobuf:"varint,8,opt,name=files_total,json=filesTotal,proto3" json:"files_total,omitempty"`
+	FilesDone       int32         `protobuf:"varint,9,opt,name=files_done,json=filesDone,proto3" json:"files_done,omitempty"`
+	FilesFailed     int32         `protobuf:"varint,10,opt,name=files_failed,json=filesFailed,proto3" json:"files_failed,omitempty"`
+	State           DownloadState `protobuf:"varint,11,opt,name=state,proto3,enum=rabbithole.v1.DownloadState" json:"state,omitempty"`
+	ErrorMessage    string        `protobuf:"bytes,12,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DownloadSnapshot) Reset() {
+	*x = DownloadSnapshot{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DownloadSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DownloadSnapshot) ProtoMessage() {}
+
+func (x *DownloadSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DownloadSnapshot.ProtoReflect.Descriptor instead.
+func (*DownloadSnapshot) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DownloadSnapshot) GetDownloadId() string {
+	if x != nil {
+		return x.DownloadId
+	}
+	return ""
+}
+
+func (x *DownloadSnapshot) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *DownloadSnapshot) GetFileIndexes() []int32 {
+	if x != nil {
+		return x.FileIndexes
+	}
+	return nil
+}
+
+func (x *DownloadSnapshot) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DownloadSnapshot) GetDestinationPath() string {
+	if x != nil {
+		return x.DestinationPath
+	}
+	return ""
+}
+
+func (x *DownloadSnapshot) GetBytesTotal() int64 {
+	if x != nil {
+		return x.BytesTotal
+	}
+	return 0
+}
+
+func (x *DownloadSnapshot) GetBytesDone() int64 {
+	if x != nil {
+		return x.BytesDone
+	}
+	return 0
+}
+
+func (x *DownloadSnapshot) GetFilesTotal() int32 {
+	if x != nil {
+		return x.FilesTotal
+	}
+	return 0
+}
+
+func (x *DownloadSnapshot) GetFilesDone() int32 {
+	if x != nil {
+		return x.FilesDone
+	}
+	return 0
+}
+
+func (x *DownloadSnapshot) GetFilesFailed() int32 {
+	if x != nil {
+		return x.FilesFailed
+	}
+	return 0
+}
+
+func (x *DownloadSnapshot) GetState() DownloadState {
+	if x != nil {
+		return x.State
+	}
+	return DownloadState_DOWNLOAD_STATE_UNSPECIFIED
+}
+
+func (x *DownloadSnapshot) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+type ListBucketsRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	AccessKeyId     string                 `protobuf:"bytes,1,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
+	SecretAccessKey string                 `protobuf:"bytes,2,opt,name=secret_access_key,json=secretAccessKey,proto3" json:"secret_access_key,omitempty"`
+	// The region used to reach S3 for the listing.
+	Region        string `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBucketsRequest) Reset() {
+	*x = ListBucketsRequest{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBucketsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBucketsRequest) ProtoMessage() {}
+
+func (x *ListBucketsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBucketsRequest.ProtoReflect.Descriptor instead.
+func (*ListBucketsRequest) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListBucketsRequest) GetAccessKeyId() string {
+	if x != nil {
+		return x.AccessKeyId
+	}
+	return ""
+}
+
+func (x *ListBucketsRequest) GetSecretAccessKey() string {
+	if x != nil {
+		return x.SecretAccessKey
+	}
+	return ""
+}
+
+func (x *ListBucketsRequest) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+type Bucket struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The region the bucket lives in; empty when it could not be read.
+	Region        string `protobuf:"bytes,2,opt,name=region,proto3" json:"region,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Bucket) Reset() {
+	*x = Bucket{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Bucket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Bucket) ProtoMessage() {}
+
+func (x *Bucket) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Bucket.ProtoReflect.Descriptor instead.
+func (*Bucket) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *Bucket) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Bucket) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+type ListBucketsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Buckets       []*Bucket              `protobuf:"bytes,1,rep,name=buckets,proto3" json:"buckets,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBucketsResponse) Reset() {
+	*x = ListBucketsResponse{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBucketsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBucketsResponse) ProtoMessage() {}
+
+func (x *ListBucketsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBucketsResponse.ProtoReflect.Descriptor instead.
+func (*ListBucketsResponse) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListBucketsResponse) GetBuckets() []*Bucket {
+	if x != nil {
+		return x.Buckets
+	}
+	return nil
+}
+
+type CreateBucketRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	AccessKeyId     string                 `protobuf:"bytes,1,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
+	SecretAccessKey string                 `protobuf:"bytes,2,opt,name=secret_access_key,json=secretAccessKey,proto3" json:"secret_access_key,omitempty"`
+	// The region the bucket is created in.
+	Region        string `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
+	Name          string `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateBucketRequest) Reset() {
+	*x = CreateBucketRequest{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateBucketRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateBucketRequest) ProtoMessage() {}
+
+func (x *CreateBucketRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateBucketRequest.ProtoReflect.Descriptor instead.
+func (*CreateBucketRequest) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CreateBucketRequest) GetAccessKeyId() string {
+	if x != nil {
+		return x.AccessKeyId
+	}
+	return ""
+}
+
+func (x *CreateBucketRequest) GetSecretAccessKey() string {
+	if x != nil {
+		return x.SecretAccessKey
+	}
+	return ""
+}
+
+func (x *CreateBucketRequest) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *CreateBucketRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type CreateBucketResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateBucketResponse) Reset() {
+	*x = CreateBucketResponse{}
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateBucketResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateBucketResponse) ProtoMessage() {}
+
+func (x *CreateBucketResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateBucketResponse.ProtoReflect.Descriptor instead.
+func (*CreateBucketResponse) Descriptor() ([]byte, []int) {
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{18}
 }
 
 type RetryUploadRequest struct {
@@ -144,7 +1227,7 @@ type RetryUploadRequest struct {
 
 func (x *RetryUploadRequest) Reset() {
 	*x = RetryUploadRequest{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[0]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -156,7 +1239,7 @@ func (x *RetryUploadRequest) String() string {
 func (*RetryUploadRequest) ProtoMessage() {}
 
 func (x *RetryUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[0]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -169,7 +1252,7 @@ func (x *RetryUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryUploadRequest.ProtoReflect.Descriptor instead.
 func (*RetryUploadRequest) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{0}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RetryUploadRequest) GetUploadId() string {
@@ -194,7 +1277,7 @@ type RetryUploadResponse struct {
 
 func (x *RetryUploadResponse) Reset() {
 	*x = RetryUploadResponse{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[1]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -206,7 +1289,7 @@ func (x *RetryUploadResponse) String() string {
 func (*RetryUploadResponse) ProtoMessage() {}
 
 func (x *RetryUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[1]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -219,7 +1302,7 @@ func (x *RetryUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryUploadResponse.ProtoReflect.Descriptor instead.
 func (*RetryUploadResponse) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{1}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{20}
 }
 
 type RemoveUploadRequest struct {
@@ -236,7 +1319,7 @@ type RemoveUploadRequest struct {
 
 func (x *RemoveUploadRequest) Reset() {
 	*x = RemoveUploadRequest{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[2]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -248,7 +1331,7 @@ func (x *RemoveUploadRequest) String() string {
 func (*RemoveUploadRequest) ProtoMessage() {}
 
 func (x *RemoveUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[2]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -261,7 +1344,7 @@ func (x *RemoveUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveUploadRequest.ProtoReflect.Descriptor instead.
 func (*RemoveUploadRequest) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{2}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *RemoveUploadRequest) GetUploadId() string {
@@ -293,7 +1376,7 @@ type RemoveUploadResponse struct {
 
 func (x *RemoveUploadResponse) Reset() {
 	*x = RemoveUploadResponse{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[3]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -305,7 +1388,7 @@ func (x *RemoveUploadResponse) String() string {
 func (*RemoveUploadResponse) ProtoMessage() {}
 
 func (x *RemoveUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[3]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -318,7 +1401,7 @@ func (x *RemoveUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveUploadResponse.ProtoReflect.Descriptor instead.
 func (*RemoveUploadResponse) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{3}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{22}
 }
 
 type ConfigureRequest struct {
@@ -328,13 +1411,16 @@ type ConfigureRequest struct {
 	Region             string                 `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
 	Bucket             string                 `protobuf:"bytes,4,opt,name=bucket,proto3" json:"bucket,omitempty"`
 	QuickUploadsPrefix string                 `protobuf:"bytes,5,opt,name=quick_uploads_prefix,json=quickUploadsPrefix,proto3" json:"quick_uploads_prefix,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Put uploads that a previous exit cut off back in the queue. It acts once,
+	// on the first successful Configure after the daemon starts.
+	ResumeInterrupted bool `protobuf:"varint,6,opt,name=resume_interrupted,json=resumeInterrupted,proto3" json:"resume_interrupted,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ConfigureRequest) Reset() {
 	*x = ConfigureRequest{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[4]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -346,7 +1432,7 @@ func (x *ConfigureRequest) String() string {
 func (*ConfigureRequest) ProtoMessage() {}
 
 func (x *ConfigureRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[4]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -359,7 +1445,7 @@ func (x *ConfigureRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureRequest.ProtoReflect.Descriptor instead.
 func (*ConfigureRequest) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{4}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ConfigureRequest) GetAccessKeyId() string {
@@ -397,6 +1483,13 @@ func (x *ConfigureRequest) GetQuickUploadsPrefix() string {
 	return ""
 }
 
+func (x *ConfigureRequest) GetResumeInterrupted() bool {
+	if x != nil {
+		return x.ResumeInterrupted
+	}
+	return false
+}
+
 type ConfigureResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -405,7 +1498,7 @@ type ConfigureResponse struct {
 
 func (x *ConfigureResponse) Reset() {
 	*x = ConfigureResponse{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[5]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -417,7 +1510,7 @@ func (x *ConfigureResponse) String() string {
 func (*ConfigureResponse) ProtoMessage() {}
 
 func (x *ConfigureResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[5]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -430,7 +1523,7 @@ func (x *ConfigureResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureResponse.ProtoReflect.Descriptor instead.
 func (*ConfigureResponse) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{5}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{24}
 }
 
 type EnqueueUploadRequest struct {
@@ -452,7 +1545,7 @@ type EnqueueUploadRequest struct {
 
 func (x *EnqueueUploadRequest) Reset() {
 	*x = EnqueueUploadRequest{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[6]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -464,7 +1557,7 @@ func (x *EnqueueUploadRequest) String() string {
 func (*EnqueueUploadRequest) ProtoMessage() {}
 
 func (x *EnqueueUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[6]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -477,7 +1570,7 @@ func (x *EnqueueUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueUploadRequest.ProtoReflect.Descriptor instead.
 func (*EnqueueUploadRequest) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{6}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *EnqueueUploadRequest) GetLocalPath() string {
@@ -517,7 +1610,7 @@ type EnqueueUploadResponse struct {
 
 func (x *EnqueueUploadResponse) Reset() {
 	*x = EnqueueUploadResponse{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[7]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -529,7 +1622,7 @@ func (x *EnqueueUploadResponse) String() string {
 func (*EnqueueUploadResponse) ProtoMessage() {}
 
 func (x *EnqueueUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[7]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -542,7 +1635,7 @@ func (x *EnqueueUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueUploadResponse.ProtoReflect.Descriptor instead.
 func (*EnqueueUploadResponse) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{7}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *EnqueueUploadResponse) GetUploadId() string {
@@ -560,7 +1653,7 @@ type WatchUploadsRequest struct {
 
 func (x *WatchUploadsRequest) Reset() {
 	*x = WatchUploadsRequest{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[8]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -572,7 +1665,7 @@ func (x *WatchUploadsRequest) String() string {
 func (*WatchUploadsRequest) ProtoMessage() {}
 
 func (x *WatchUploadsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[8]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -585,7 +1678,7 @@ func (x *WatchUploadsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchUploadsRequest.ProtoReflect.Descriptor instead.
 func (*WatchUploadsRequest) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{8}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{27}
 }
 
 type WatchUploadFilesRequest struct {
@@ -597,7 +1690,7 @@ type WatchUploadFilesRequest struct {
 
 func (x *WatchUploadFilesRequest) Reset() {
 	*x = WatchUploadFilesRequest{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[9]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -609,7 +1702,7 @@ func (x *WatchUploadFilesRequest) String() string {
 func (*WatchUploadFilesRequest) ProtoMessage() {}
 
 func (x *WatchUploadFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[9]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -622,7 +1715,7 @@ func (x *WatchUploadFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchUploadFilesRequest.ProtoReflect.Descriptor instead.
 func (*WatchUploadFilesRequest) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{9}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *WatchUploadFilesRequest) GetUploadId() string {
@@ -661,14 +1754,16 @@ type UploadSnapshot struct {
 	CreatedAtMs int64 `protobuf:"varint,15,opt,name=created_at_ms,json=createdAtMs,proto3" json:"created_at_ms,omitempty"`
 	// When the upload finished or failed, in milliseconds since the Unix epoch.
 	// Zero while it has not ended.
-	EndedAtMs     int64 `protobuf:"varint,16,opt,name=ended_at_ms,json=endedAtMs,proto3" json:"ended_at_ms,omitempty"`
+	EndedAtMs int64 `protobuf:"varint,16,opt,name=ended_at_ms,json=endedAtMs,proto3" json:"ended_at_ms,omitempty"`
+	// Set while state is PAUSED.
+	PauseReason   PauseReason `protobuf:"varint,17,opt,name=pause_reason,json=pauseReason,proto3,enum=rabbithole.v1.PauseReason" json:"pause_reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UploadSnapshot) Reset() {
 	*x = UploadSnapshot{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[10]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -680,7 +1775,7 @@ func (x *UploadSnapshot) String() string {
 func (*UploadSnapshot) ProtoMessage() {}
 
 func (x *UploadSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[10]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -693,7 +1788,7 @@ func (x *UploadSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadSnapshot.ProtoReflect.Descriptor instead.
 func (*UploadSnapshot) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{10}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *UploadSnapshot) GetUploadId() string {
@@ -808,6 +1903,13 @@ func (x *UploadSnapshot) GetEndedAtMs() int64 {
 	return 0
 }
 
+func (x *UploadSnapshot) GetPauseReason() PauseReason {
+	if x != nil {
+		return x.PauseReason
+	}
+	return PauseReason_PAUSE_REASON_UNSPECIFIED
+}
+
 // One file of an upload.
 type FileSnapshot struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
@@ -832,7 +1934,7 @@ type FileSnapshot struct {
 
 func (x *FileSnapshot) Reset() {
 	*x = FileSnapshot{}
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[11]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -844,7 +1946,7 @@ func (x *FileSnapshot) String() string {
 func (*FileSnapshot) ProtoMessage() {}
 
 func (x *FileSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_rabbithole_v1_daemon_proto_msgTypes[11]
+	mi := &file_rabbithole_v1_daemon_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -857,7 +1959,7 @@ func (x *FileSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileSnapshot.ProtoReflect.Descriptor instead.
 func (*FileSnapshot) Descriptor() ([]byte, []int) {
-	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{11}
+	return file_rabbithole_v1_daemon_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *FileSnapshot) GetUploadId() string {
@@ -934,7 +2036,67 @@ var File_rabbithole_v1_daemon_proto protoreflect.FileDescriptor
 
 const file_rabbithole_v1_daemon_proto_rawDesc = "" +
 	"\n" +
-	"\x1arabbithole/v1/daemon.proto\x12\rrabbithole.v1\"T\n" +
+	"\x1arabbithole/v1/daemon.proto\x12\rrabbithole.v1\"\x9d\x01\n" +
+	"\x11SetOptionsRequest\x12>\n" +
+	"\x1cspeed_limit_bytes_per_second\x18\x01 \x01(\x03R\x18speedLimitBytesPerSecond\x12%\n" +
+	"\x0everify_uploads\x18\x02 \x01(\bR\rverifyUploads\x12!\n" +
+	"\fhold_uploads\x18\x03 \x01(\bR\vholdUploads\"\x14\n" +
+	"\x12SetOptionsResponse\"1\n" +
+	"\x12PauseUploadRequest\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\"\x15\n" +
+	"\x13PauseUploadResponse\"2\n" +
+	"\x13ResumeUploadRequest\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\"\x16\n" +
+	"\x14ResumeUploadResponse\"2\n" +
+	"\x13CancelUploadRequest\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\"\x16\n" +
+	"\x14CancelUploadResponse\"\x7f\n" +
+	"\x14StartDownloadRequest\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12!\n" +
+	"\ffile_indexes\x18\x02 \x03(\x05R\vfileIndexes\x12'\n" +
+	"\x0fdestination_dir\x18\x03 \x01(\tR\x0edestinationDir\"8\n" +
+	"\x15StartDownloadResponse\x12\x1f\n" +
+	"\vdownload_id\x18\x01 \x01(\tR\n" +
+	"downloadId\"8\n" +
+	"\x15CancelDownloadRequest\x12\x1f\n" +
+	"\vdownload_id\x18\x01 \x01(\tR\n" +
+	"downloadId\"\x18\n" +
+	"\x16CancelDownloadResponse\"\x17\n" +
+	"\x15WatchDownloadsRequest\"\xae\x03\n" +
+	"\x10DownloadSnapshot\x12\x1f\n" +
+	"\vdownload_id\x18\x01 \x01(\tR\n" +
+	"downloadId\x12\x1b\n" +
+	"\tupload_id\x18\x02 \x01(\tR\buploadId\x12!\n" +
+	"\ffile_indexes\x18\x03 \x03(\x05R\vfileIndexes\x12\x12\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\x12)\n" +
+	"\x10destination_path\x18\x05 \x01(\tR\x0fdestinationPath\x12\x1f\n" +
+	"\vbytes_total\x18\x06 \x01(\x03R\n" +
+	"bytesTotal\x12\x1d\n" +
+	"\n" +
+	"bytes_done\x18\a \x01(\x03R\tbytesDone\x12\x1f\n" +
+	"\vfiles_total\x18\b \x01(\x05R\n" +
+	"filesTotal\x12\x1d\n" +
+	"\n" +
+	"files_done\x18\t \x01(\x05R\tfilesDone\x12!\n" +
+	"\ffiles_failed\x18\n" +
+	" \x01(\x05R\vfilesFailed\x122\n" +
+	"\x05state\x18\v \x01(\x0e2\x1c.rabbithole.v1.DownloadStateR\x05state\x12#\n" +
+	"\rerror_message\x18\f \x01(\tR\ferrorMessage\"|\n" +
+	"\x12ListBucketsRequest\x12\"\n" +
+	"\raccess_key_id\x18\x01 \x01(\tR\vaccessKeyId\x12*\n" +
+	"\x11secret_access_key\x18\x02 \x01(\tR\x0fsecretAccessKey\x12\x16\n" +
+	"\x06region\x18\x03 \x01(\tR\x06region\"4\n" +
+	"\x06Bucket\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06region\x18\x02 \x01(\tR\x06region\"F\n" +
+	"\x13ListBucketsResponse\x12/\n" +
+	"\abuckets\x18\x01 \x03(\v2\x15.rabbithole.v1.BucketR\abuckets\"\x91\x01\n" +
+	"\x13CreateBucketRequest\x12\"\n" +
+	"\raccess_key_id\x18\x01 \x01(\tR\vaccessKeyId\x12*\n" +
+	"\x11secret_access_key\x18\x02 \x01(\tR\x0fsecretAccessKey\x12\x16\n" +
+	"\x06region\x18\x03 \x01(\tR\x06region\x12\x12\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\"\x16\n" +
+	"\x14CreateBucketResponse\"T\n" +
 	"\x12RetryUploadRequest\x12\x1b\n" +
 	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12!\n" +
 	"\ffile_indexes\x18\x02 \x03(\x05R\vfileIndexes\"\x15\n" +
@@ -943,13 +2105,14 @@ const file_rabbithole_v1_daemon_proto_rawDesc = "" +
 	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12!\n" +
 	"\ffile_indexes\x18\x02 \x03(\x05R\vfileIndexes\x12,\n" +
 	"\x12delete_from_bucket\x18\x03 \x01(\bR\x10deleteFromBucket\"\x16\n" +
-	"\x14RemoveUploadResponse\"\xc4\x01\n" +
+	"\x14RemoveUploadResponse\"\xf3\x01\n" +
 	"\x10ConfigureRequest\x12\"\n" +
 	"\raccess_key_id\x18\x01 \x01(\tR\vaccessKeyId\x12*\n" +
 	"\x11secret_access_key\x18\x02 \x01(\tR\x0fsecretAccessKey\x12\x16\n" +
 	"\x06region\x18\x03 \x01(\tR\x06region\x12\x16\n" +
 	"\x06bucket\x18\x04 \x01(\tR\x06bucket\x120\n" +
-	"\x14quick_uploads_prefix\x18\x05 \x01(\tR\x12quickUploadsPrefix\"\x13\n" +
+	"\x14quick_uploads_prefix\x18\x05 \x01(\tR\x12quickUploadsPrefix\x12-\n" +
+	"\x12resume_interrupted\x18\x06 \x01(\bR\x11resumeInterrupted\"\x13\n" +
 	"\x11ConfigureResponse\"\xa2\x01\n" +
 	"\x14EnqueueUploadRequest\x12\x1d\n" +
 	"\n" +
@@ -962,7 +2125,7 @@ const file_rabbithole_v1_daemon_proto_rawDesc = "" +
 	"\tupload_id\x18\x01 \x01(\tR\buploadId\"\x15\n" +
 	"\x13WatchUploadsRequest\"6\n" +
 	"\x17WatchUploadFilesRequest\x12\x1b\n" +
-	"\tupload_id\x18\x01 \x01(\tR\buploadId\"\xb6\x04\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\"\xf5\x04\n" +
 	"\x0eUploadSnapshot\x12\x1b\n" +
 	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12\x1b\n" +
 	"\tfile_name\x18\x02 \x01(\tR\bfileName\x12\x1d\n" +
@@ -986,7 +2149,8 @@ const file_rabbithole_v1_daemon_proto_rawDesc = "" +
 	"\ffiles_failed\x18\r \x01(\x05R\vfilesFailed\x12\x18\n" +
 	"\aremoved\x18\x0e \x01(\bR\aremoved\x12\"\n" +
 	"\rcreated_at_ms\x18\x0f \x01(\x03R\vcreatedAtMs\x12\x1e\n" +
-	"\vended_at_ms\x18\x10 \x01(\x03R\tendedAtMs\"\xd5\x02\n" +
+	"\vended_at_ms\x18\x10 \x01(\x03R\tendedAtMs\x12=\n" +
+	"\fpause_reason\x18\x11 \x01(\x0e2\x1a.rabbithole.v1.PauseReasonR\vpauseReason\"\xd5\x02\n" +
 	"\fFileSnapshot\x12\x1b\n" +
 	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12\x14\n" +
 	"\x05index\x18\x02 \x01(\x05R\x05index\x12#\n" +
@@ -1002,7 +2166,14 @@ const file_rabbithole_v1_daemon_proto_rawDesc = "" +
 	"\x05state\x18\b \x01(\x0e2\x1a.rabbithole.v1.UploadStateR\x05state\x12#\n" +
 	"\rerror_message\x18\t \x01(\tR\ferrorMessage\x12\x18\n" +
 	"\aremoved\x18\n" +
-	" \x01(\bR\aremoved*`\n" +
+	" \x01(\bR\aremoved*\x98\x01\n" +
+	"\rDownloadState\x12\x1e\n" +
+	"\x1aDOWNLOAD_STATE_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fDOWNLOAD_QUEUED\x10\x01\x12\x0f\n" +
+	"\vDOWNLOADING\x10\x02\x12\x15\n" +
+	"\x11DOWNLOAD_FINISHED\x10\x03\x12\x13\n" +
+	"\x0fDOWNLOAD_FAILED\x10\x04\x12\x15\n" +
+	"\x11DOWNLOAD_CANCELED\x10\x05*z\n" +
 	"\vUploadState\x12\x1c\n" +
 	"\x18UPLOAD_STATE_UNSPECIFIED\x10\x00\x12\n" +
 	"\n" +
@@ -1010,21 +2181,39 @@ const file_rabbithole_v1_daemon_proto_rawDesc = "" +
 	"\tUPLOADING\x10\x02\x12\f\n" +
 	"\bFINISHED\x10\x03\x12\n" +
 	"\n" +
-	"\x06FAILED\x10\x04*T\n" +
+	"\x06FAILED\x10\x04\x12\n" +
+	"\n" +
+	"\x06PAUSED\x10\x05\x12\f\n" +
+	"\bCANCELED\x10\x06*S\n" +
+	"\vPauseReason\x12\x1c\n" +
+	"\x18PAUSE_REASON_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0ePAUSED_BY_USER\x10\x01\x12\x12\n" +
+	"\x0ePAUSED_ON_HOLD\x10\x02*T\n" +
 	"\n" +
 	"UploadKind\x12\x1b\n" +
 	"\x17UPLOAD_KIND_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vSINGLE_FILE\x10\x01\x12\n" +
 	"\n" +
 	"\x06FOLDER\x10\x02\x12\f\n" +
-	"\bMULTIPLE\x10\x032\x93\x04\n" +
+	"\bMULTIPLE\x10\x032\xb3\n" +
+	"\n" +
 	"\x06Daemon\x12N\n" +
 	"\tConfigure\x12\x1f.rabbithole.v1.ConfigureRequest\x1a .rabbithole.v1.ConfigureResponse\x12Z\n" +
 	"\rEnqueueUpload\x12#.rabbithole.v1.EnqueueUploadRequest\x1a$.rabbithole.v1.EnqueueUploadResponse\x12S\n" +
 	"\fWatchUploads\x12\".rabbithole.v1.WatchUploadsRequest\x1a\x1d.rabbithole.v1.UploadSnapshot0\x01\x12Y\n" +
 	"\x10WatchUploadFiles\x12&.rabbithole.v1.WatchUploadFilesRequest\x1a\x1b.rabbithole.v1.FileSnapshot0\x01\x12T\n" +
 	"\vRetryUpload\x12!.rabbithole.v1.RetryUploadRequest\x1a\".rabbithole.v1.RetryUploadResponse\x12W\n" +
-	"\fRemoveUpload\x12\".rabbithole.v1.RemoveUploadRequest\x1a#.rabbithole.v1.RemoveUploadResponseB;Z9rabbithole/daemon/internal/gen/rabbithole/v1;rabbitholev1b\x06proto3"
+	"\fRemoveUpload\x12\".rabbithole.v1.RemoveUploadRequest\x1a#.rabbithole.v1.RemoveUploadResponse\x12Q\n" +
+	"\n" +
+	"SetOptions\x12 .rabbithole.v1.SetOptionsRequest\x1a!.rabbithole.v1.SetOptionsResponse\x12T\n" +
+	"\vPauseUpload\x12!.rabbithole.v1.PauseUploadRequest\x1a\".rabbithole.v1.PauseUploadResponse\x12W\n" +
+	"\fResumeUpload\x12\".rabbithole.v1.ResumeUploadRequest\x1a#.rabbithole.v1.ResumeUploadResponse\x12W\n" +
+	"\fCancelUpload\x12\".rabbithole.v1.CancelUploadRequest\x1a#.rabbithole.v1.CancelUploadResponse\x12Z\n" +
+	"\rStartDownload\x12#.rabbithole.v1.StartDownloadRequest\x1a$.rabbithole.v1.StartDownloadResponse\x12]\n" +
+	"\x0eCancelDownload\x12$.rabbithole.v1.CancelDownloadRequest\x1a%.rabbithole.v1.CancelDownloadResponse\x12Y\n" +
+	"\x0eWatchDownloads\x12$.rabbithole.v1.WatchDownloadsRequest\x1a\x1f.rabbithole.v1.DownloadSnapshot0\x01\x12T\n" +
+	"\vListBuckets\x12!.rabbithole.v1.ListBucketsRequest\x1a\".rabbithole.v1.ListBucketsResponse\x12W\n" +
+	"\fCreateBucket\x12\".rabbithole.v1.CreateBucketRequest\x1a#.rabbithole.v1.CreateBucketResponseB;Z9rabbithole/daemon/internal/gen/rabbithole/v1;rabbitholev1b\x06proto3"
 
 var (
 	file_rabbithole_v1_daemon_proto_rawDescOnce sync.Once
@@ -1038,45 +2227,87 @@ func file_rabbithole_v1_daemon_proto_rawDescGZIP() []byte {
 	return file_rabbithole_v1_daemon_proto_rawDescData
 }
 
-var file_rabbithole_v1_daemon_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_rabbithole_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_rabbithole_v1_daemon_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_rabbithole_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_rabbithole_v1_daemon_proto_goTypes = []any{
-	(UploadState)(0),                // 0: rabbithole.v1.UploadState
-	(UploadKind)(0),                 // 1: rabbithole.v1.UploadKind
-	(*RetryUploadRequest)(nil),      // 2: rabbithole.v1.RetryUploadRequest
-	(*RetryUploadResponse)(nil),     // 3: rabbithole.v1.RetryUploadResponse
-	(*RemoveUploadRequest)(nil),     // 4: rabbithole.v1.RemoveUploadRequest
-	(*RemoveUploadResponse)(nil),    // 5: rabbithole.v1.RemoveUploadResponse
-	(*ConfigureRequest)(nil),        // 6: rabbithole.v1.ConfigureRequest
-	(*ConfigureResponse)(nil),       // 7: rabbithole.v1.ConfigureResponse
-	(*EnqueueUploadRequest)(nil),    // 8: rabbithole.v1.EnqueueUploadRequest
-	(*EnqueueUploadResponse)(nil),   // 9: rabbithole.v1.EnqueueUploadResponse
-	(*WatchUploadsRequest)(nil),     // 10: rabbithole.v1.WatchUploadsRequest
-	(*WatchUploadFilesRequest)(nil), // 11: rabbithole.v1.WatchUploadFilesRequest
-	(*UploadSnapshot)(nil),          // 12: rabbithole.v1.UploadSnapshot
-	(*FileSnapshot)(nil),            // 13: rabbithole.v1.FileSnapshot
+	(DownloadState)(0),              // 0: rabbithole.v1.DownloadState
+	(UploadState)(0),                // 1: rabbithole.v1.UploadState
+	(PauseReason)(0),                // 2: rabbithole.v1.PauseReason
+	(UploadKind)(0),                 // 3: rabbithole.v1.UploadKind
+	(*SetOptionsRequest)(nil),       // 4: rabbithole.v1.SetOptionsRequest
+	(*SetOptionsResponse)(nil),      // 5: rabbithole.v1.SetOptionsResponse
+	(*PauseUploadRequest)(nil),      // 6: rabbithole.v1.PauseUploadRequest
+	(*PauseUploadResponse)(nil),     // 7: rabbithole.v1.PauseUploadResponse
+	(*ResumeUploadRequest)(nil),     // 8: rabbithole.v1.ResumeUploadRequest
+	(*ResumeUploadResponse)(nil),    // 9: rabbithole.v1.ResumeUploadResponse
+	(*CancelUploadRequest)(nil),     // 10: rabbithole.v1.CancelUploadRequest
+	(*CancelUploadResponse)(nil),    // 11: rabbithole.v1.CancelUploadResponse
+	(*StartDownloadRequest)(nil),    // 12: rabbithole.v1.StartDownloadRequest
+	(*StartDownloadResponse)(nil),   // 13: rabbithole.v1.StartDownloadResponse
+	(*CancelDownloadRequest)(nil),   // 14: rabbithole.v1.CancelDownloadRequest
+	(*CancelDownloadResponse)(nil),  // 15: rabbithole.v1.CancelDownloadResponse
+	(*WatchDownloadsRequest)(nil),   // 16: rabbithole.v1.WatchDownloadsRequest
+	(*DownloadSnapshot)(nil),        // 17: rabbithole.v1.DownloadSnapshot
+	(*ListBucketsRequest)(nil),      // 18: rabbithole.v1.ListBucketsRequest
+	(*Bucket)(nil),                  // 19: rabbithole.v1.Bucket
+	(*ListBucketsResponse)(nil),     // 20: rabbithole.v1.ListBucketsResponse
+	(*CreateBucketRequest)(nil),     // 21: rabbithole.v1.CreateBucketRequest
+	(*CreateBucketResponse)(nil),    // 22: rabbithole.v1.CreateBucketResponse
+	(*RetryUploadRequest)(nil),      // 23: rabbithole.v1.RetryUploadRequest
+	(*RetryUploadResponse)(nil),     // 24: rabbithole.v1.RetryUploadResponse
+	(*RemoveUploadRequest)(nil),     // 25: rabbithole.v1.RemoveUploadRequest
+	(*RemoveUploadResponse)(nil),    // 26: rabbithole.v1.RemoveUploadResponse
+	(*ConfigureRequest)(nil),        // 27: rabbithole.v1.ConfigureRequest
+	(*ConfigureResponse)(nil),       // 28: rabbithole.v1.ConfigureResponse
+	(*EnqueueUploadRequest)(nil),    // 29: rabbithole.v1.EnqueueUploadRequest
+	(*EnqueueUploadResponse)(nil),   // 30: rabbithole.v1.EnqueueUploadResponse
+	(*WatchUploadsRequest)(nil),     // 31: rabbithole.v1.WatchUploadsRequest
+	(*WatchUploadFilesRequest)(nil), // 32: rabbithole.v1.WatchUploadFilesRequest
+	(*UploadSnapshot)(nil),          // 33: rabbithole.v1.UploadSnapshot
+	(*FileSnapshot)(nil),            // 34: rabbithole.v1.FileSnapshot
 }
 var file_rabbithole_v1_daemon_proto_depIdxs = []int32{
-	0,  // 0: rabbithole.v1.UploadSnapshot.state:type_name -> rabbithole.v1.UploadState
-	1,  // 1: rabbithole.v1.UploadSnapshot.kind:type_name -> rabbithole.v1.UploadKind
-	0,  // 2: rabbithole.v1.FileSnapshot.state:type_name -> rabbithole.v1.UploadState
-	6,  // 3: rabbithole.v1.Daemon.Configure:input_type -> rabbithole.v1.ConfigureRequest
-	8,  // 4: rabbithole.v1.Daemon.EnqueueUpload:input_type -> rabbithole.v1.EnqueueUploadRequest
-	10, // 5: rabbithole.v1.Daemon.WatchUploads:input_type -> rabbithole.v1.WatchUploadsRequest
-	11, // 6: rabbithole.v1.Daemon.WatchUploadFiles:input_type -> rabbithole.v1.WatchUploadFilesRequest
-	2,  // 7: rabbithole.v1.Daemon.RetryUpload:input_type -> rabbithole.v1.RetryUploadRequest
-	4,  // 8: rabbithole.v1.Daemon.RemoveUpload:input_type -> rabbithole.v1.RemoveUploadRequest
-	7,  // 9: rabbithole.v1.Daemon.Configure:output_type -> rabbithole.v1.ConfigureResponse
-	9,  // 10: rabbithole.v1.Daemon.EnqueueUpload:output_type -> rabbithole.v1.EnqueueUploadResponse
-	12, // 11: rabbithole.v1.Daemon.WatchUploads:output_type -> rabbithole.v1.UploadSnapshot
-	13, // 12: rabbithole.v1.Daemon.WatchUploadFiles:output_type -> rabbithole.v1.FileSnapshot
-	3,  // 13: rabbithole.v1.Daemon.RetryUpload:output_type -> rabbithole.v1.RetryUploadResponse
-	5,  // 14: rabbithole.v1.Daemon.RemoveUpload:output_type -> rabbithole.v1.RemoveUploadResponse
-	9,  // [9:15] is the sub-list for method output_type
-	3,  // [3:9] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	0,  // 0: rabbithole.v1.DownloadSnapshot.state:type_name -> rabbithole.v1.DownloadState
+	19, // 1: rabbithole.v1.ListBucketsResponse.buckets:type_name -> rabbithole.v1.Bucket
+	1,  // 2: rabbithole.v1.UploadSnapshot.state:type_name -> rabbithole.v1.UploadState
+	3,  // 3: rabbithole.v1.UploadSnapshot.kind:type_name -> rabbithole.v1.UploadKind
+	2,  // 4: rabbithole.v1.UploadSnapshot.pause_reason:type_name -> rabbithole.v1.PauseReason
+	1,  // 5: rabbithole.v1.FileSnapshot.state:type_name -> rabbithole.v1.UploadState
+	27, // 6: rabbithole.v1.Daemon.Configure:input_type -> rabbithole.v1.ConfigureRequest
+	29, // 7: rabbithole.v1.Daemon.EnqueueUpload:input_type -> rabbithole.v1.EnqueueUploadRequest
+	31, // 8: rabbithole.v1.Daemon.WatchUploads:input_type -> rabbithole.v1.WatchUploadsRequest
+	32, // 9: rabbithole.v1.Daemon.WatchUploadFiles:input_type -> rabbithole.v1.WatchUploadFilesRequest
+	23, // 10: rabbithole.v1.Daemon.RetryUpload:input_type -> rabbithole.v1.RetryUploadRequest
+	25, // 11: rabbithole.v1.Daemon.RemoveUpload:input_type -> rabbithole.v1.RemoveUploadRequest
+	4,  // 12: rabbithole.v1.Daemon.SetOptions:input_type -> rabbithole.v1.SetOptionsRequest
+	6,  // 13: rabbithole.v1.Daemon.PauseUpload:input_type -> rabbithole.v1.PauseUploadRequest
+	8,  // 14: rabbithole.v1.Daemon.ResumeUpload:input_type -> rabbithole.v1.ResumeUploadRequest
+	10, // 15: rabbithole.v1.Daemon.CancelUpload:input_type -> rabbithole.v1.CancelUploadRequest
+	12, // 16: rabbithole.v1.Daemon.StartDownload:input_type -> rabbithole.v1.StartDownloadRequest
+	14, // 17: rabbithole.v1.Daemon.CancelDownload:input_type -> rabbithole.v1.CancelDownloadRequest
+	16, // 18: rabbithole.v1.Daemon.WatchDownloads:input_type -> rabbithole.v1.WatchDownloadsRequest
+	18, // 19: rabbithole.v1.Daemon.ListBuckets:input_type -> rabbithole.v1.ListBucketsRequest
+	21, // 20: rabbithole.v1.Daemon.CreateBucket:input_type -> rabbithole.v1.CreateBucketRequest
+	28, // 21: rabbithole.v1.Daemon.Configure:output_type -> rabbithole.v1.ConfigureResponse
+	30, // 22: rabbithole.v1.Daemon.EnqueueUpload:output_type -> rabbithole.v1.EnqueueUploadResponse
+	33, // 23: rabbithole.v1.Daemon.WatchUploads:output_type -> rabbithole.v1.UploadSnapshot
+	34, // 24: rabbithole.v1.Daemon.WatchUploadFiles:output_type -> rabbithole.v1.FileSnapshot
+	24, // 25: rabbithole.v1.Daemon.RetryUpload:output_type -> rabbithole.v1.RetryUploadResponse
+	26, // 26: rabbithole.v1.Daemon.RemoveUpload:output_type -> rabbithole.v1.RemoveUploadResponse
+	5,  // 27: rabbithole.v1.Daemon.SetOptions:output_type -> rabbithole.v1.SetOptionsResponse
+	7,  // 28: rabbithole.v1.Daemon.PauseUpload:output_type -> rabbithole.v1.PauseUploadResponse
+	9,  // 29: rabbithole.v1.Daemon.ResumeUpload:output_type -> rabbithole.v1.ResumeUploadResponse
+	11, // 30: rabbithole.v1.Daemon.CancelUpload:output_type -> rabbithole.v1.CancelUploadResponse
+	13, // 31: rabbithole.v1.Daemon.StartDownload:output_type -> rabbithole.v1.StartDownloadResponse
+	15, // 32: rabbithole.v1.Daemon.CancelDownload:output_type -> rabbithole.v1.CancelDownloadResponse
+	17, // 33: rabbithole.v1.Daemon.WatchDownloads:output_type -> rabbithole.v1.DownloadSnapshot
+	20, // 34: rabbithole.v1.Daemon.ListBuckets:output_type -> rabbithole.v1.ListBucketsResponse
+	22, // 35: rabbithole.v1.Daemon.CreateBucket:output_type -> rabbithole.v1.CreateBucketResponse
+	21, // [21:36] is the sub-list for method output_type
+	6,  // [6:21] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_rabbithole_v1_daemon_proto_init() }
@@ -1089,8 +2320,8 @@ func file_rabbithole_v1_daemon_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rabbithole_v1_daemon_proto_rawDesc), len(file_rabbithole_v1_daemon_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   12,
+			NumEnums:      4,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

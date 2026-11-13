@@ -20,6 +20,56 @@ fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobu
   typealias Version = _2
 }
 
+public nonisolated enum Rabbithole_V1_DownloadState: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case downloadQueued // = 1
+  case downloading // = 2
+  case downloadFinished // = 3
+  case downloadFailed // = 4
+  case downloadCanceled // = 5
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .downloadQueued
+    case 2: self = .downloading
+    case 3: self = .downloadFinished
+    case 4: self = .downloadFailed
+    case 5: self = .downloadCanceled
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .downloadQueued: return 1
+    case .downloading: return 2
+    case .downloadFinished: return 3
+    case .downloadFailed: return 4
+    case .downloadCanceled: return 5
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Rabbithole_V1_DownloadState] = [
+    .unspecified,
+    .downloadQueued,
+    .downloading,
+    .downloadFinished,
+    .downloadFailed,
+    .downloadCanceled,
+  ]
+
+}
+
 public nonisolated enum Rabbithole_V1_UploadState: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -27,6 +77,13 @@ public nonisolated enum Rabbithole_V1_UploadState: SwiftProtobuf.Enum, Swift.Cas
   case uploading // = 2
   case finished // = 3
   case failed // = 4
+
+  /// Not sending, with what was already sent kept: the user paused it, or
+  /// every upload is on hold. It goes back to QUEUED when that ends.
+  case paused // = 5
+
+  /// The user stopped it for good. Like FAILED it can be retried.
+  case canceled // = 6
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -40,6 +97,8 @@ public nonisolated enum Rabbithole_V1_UploadState: SwiftProtobuf.Enum, Swift.Cas
     case 2: self = .uploading
     case 3: self = .finished
     case 4: self = .failed
+    case 5: self = .paused
+    case 6: self = .canceled
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -51,6 +110,8 @@ public nonisolated enum Rabbithole_V1_UploadState: SwiftProtobuf.Enum, Swift.Cas
     case .uploading: return 2
     case .finished: return 3
     case .failed: return 4
+    case .paused: return 5
+    case .canceled: return 6
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -62,6 +123,51 @@ public nonisolated enum Rabbithole_V1_UploadState: SwiftProtobuf.Enum, Swift.Cas
     .uploading,
     .finished,
     .failed,
+    .paused,
+    .canceled,
+  ]
+
+}
+
+/// Why an upload is PAUSED.
+public nonisolated enum Rabbithole_V1_PauseReason: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+
+  /// The user paused this upload.
+  case pausedByUser // = 1
+
+  /// Every upload is on hold (SetOptionsRequest.hold_uploads).
+  case pausedOnHold // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .pausedByUser
+    case 2: self = .pausedOnHold
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .pausedByUser: return 1
+    case .pausedOnHold: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Rabbithole_V1_PauseReason] = [
+    .unspecified,
+    .pausedByUser,
+    .pausedOnHold,
   ]
 
 }
@@ -113,6 +219,278 @@ public nonisolated enum Rabbithole_V1_UploadKind: SwiftProtobuf.Enum, Swift.Case
     .multiple,
   ]
 
+}
+
+public nonisolated struct Rabbithole_V1_SetOptionsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// The most bytes per second all uploads together may send. Zero means no limit.
+  public var speedLimitBytesPerSecond: Int64 = 0
+
+  /// Have S3 check every upload against a checksum computed from the local
+  /// file, so an upload only finishes when the stored object matches it.
+  public var verifyUploads: Bool = false
+
+  /// Hold every upload: nothing is sent until this is false again. The app
+  /// sets it while the computer runs on battery, when the user asked for that.
+  public var holdUploads: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_SetOptionsResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_PauseUploadRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var uploadID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_PauseUploadResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_ResumeUploadRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var uploadID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_ResumeUploadResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_CancelUploadRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var uploadID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_CancelUploadResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_StartDownloadRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var uploadID: String = String()
+
+  /// The files to download, by FileSnapshot.index. Empty means every finished
+  /// file of the upload.
+  public var fileIndexes: [Int32] = []
+
+  /// The local folder the files are written into. A single file lands directly
+  /// in it; a folder upload is recreated inside it under the folder's name.
+  /// Nothing existing is overwritten: a taken name gets a suffix.
+  public var destinationDir: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_StartDownloadResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var downloadID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_CancelDownloadRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var downloadID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_CancelDownloadResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_WatchDownloadsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_DownloadSnapshot: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var downloadID: String = String()
+
+  public var uploadID: String = String()
+
+  /// The files being downloaded, by FileSnapshot.index, as resolved at the start.
+  public var fileIndexes: [Int32] = []
+
+  /// What is shown for the download: the file name or the folder name.
+  public var name: String = String()
+
+  /// Where the result is: the file for a single file, the folder otherwise.
+  public var destinationPath: String = String()
+
+  public var bytesTotal: Int64 = 0
+
+  public var bytesDone: Int64 = 0
+
+  public var filesTotal: Int32 = 0
+
+  public var filesDone: Int32 = 0
+
+  public var filesFailed: Int32 = 0
+
+  public var state: Rabbithole_V1_DownloadState = .unspecified
+
+  public var errorMessage: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_ListBucketsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var accessKeyID: String = String()
+
+  public var secretAccessKey: String = String()
+
+  /// The region used to reach S3 for the listing.
+  public var region: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_Bucket: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var name: String = String()
+
+  /// The region the bucket lives in; empty when it could not be read.
+  public var region: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_ListBucketsResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var buckets: [Rabbithole_V1_Bucket] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_CreateBucketRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var accessKeyID: String = String()
+
+  public var secretAccessKey: String = String()
+
+  /// The region the bucket is created in.
+  public var region: String = String()
+
+  public var name: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Rabbithole_V1_CreateBucketResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 public nonisolated struct Rabbithole_V1_RetryUploadRequest: Sendable {
@@ -184,6 +562,10 @@ public nonisolated struct Rabbithole_V1_ConfigureRequest: Sendable {
   public var bucket: String = String()
 
   public var quickUploadsPrefix: String = String()
+
+  /// Put uploads that a previous exit cut off back in the queue. It acts once,
+  /// on the first successful Configure after the daemon starts.
+  public var resumeInterrupted: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -259,58 +641,114 @@ public nonisolated struct Rabbithole_V1_WatchUploadFilesRequest: Sendable {
   public init() {}
 }
 
-public nonisolated struct Rabbithole_V1_UploadSnapshot: Sendable {
+public nonisolated struct Rabbithole_V1_UploadSnapshot: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var uploadID: String = String()
+  public var uploadID: String {
+    get {_storage._uploadID}
+    set {_uniqueStorage()._uploadID = newValue}
+  }
 
   /// The file name, the folder name, or the name of the first item of several.
-  public var fileName: String = String()
+  public var fileName: String {
+    get {_storage._fileName}
+    set {_uniqueStorage()._fileName = newValue}
+  }
 
   /// The first path the upload was enqueued with.
-  public var localPath: String = String()
+  public var localPath: String {
+    get {_storage._localPath}
+    set {_uniqueStorage()._localPath = newValue}
+  }
 
   /// The object key of a single file; the key prefix (ending in "/") a folder
   /// lands under; empty for several items and while nothing is resolved.
-  public var objectKey: String = String()
+  public var objectKey: String {
+    get {_storage._objectKey}
+    set {_uniqueStorage()._objectKey = newValue}
+  }
 
   /// Sum over every file of the upload.
-  public var bytesTotal: Int64 = 0
+  public var bytesTotal: Int64 {
+    get {_storage._bytesTotal}
+    set {_uniqueStorage()._bytesTotal = newValue}
+  }
 
-  public var bytesSent: Int64 = 0
+  public var bytesSent: Int64 {
+    get {_storage._bytesSent}
+    set {_uniqueStorage()._bytesSent = newValue}
+  }
 
-  public var state: Rabbithole_V1_UploadState = .unspecified
+  public var state: Rabbithole_V1_UploadState {
+    get {_storage._state}
+    set {_uniqueStorage()._state = newValue}
+  }
 
-  public var errorMessage: String = String()
+  public var errorMessage: String {
+    get {_storage._errorMessage}
+    set {_uniqueStorage()._errorMessage = newValue}
+  }
 
-  public var kind: Rabbithole_V1_UploadKind = .unspecified
+  public var kind: Rabbithole_V1_UploadKind {
+    get {_storage._kind}
+    set {_uniqueStorage()._kind = newValue}
+  }
 
   /// Every path the upload was enqueued with, in order.
-  public var rootPaths: [String] = []
+  public var rootPaths: [String] {
+    get {_storage._rootPaths}
+    set {_uniqueStorage()._rootPaths = newValue}
+  }
 
-  public var filesTotal: Int32 = 0
+  public var filesTotal: Int32 {
+    get {_storage._filesTotal}
+    set {_uniqueStorage()._filesTotal = newValue}
+  }
 
-  public var filesFinished: Int32 = 0
+  public var filesFinished: Int32 {
+    get {_storage._filesFinished}
+    set {_uniqueStorage()._filesFinished = newValue}
+  }
 
-  public var filesFailed: Int32 = 0
+  public var filesFailed: Int32 {
+    get {_storage._filesFailed}
+    set {_uniqueStorage()._filesFailed = newValue}
+  }
 
   /// True on the last snapshot of an upload that left the history: removed by
   /// the user, found missing from the bucket, or belonging to a bucket that is
   /// no longer the configured one. Nothing follows it for this upload_id.
-  public var removed: Bool = false
+  public var removed: Bool {
+    get {_storage._removed}
+    set {_uniqueStorage()._removed = newValue}
+  }
 
   /// When the upload was enqueued, in milliseconds since the Unix epoch.
-  public var createdAtMs: Int64 = 0
+  public var createdAtMs: Int64 {
+    get {_storage._createdAtMs}
+    set {_uniqueStorage()._createdAtMs = newValue}
+  }
 
   /// When the upload finished or failed, in milliseconds since the Unix epoch.
   /// Zero while it has not ended.
-  public var endedAtMs: Int64 = 0
+  public var endedAtMs: Int64 {
+    get {_storage._endedAtMs}
+    set {_uniqueStorage()._endedAtMs = newValue}
+  }
+
+  /// Set while state is PAUSED.
+  public var pauseReason: Rabbithole_V1_PauseReason {
+    get {_storage._pauseReason}
+    set {_uniqueStorage()._pauseReason = newValue}
+  }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 /// One file of an upload.
@@ -353,12 +791,618 @@ public nonisolated struct Rabbithole_V1_FileSnapshot: Sendable {
 
 fileprivate nonisolated let _protobuf_package = "rabbithole.v1"
 
+nonisolated extension Rabbithole_V1_DownloadState: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DOWNLOAD_STATE_UNSPECIFIED\0\u{1}DOWNLOAD_QUEUED\0\u{1}DOWNLOADING\0\u{1}DOWNLOAD_FINISHED\0\u{1}DOWNLOAD_FAILED\0\u{1}DOWNLOAD_CANCELED\0")
+}
+
 nonisolated extension Rabbithole_V1_UploadState: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0UPLOAD_STATE_UNSPECIFIED\0\u{1}QUEUED\0\u{1}UPLOADING\0\u{1}FINISHED\0\u{1}FAILED\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0UPLOAD_STATE_UNSPECIFIED\0\u{1}QUEUED\0\u{1}UPLOADING\0\u{1}FINISHED\0\u{1}FAILED\0\u{1}PAUSED\0\u{1}CANCELED\0")
+}
+
+nonisolated extension Rabbithole_V1_PauseReason: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0PAUSE_REASON_UNSPECIFIED\0\u{1}PAUSED_BY_USER\0\u{1}PAUSED_ON_HOLD\0")
 }
 
 nonisolated extension Rabbithole_V1_UploadKind: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0UPLOAD_KIND_UNSPECIFIED\0\u{1}SINGLE_FILE\0\u{1}FOLDER\0\u{1}MULTIPLE\0")
+}
+
+nonisolated extension Rabbithole_V1_SetOptionsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SetOptionsRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}speed_limit_bytes_per_second\0\u{3}verify_uploads\0\u{3}hold_uploads\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt64Field(value: &self.speedLimitBytesPerSecond) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.verifyUploads) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.holdUploads) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.speedLimitBytesPerSecond != 0 {
+      try visitor.visitSingularInt64Field(value: self.speedLimitBytesPerSecond, fieldNumber: 1)
+    }
+    if self.verifyUploads != false {
+      try visitor.visitSingularBoolField(value: self.verifyUploads, fieldNumber: 2)
+    }
+    if self.holdUploads != false {
+      try visitor.visitSingularBoolField(value: self.holdUploads, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_SetOptionsRequest, rhs: Rabbithole_V1_SetOptionsRequest) -> Bool {
+    if lhs.speedLimitBytesPerSecond != rhs.speedLimitBytesPerSecond {return false}
+    if lhs.verifyUploads != rhs.verifyUploads {return false}
+    if lhs.holdUploads != rhs.holdUploads {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_SetOptionsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SetOptionsResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_SetOptionsResponse, rhs: Rabbithole_V1_SetOptionsResponse) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_PauseUploadRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PauseUploadRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}upload_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.uploadID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.uploadID.isEmpty {
+      try visitor.visitSingularStringField(value: self.uploadID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_PauseUploadRequest, rhs: Rabbithole_V1_PauseUploadRequest) -> Bool {
+    if lhs.uploadID != rhs.uploadID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_PauseUploadResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PauseUploadResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_PauseUploadResponse, rhs: Rabbithole_V1_PauseUploadResponse) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_ResumeUploadRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ResumeUploadRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}upload_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.uploadID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.uploadID.isEmpty {
+      try visitor.visitSingularStringField(value: self.uploadID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_ResumeUploadRequest, rhs: Rabbithole_V1_ResumeUploadRequest) -> Bool {
+    if lhs.uploadID != rhs.uploadID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_ResumeUploadResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ResumeUploadResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_ResumeUploadResponse, rhs: Rabbithole_V1_ResumeUploadResponse) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_CancelUploadRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CancelUploadRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}upload_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.uploadID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.uploadID.isEmpty {
+      try visitor.visitSingularStringField(value: self.uploadID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_CancelUploadRequest, rhs: Rabbithole_V1_CancelUploadRequest) -> Bool {
+    if lhs.uploadID != rhs.uploadID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_CancelUploadResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CancelUploadResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_CancelUploadResponse, rhs: Rabbithole_V1_CancelUploadResponse) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_StartDownloadRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".StartDownloadRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}upload_id\0\u{3}file_indexes\0\u{3}destination_dir\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.uploadID) }()
+      case 2: try { try decoder.decodeRepeatedInt32Field(value: &self.fileIndexes) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.destinationDir) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.uploadID.isEmpty {
+      try visitor.visitSingularStringField(value: self.uploadID, fieldNumber: 1)
+    }
+    if !self.fileIndexes.isEmpty {
+      try visitor.visitPackedInt32Field(value: self.fileIndexes, fieldNumber: 2)
+    }
+    if !self.destinationDir.isEmpty {
+      try visitor.visitSingularStringField(value: self.destinationDir, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_StartDownloadRequest, rhs: Rabbithole_V1_StartDownloadRequest) -> Bool {
+    if lhs.uploadID != rhs.uploadID {return false}
+    if lhs.fileIndexes != rhs.fileIndexes {return false}
+    if lhs.destinationDir != rhs.destinationDir {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_StartDownloadResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".StartDownloadResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}download_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.downloadID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.downloadID.isEmpty {
+      try visitor.visitSingularStringField(value: self.downloadID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_StartDownloadResponse, rhs: Rabbithole_V1_StartDownloadResponse) -> Bool {
+    if lhs.downloadID != rhs.downloadID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_CancelDownloadRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CancelDownloadRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}download_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.downloadID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.downloadID.isEmpty {
+      try visitor.visitSingularStringField(value: self.downloadID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_CancelDownloadRequest, rhs: Rabbithole_V1_CancelDownloadRequest) -> Bool {
+    if lhs.downloadID != rhs.downloadID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_CancelDownloadResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CancelDownloadResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_CancelDownloadResponse, rhs: Rabbithole_V1_CancelDownloadResponse) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_WatchDownloadsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".WatchDownloadsRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_WatchDownloadsRequest, rhs: Rabbithole_V1_WatchDownloadsRequest) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_DownloadSnapshot: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DownloadSnapshot"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}download_id\0\u{3}upload_id\0\u{3}file_indexes\0\u{1}name\0\u{3}destination_path\0\u{3}bytes_total\0\u{3}bytes_done\0\u{3}files_total\0\u{3}files_done\0\u{3}files_failed\0\u{1}state\0\u{3}error_message\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.downloadID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.uploadID) }()
+      case 3: try { try decoder.decodeRepeatedInt32Field(value: &self.fileIndexes) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.destinationPath) }()
+      case 6: try { try decoder.decodeSingularInt64Field(value: &self.bytesTotal) }()
+      case 7: try { try decoder.decodeSingularInt64Field(value: &self.bytesDone) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.filesTotal) }()
+      case 9: try { try decoder.decodeSingularInt32Field(value: &self.filesDone) }()
+      case 10: try { try decoder.decodeSingularInt32Field(value: &self.filesFailed) }()
+      case 11: try { try decoder.decodeSingularEnumField(value: &self.state) }()
+      case 12: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.downloadID.isEmpty {
+      try visitor.visitSingularStringField(value: self.downloadID, fieldNumber: 1)
+    }
+    if !self.uploadID.isEmpty {
+      try visitor.visitSingularStringField(value: self.uploadID, fieldNumber: 2)
+    }
+    if !self.fileIndexes.isEmpty {
+      try visitor.visitPackedInt32Field(value: self.fileIndexes, fieldNumber: 3)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 4)
+    }
+    if !self.destinationPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.destinationPath, fieldNumber: 5)
+    }
+    if self.bytesTotal != 0 {
+      try visitor.visitSingularInt64Field(value: self.bytesTotal, fieldNumber: 6)
+    }
+    if self.bytesDone != 0 {
+      try visitor.visitSingularInt64Field(value: self.bytesDone, fieldNumber: 7)
+    }
+    if self.filesTotal != 0 {
+      try visitor.visitSingularInt32Field(value: self.filesTotal, fieldNumber: 8)
+    }
+    if self.filesDone != 0 {
+      try visitor.visitSingularInt32Field(value: self.filesDone, fieldNumber: 9)
+    }
+    if self.filesFailed != 0 {
+      try visitor.visitSingularInt32Field(value: self.filesFailed, fieldNumber: 10)
+    }
+    if self.state != .unspecified {
+      try visitor.visitSingularEnumField(value: self.state, fieldNumber: 11)
+    }
+    if !self.errorMessage.isEmpty {
+      try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 12)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_DownloadSnapshot, rhs: Rabbithole_V1_DownloadSnapshot) -> Bool {
+    if lhs.downloadID != rhs.downloadID {return false}
+    if lhs.uploadID != rhs.uploadID {return false}
+    if lhs.fileIndexes != rhs.fileIndexes {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.destinationPath != rhs.destinationPath {return false}
+    if lhs.bytesTotal != rhs.bytesTotal {return false}
+    if lhs.bytesDone != rhs.bytesDone {return false}
+    if lhs.filesTotal != rhs.filesTotal {return false}
+    if lhs.filesDone != rhs.filesDone {return false}
+    if lhs.filesFailed != rhs.filesFailed {return false}
+    if lhs.state != rhs.state {return false}
+    if lhs.errorMessage != rhs.errorMessage {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_ListBucketsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ListBucketsRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}access_key_id\0\u{3}secret_access_key\0\u{1}region\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.accessKeyID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.secretAccessKey) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.region) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.accessKeyID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accessKeyID, fieldNumber: 1)
+    }
+    if !self.secretAccessKey.isEmpty {
+      try visitor.visitSingularStringField(value: self.secretAccessKey, fieldNumber: 2)
+    }
+    if !self.region.isEmpty {
+      try visitor.visitSingularStringField(value: self.region, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_ListBucketsRequest, rhs: Rabbithole_V1_ListBucketsRequest) -> Bool {
+    if lhs.accessKeyID != rhs.accessKeyID {return false}
+    if lhs.secretAccessKey != rhs.secretAccessKey {return false}
+    if lhs.region != rhs.region {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_Bucket: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Bucket"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}region\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.region) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 1)
+    }
+    if !self.region.isEmpty {
+      try visitor.visitSingularStringField(value: self.region, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_Bucket, rhs: Rabbithole_V1_Bucket) -> Bool {
+    if lhs.name != rhs.name {return false}
+    if lhs.region != rhs.region {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_ListBucketsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ListBucketsResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}buckets\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.buckets) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.buckets.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.buckets, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_ListBucketsResponse, rhs: Rabbithole_V1_ListBucketsResponse) -> Bool {
+    if lhs.buckets != rhs.buckets {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_CreateBucketRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CreateBucketRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}access_key_id\0\u{3}secret_access_key\0\u{1}region\0\u{1}name\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.accessKeyID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.secretAccessKey) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.region) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.accessKeyID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accessKeyID, fieldNumber: 1)
+    }
+    if !self.secretAccessKey.isEmpty {
+      try visitor.visitSingularStringField(value: self.secretAccessKey, fieldNumber: 2)
+    }
+    if !self.region.isEmpty {
+      try visitor.visitSingularStringField(value: self.region, fieldNumber: 3)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_CreateBucketRequest, rhs: Rabbithole_V1_CreateBucketRequest) -> Bool {
+    if lhs.accessKeyID != rhs.accessKeyID {return false}
+    if lhs.secretAccessKey != rhs.secretAccessKey {return false}
+    if lhs.region != rhs.region {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Rabbithole_V1_CreateBucketResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CreateBucketResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Rabbithole_V1_CreateBucketResponse, rhs: Rabbithole_V1_CreateBucketResponse) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
 }
 
 nonisolated extension Rabbithole_V1_RetryUploadRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -476,7 +1520,7 @@ nonisolated extension Rabbithole_V1_RemoveUploadResponse: SwiftProtobuf.Message,
 
 nonisolated extension Rabbithole_V1_ConfigureRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ConfigureRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}access_key_id\0\u{3}secret_access_key\0\u{1}region\0\u{1}bucket\0\u{3}quick_uploads_prefix\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}access_key_id\0\u{3}secret_access_key\0\u{1}region\0\u{1}bucket\0\u{3}quick_uploads_prefix\0\u{3}resume_interrupted\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -489,6 +1533,7 @@ nonisolated extension Rabbithole_V1_ConfigureRequest: SwiftProtobuf.Message, Swi
       case 3: try { try decoder.decodeSingularStringField(value: &self.region) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.bucket) }()
       case 5: try { try decoder.decodeSingularStringField(value: &self.quickUploadsPrefix) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.resumeInterrupted) }()
       default: break
       }
     }
@@ -510,6 +1555,9 @@ nonisolated extension Rabbithole_V1_ConfigureRequest: SwiftProtobuf.Message, Swi
     if !self.quickUploadsPrefix.isEmpty {
       try visitor.visitSingularStringField(value: self.quickUploadsPrefix, fieldNumber: 5)
     }
+    if self.resumeInterrupted != false {
+      try visitor.visitSingularBoolField(value: self.resumeInterrupted, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -519,6 +1567,7 @@ nonisolated extension Rabbithole_V1_ConfigureRequest: SwiftProtobuf.Message, Swi
     if lhs.region != rhs.region {return false}
     if lhs.bucket != rhs.bucket {return false}
     if lhs.quickUploadsPrefix != rhs.quickUploadsPrefix {return false}
+    if lhs.resumeInterrupted != rhs.resumeInterrupted {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -669,104 +1718,177 @@ nonisolated extension Rabbithole_V1_WatchUploadFilesRequest: SwiftProtobuf.Messa
 
 nonisolated extension Rabbithole_V1_UploadSnapshot: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".UploadSnapshot"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}upload_id\0\u{3}file_name\0\u{3}local_path\0\u{3}object_key\0\u{3}bytes_total\0\u{3}bytes_sent\0\u{1}state\0\u{3}error_message\0\u{1}kind\0\u{3}root_paths\0\u{3}files_total\0\u{3}files_finished\0\u{3}files_failed\0\u{1}removed\0\u{3}created_at_ms\0\u{3}ended_at_ms\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}upload_id\0\u{3}file_name\0\u{3}local_path\0\u{3}object_key\0\u{3}bytes_total\0\u{3}bytes_sent\0\u{1}state\0\u{3}error_message\0\u{1}kind\0\u{3}root_paths\0\u{3}files_total\0\u{3}files_finished\0\u{3}files_failed\0\u{1}removed\0\u{3}created_at_ms\0\u{3}ended_at_ms\0\u{3}pause_reason\0")
+
+  fileprivate class _StorageClass {
+    var _uploadID: String = String()
+    var _fileName: String = String()
+    var _localPath: String = String()
+    var _objectKey: String = String()
+    var _bytesTotal: Int64 = 0
+    var _bytesSent: Int64 = 0
+    var _state: Rabbithole_V1_UploadState = .unspecified
+    var _errorMessage: String = String()
+    var _kind: Rabbithole_V1_UploadKind = .unspecified
+    var _rootPaths: [String] = []
+    var _filesTotal: Int32 = 0
+    var _filesFinished: Int32 = 0
+    var _filesFailed: Int32 = 0
+    var _removed: Bool = false
+    var _createdAtMs: Int64 = 0
+    var _endedAtMs: Int64 = 0
+    var _pauseReason: Rabbithole_V1_PauseReason = .unspecified
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _uploadID = source._uploadID
+      _fileName = source._fileName
+      _localPath = source._localPath
+      _objectKey = source._objectKey
+      _bytesTotal = source._bytesTotal
+      _bytesSent = source._bytesSent
+      _state = source._state
+      _errorMessage = source._errorMessage
+      _kind = source._kind
+      _rootPaths = source._rootPaths
+      _filesTotal = source._filesTotal
+      _filesFinished = source._filesFinished
+      _filesFailed = source._filesFailed
+      _removed = source._removed
+      _createdAtMs = source._createdAtMs
+      _endedAtMs = source._endedAtMs
+      _pauseReason = source._pauseReason
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.uploadID) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.fileName) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.localPath) }()
-      case 4: try { try decoder.decodeSingularStringField(value: &self.objectKey) }()
-      case 5: try { try decoder.decodeSingularInt64Field(value: &self.bytesTotal) }()
-      case 6: try { try decoder.decodeSingularInt64Field(value: &self.bytesSent) }()
-      case 7: try { try decoder.decodeSingularEnumField(value: &self.state) }()
-      case 8: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
-      case 9: try { try decoder.decodeSingularEnumField(value: &self.kind) }()
-      case 10: try { try decoder.decodeRepeatedStringField(value: &self.rootPaths) }()
-      case 11: try { try decoder.decodeSingularInt32Field(value: &self.filesTotal) }()
-      case 12: try { try decoder.decodeSingularInt32Field(value: &self.filesFinished) }()
-      case 13: try { try decoder.decodeSingularInt32Field(value: &self.filesFailed) }()
-      case 14: try { try decoder.decodeSingularBoolField(value: &self.removed) }()
-      case 15: try { try decoder.decodeSingularInt64Field(value: &self.createdAtMs) }()
-      case 16: try { try decoder.decodeSingularInt64Field(value: &self.endedAtMs) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._uploadID) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._fileName) }()
+        case 3: try { try decoder.decodeSingularStringField(value: &_storage._localPath) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._objectKey) }()
+        case 5: try { try decoder.decodeSingularInt64Field(value: &_storage._bytesTotal) }()
+        case 6: try { try decoder.decodeSingularInt64Field(value: &_storage._bytesSent) }()
+        case 7: try { try decoder.decodeSingularEnumField(value: &_storage._state) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._errorMessage) }()
+        case 9: try { try decoder.decodeSingularEnumField(value: &_storage._kind) }()
+        case 10: try { try decoder.decodeRepeatedStringField(value: &_storage._rootPaths) }()
+        case 11: try { try decoder.decodeSingularInt32Field(value: &_storage._filesTotal) }()
+        case 12: try { try decoder.decodeSingularInt32Field(value: &_storage._filesFinished) }()
+        case 13: try { try decoder.decodeSingularInt32Field(value: &_storage._filesFailed) }()
+        case 14: try { try decoder.decodeSingularBoolField(value: &_storage._removed) }()
+        case 15: try { try decoder.decodeSingularInt64Field(value: &_storage._createdAtMs) }()
+        case 16: try { try decoder.decodeSingularInt64Field(value: &_storage._endedAtMs) }()
+        case 17: try { try decoder.decodeSingularEnumField(value: &_storage._pauseReason) }()
+        default: break
+        }
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.uploadID.isEmpty {
-      try visitor.visitSingularStringField(value: self.uploadID, fieldNumber: 1)
-    }
-    if !self.fileName.isEmpty {
-      try visitor.visitSingularStringField(value: self.fileName, fieldNumber: 2)
-    }
-    if !self.localPath.isEmpty {
-      try visitor.visitSingularStringField(value: self.localPath, fieldNumber: 3)
-    }
-    if !self.objectKey.isEmpty {
-      try visitor.visitSingularStringField(value: self.objectKey, fieldNumber: 4)
-    }
-    if self.bytesTotal != 0 {
-      try visitor.visitSingularInt64Field(value: self.bytesTotal, fieldNumber: 5)
-    }
-    if self.bytesSent != 0 {
-      try visitor.visitSingularInt64Field(value: self.bytesSent, fieldNumber: 6)
-    }
-    if self.state != .unspecified {
-      try visitor.visitSingularEnumField(value: self.state, fieldNumber: 7)
-    }
-    if !self.errorMessage.isEmpty {
-      try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 8)
-    }
-    if self.kind != .unspecified {
-      try visitor.visitSingularEnumField(value: self.kind, fieldNumber: 9)
-    }
-    if !self.rootPaths.isEmpty {
-      try visitor.visitRepeatedStringField(value: self.rootPaths, fieldNumber: 10)
-    }
-    if self.filesTotal != 0 {
-      try visitor.visitSingularInt32Field(value: self.filesTotal, fieldNumber: 11)
-    }
-    if self.filesFinished != 0 {
-      try visitor.visitSingularInt32Field(value: self.filesFinished, fieldNumber: 12)
-    }
-    if self.filesFailed != 0 {
-      try visitor.visitSingularInt32Field(value: self.filesFailed, fieldNumber: 13)
-    }
-    if self.removed != false {
-      try visitor.visitSingularBoolField(value: self.removed, fieldNumber: 14)
-    }
-    if self.createdAtMs != 0 {
-      try visitor.visitSingularInt64Field(value: self.createdAtMs, fieldNumber: 15)
-    }
-    if self.endedAtMs != 0 {
-      try visitor.visitSingularInt64Field(value: self.endedAtMs, fieldNumber: 16)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      if !_storage._uploadID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._uploadID, fieldNumber: 1)
+      }
+      if !_storage._fileName.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._fileName, fieldNumber: 2)
+      }
+      if !_storage._localPath.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._localPath, fieldNumber: 3)
+      }
+      if !_storage._objectKey.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._objectKey, fieldNumber: 4)
+      }
+      if _storage._bytesTotal != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._bytesTotal, fieldNumber: 5)
+      }
+      if _storage._bytesSent != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._bytesSent, fieldNumber: 6)
+      }
+      if _storage._state != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._state, fieldNumber: 7)
+      }
+      if !_storage._errorMessage.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._errorMessage, fieldNumber: 8)
+      }
+      if _storage._kind != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._kind, fieldNumber: 9)
+      }
+      if !_storage._rootPaths.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._rootPaths, fieldNumber: 10)
+      }
+      if _storage._filesTotal != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._filesTotal, fieldNumber: 11)
+      }
+      if _storage._filesFinished != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._filesFinished, fieldNumber: 12)
+      }
+      if _storage._filesFailed != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._filesFailed, fieldNumber: 13)
+      }
+      if _storage._removed != false {
+        try visitor.visitSingularBoolField(value: _storage._removed, fieldNumber: 14)
+      }
+      if _storage._createdAtMs != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._createdAtMs, fieldNumber: 15)
+      }
+      if _storage._endedAtMs != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._endedAtMs, fieldNumber: 16)
+      }
+      if _storage._pauseReason != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._pauseReason, fieldNumber: 17)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Rabbithole_V1_UploadSnapshot, rhs: Rabbithole_V1_UploadSnapshot) -> Bool {
-    if lhs.uploadID != rhs.uploadID {return false}
-    if lhs.fileName != rhs.fileName {return false}
-    if lhs.localPath != rhs.localPath {return false}
-    if lhs.objectKey != rhs.objectKey {return false}
-    if lhs.bytesTotal != rhs.bytesTotal {return false}
-    if lhs.bytesSent != rhs.bytesSent {return false}
-    if lhs.state != rhs.state {return false}
-    if lhs.errorMessage != rhs.errorMessage {return false}
-    if lhs.kind != rhs.kind {return false}
-    if lhs.rootPaths != rhs.rootPaths {return false}
-    if lhs.filesTotal != rhs.filesTotal {return false}
-    if lhs.filesFinished != rhs.filesFinished {return false}
-    if lhs.filesFailed != rhs.filesFailed {return false}
-    if lhs.removed != rhs.removed {return false}
-    if lhs.createdAtMs != rhs.createdAtMs {return false}
-    if lhs.endedAtMs != rhs.endedAtMs {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._uploadID != rhs_storage._uploadID {return false}
+        if _storage._fileName != rhs_storage._fileName {return false}
+        if _storage._localPath != rhs_storage._localPath {return false}
+        if _storage._objectKey != rhs_storage._objectKey {return false}
+        if _storage._bytesTotal != rhs_storage._bytesTotal {return false}
+        if _storage._bytesSent != rhs_storage._bytesSent {return false}
+        if _storage._state != rhs_storage._state {return false}
+        if _storage._errorMessage != rhs_storage._errorMessage {return false}
+        if _storage._kind != rhs_storage._kind {return false}
+        if _storage._rootPaths != rhs_storage._rootPaths {return false}
+        if _storage._filesTotal != rhs_storage._filesTotal {return false}
+        if _storage._filesFinished != rhs_storage._filesFinished {return false}
+        if _storage._filesFailed != rhs_storage._filesFailed {return false}
+        if _storage._removed != rhs_storage._removed {return false}
+        if _storage._createdAtMs != rhs_storage._createdAtMs {return false}
+        if _storage._endedAtMs != rhs_storage._endedAtMs {return false}
+        if _storage._pauseReason != rhs_storage._pauseReason {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

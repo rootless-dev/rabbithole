@@ -20,7 +20,136 @@ service Daemon {
   // RemoveUpload takes an upload, or some of its files, out of the history,
   // and deletes their objects from the bucket when asked to.
   rpc RemoveUpload(RemoveUploadRequest) returns (RemoveUploadResponse);
+  // SetOptions replaces the options that apply to every upload.
+  rpc SetOptions(SetOptionsRequest) returns (SetOptionsResponse);
+  // PauseUpload stops sending an upload and keeps what was already sent.
+  rpc PauseUpload(PauseUploadRequest) returns (PauseUploadResponse);
+  // ResumeUpload puts an upload the user paused back in the queue.
+  rpc ResumeUpload(ResumeUploadRequest) returns (ResumeUploadResponse);
+  // CancelUpload stops an upload for good. Files it already sent stay in the
+  // bucket and in the history; the rest become canceled.
+  rpc CancelUpload(CancelUploadRequest) returns (CancelUploadResponse);
+  // StartDownload copies files of an upload from the bucket to a local folder.
+  rpc StartDownload(StartDownloadRequest) returns (StartDownloadResponse);
+  // CancelDownload stops a download and removes the file it was writing.
+  rpc CancelDownload(CancelDownloadRequest) returns (CancelDownloadResponse);
+  // WatchDownloads streams a snapshot whenever a download changes or progresses.
+  // Downloads live only as long as the daemon: they are not kept in the history.
+  rpc WatchDownloads(WatchDownloadsRequest) returns (stream DownloadSnapshot);
+  // ListBuckets lists the buckets the given access key can see. It works
+  // before Configure, so the bucket can be chosen while setting the account up.
+  rpc ListBuckets(ListBucketsRequest) returns (ListBucketsResponse);
+  // CreateBucket creates a private bucket. It works before Configure.
+  rpc CreateBucket(CreateBucketRequest) returns (CreateBucketResponse);
 }
+
+message SetOptionsRequest {
+  // The most bytes per second all uploads together may send. Zero means no limit.
+  int64 speed_limit_bytes_per_second = 1;
+  // Have S3 check every upload against a checksum computed from the local
+  // file, so an upload only finishes when the stored object matches it.
+  bool verify_uploads = 2;
+  // Hold every upload: nothing is sent until this is false again. The app
+  // sets it while the computer runs on battery, when the user asked for that.
+  bool hold_uploads = 3;
+}
+
+message SetOptionsResponse {}
+
+message PauseUploadRequest {
+  string upload_id = 1;
+}
+
+message PauseUploadResponse {}
+
+message ResumeUploadRequest {
+  string upload_id = 1;
+}
+
+message ResumeUploadResponse {}
+
+message CancelUploadRequest {
+  string upload_id = 1;
+}
+
+message CancelUploadResponse {}
+
+message StartDownloadRequest {
+  string upload_id = 1;
+  // The files to download, by FileSnapshot.index. Empty means every finished
+  // file of the upload.
+  repeated int32 file_indexes = 2;
+  // The local folder the files are written into. A single file lands directly
+  // in it; a folder upload is recreated inside it under the folder's name.
+  // Nothing existing is overwritten: a taken name gets a suffix.
+  string destination_dir = 3;
+}
+
+message StartDownloadResponse {
+  string download_id = 1;
+}
+
+message CancelDownloadRequest {
+  string download_id = 1;
+}
+
+message CancelDownloadResponse {}
+
+message WatchDownloadsRequest {}
+
+enum DownloadState {
+  DOWNLOAD_STATE_UNSPECIFIED = 0;
+  DOWNLOAD_QUEUED = 1;
+  DOWNLOADING = 2;
+  DOWNLOAD_FINISHED = 3;
+  DOWNLOAD_FAILED = 4;
+  DOWNLOAD_CANCELED = 5;
+}
+
+message DownloadSnapshot {
+  string download_id = 1;
+  string upload_id = 2;
+  // The files being downloaded, by FileSnapshot.index, as resolved at the start.
+  repeated int32 file_indexes = 3;
+  // What is shown for the download: the file name or the folder name.
+  string name = 4;
+  // Where the result is: the file for a single file, the folder otherwise.
+  string destination_path = 5;
+  int64 bytes_total = 6;
+  int64 bytes_done = 7;
+  int32 files_total = 8;
+  int32 files_done = 9;
+  int32 files_failed = 10;
+  DownloadState state = 11;
+  string error_message = 12;
+}
+
+message ListBucketsRequest {
+  string access_key_id = 1;
+  string secret_access_key = 2;
+  // The region used to reach S3 for the listing.
+  string region = 3;
+}
+
+message Bucket {
+  string name = 1;
+  // The region the bucket lives in; empty when it could not be read.
+  string region = 2;
+}
+
+message ListBucketsResponse {
+  repeated Bucket buckets = 1;
+}
+
+message CreateBucketRequest {
+  string access_key_id = 1;
+  string secret_access_key = 2;
+  // The region the bucket is created in.
+  string region = 3;
+  string name = 4;
+}
+
+message CreateBucketResponse {}
 
 message RetryUploadRequest {
   string upload_id = 1;
@@ -48,6 +177,9 @@ message ConfigureRequest {
   string region = 3;
   string bucket = 4;
   string quick_uploads_prefix = 5;
+  // Put uploads that a previous exit cut off back in the queue. It acts once,
+  // on the first successful Configure after the daemon starts.
+  bool resume_interrupted = 6;
 }
 
 message ConfigureResponse {}
@@ -82,6 +214,20 @@ enum UploadState {
   UPLOADING = 2;
   FINISHED = 3;
   FAILED = 4;
+  // Not sending, with what was already sent kept: the user paused it, or
+  // every upload is on hold. It goes back to QUEUED when that ends.
+  PAUSED = 5;
+  // The user stopped it for good. Like FAILED it can be retried.
+  CANCELED = 6;
+}
+
+// Why an upload is PAUSED.
+enum PauseReason {
+  PAUSE_REASON_UNSPECIFIED = 0;
+  // The user paused this upload.
+  PAUSED_BY_USER = 1;
+  // Every upload is on hold (SetOptionsRequest.hold_uploads).
+  PAUSED_ON_HOLD = 2;
 }
 
 // What the user handed over as one upload.
@@ -124,6 +270,8 @@ message UploadSnapshot {
   // When the upload finished or failed, in milliseconds since the Unix epoch.
   // Zero while it has not ended.
   int64 ended_at_ms = 16;
+  // Set while state is PAUSED.
+  PauseReason pause_reason = 17;
 }
 
 // One file of an upload.

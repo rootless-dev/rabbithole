@@ -98,6 +98,123 @@ public enum Rabbithole_V1_Daemon: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "SetOptions" metadata.
+        public enum SetOptions: Sendable {
+            /// Request type for "SetOptions".
+            public typealias Input = Rabbithole_V1_SetOptionsRequest
+            /// Response type for "SetOptions".
+            public typealias Output = Rabbithole_V1_SetOptionsResponse
+            /// Descriptor for "SetOptions".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "SetOptions",
+                type: .unary
+            )
+        }
+        /// Namespace for "PauseUpload" metadata.
+        public enum PauseUpload: Sendable {
+            /// Request type for "PauseUpload".
+            public typealias Input = Rabbithole_V1_PauseUploadRequest
+            /// Response type for "PauseUpload".
+            public typealias Output = Rabbithole_V1_PauseUploadResponse
+            /// Descriptor for "PauseUpload".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "PauseUpload",
+                type: .unary
+            )
+        }
+        /// Namespace for "ResumeUpload" metadata.
+        public enum ResumeUpload: Sendable {
+            /// Request type for "ResumeUpload".
+            public typealias Input = Rabbithole_V1_ResumeUploadRequest
+            /// Response type for "ResumeUpload".
+            public typealias Output = Rabbithole_V1_ResumeUploadResponse
+            /// Descriptor for "ResumeUpload".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "ResumeUpload",
+                type: .unary
+            )
+        }
+        /// Namespace for "CancelUpload" metadata.
+        public enum CancelUpload: Sendable {
+            /// Request type for "CancelUpload".
+            public typealias Input = Rabbithole_V1_CancelUploadRequest
+            /// Response type for "CancelUpload".
+            public typealias Output = Rabbithole_V1_CancelUploadResponse
+            /// Descriptor for "CancelUpload".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "CancelUpload",
+                type: .unary
+            )
+        }
+        /// Namespace for "StartDownload" metadata.
+        public enum StartDownload: Sendable {
+            /// Request type for "StartDownload".
+            public typealias Input = Rabbithole_V1_StartDownloadRequest
+            /// Response type for "StartDownload".
+            public typealias Output = Rabbithole_V1_StartDownloadResponse
+            /// Descriptor for "StartDownload".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "StartDownload",
+                type: .unary
+            )
+        }
+        /// Namespace for "CancelDownload" metadata.
+        public enum CancelDownload: Sendable {
+            /// Request type for "CancelDownload".
+            public typealias Input = Rabbithole_V1_CancelDownloadRequest
+            /// Response type for "CancelDownload".
+            public typealias Output = Rabbithole_V1_CancelDownloadResponse
+            /// Descriptor for "CancelDownload".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "CancelDownload",
+                type: .unary
+            )
+        }
+        /// Namespace for "WatchDownloads" metadata.
+        public enum WatchDownloads: Sendable {
+            /// Request type for "WatchDownloads".
+            public typealias Input = Rabbithole_V1_WatchDownloadsRequest
+            /// Response type for "WatchDownloads".
+            public typealias Output = Rabbithole_V1_DownloadSnapshot
+            /// Descriptor for "WatchDownloads".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "WatchDownloads",
+                type: .serverStreaming
+            )
+        }
+        /// Namespace for "ListBuckets" metadata.
+        public enum ListBuckets: Sendable {
+            /// Request type for "ListBuckets".
+            public typealias Input = Rabbithole_V1_ListBucketsRequest
+            /// Response type for "ListBuckets".
+            public typealias Output = Rabbithole_V1_ListBucketsResponse
+            /// Descriptor for "ListBuckets".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "ListBuckets",
+                type: .unary
+            )
+        }
+        /// Namespace for "CreateBucket" metadata.
+        public enum CreateBucket: Sendable {
+            /// Request type for "CreateBucket".
+            public typealias Input = Rabbithole_V1_CreateBucketRequest
+            /// Response type for "CreateBucket".
+            public typealias Output = Rabbithole_V1_CreateBucketResponse
+            /// Descriptor for "CreateBucket".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "CreateBucket",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "rabbithole.v1.Daemon" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             Configure.descriptor,
@@ -105,7 +222,16 @@ public enum Rabbithole_V1_Daemon: Sendable {
             WatchUploads.descriptor,
             WatchUploadFiles.descriptor,
             RetryUpload.descriptor,
-            RemoveUpload.descriptor
+            RemoveUpload.descriptor,
+            SetOptions.descriptor,
+            PauseUpload.descriptor,
+            ResumeUpload.descriptor,
+            CancelUpload.descriptor,
+            StartDownload.descriptor,
+            CancelDownload.descriptor,
+            WatchDownloads.descriptor,
+            ListBuckets.descriptor,
+            CreateBucket.descriptor
         ]
     }
 }
@@ -267,6 +393,216 @@ extension Rabbithole_V1_Daemon {
             deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_RemoveUploadResponse>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_RemoveUploadResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SetOptions" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > SetOptions replaces the options that apply to every upload.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_SetOptionsRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_SetOptionsRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_SetOptionsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func setOptions<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_SetOptionsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_SetOptionsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_SetOptionsResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_SetOptionsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "PauseUpload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > PauseUpload stops sending an upload and keeps what was already sent.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_PauseUploadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_PauseUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_PauseUploadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func pauseUpload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_PauseUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_PauseUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_PauseUploadResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_PauseUploadResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ResumeUpload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > ResumeUpload puts an upload the user paused back in the queue.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_ResumeUploadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_ResumeUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_ResumeUploadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func resumeUpload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_ResumeUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_ResumeUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_ResumeUploadResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_ResumeUploadResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "CancelUpload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > CancelUpload stops an upload for good. Files it already sent stay in the
+        /// > bucket and in the history; the rest become canceled.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_CancelUploadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_CancelUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_CancelUploadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func cancelUpload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_CancelUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_CancelUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_CancelUploadResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CancelUploadResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "StartDownload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > StartDownload copies files of an upload from the bucket to a local folder.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_StartDownloadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_StartDownloadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_StartDownloadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func startDownload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_StartDownloadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_StartDownloadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_StartDownloadResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_StartDownloadResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "CancelDownload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > CancelDownload stops a download and removes the file it was writing.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_CancelDownloadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_CancelDownloadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_CancelDownloadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func cancelDownload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_CancelDownloadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_CancelDownloadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_CancelDownloadResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CancelDownloadResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WatchDownloads" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > WatchDownloads streams a snapshot whenever a download changes or progresses.
+        /// > Downloads live only as long as the daemon: they are not kept in the history.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_WatchDownloadsRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_WatchDownloadsRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_DownloadSnapshot` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func watchDownloads<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_WatchDownloadsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_WatchDownloadsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_DownloadSnapshot>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Rabbithole_V1_DownloadSnapshot>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListBuckets" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > ListBuckets lists the buckets the given access key can see. It works
+        /// > before Configure, so the bucket can be chosen while setting the account up.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_ListBucketsRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_ListBucketsRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_ListBucketsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listBuckets<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_ListBucketsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_ListBucketsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_ListBucketsResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_ListBucketsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "CreateBucket" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > CreateBucket creates a private bucket. It works before Configure.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_CreateBucketRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_CreateBucketRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_CreateBucketResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func createBucket<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_CreateBucketRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_CreateBucketRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_CreateBucketResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CreateBucketResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -491,6 +827,313 @@ extension Rabbithole_V1_Daemon {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "SetOptions" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > SetOptions replaces the options that apply to every upload.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_SetOptionsRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_SetOptionsRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_SetOptionsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func setOptions<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_SetOptionsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_SetOptionsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_SetOptionsResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_SetOptionsResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.SetOptions.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "PauseUpload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > PauseUpload stops sending an upload and keeps what was already sent.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_PauseUploadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_PauseUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_PauseUploadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func pauseUpload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_PauseUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_PauseUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_PauseUploadResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_PauseUploadResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.PauseUpload.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ResumeUpload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > ResumeUpload puts an upload the user paused back in the queue.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_ResumeUploadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_ResumeUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_ResumeUploadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func resumeUpload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_ResumeUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_ResumeUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_ResumeUploadResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_ResumeUploadResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.ResumeUpload.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "CancelUpload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > CancelUpload stops an upload for good. Files it already sent stay in the
+        /// > bucket and in the history; the rest become canceled.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_CancelUploadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_CancelUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_CancelUploadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func cancelUpload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_CancelUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_CancelUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_CancelUploadResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CancelUploadResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.CancelUpload.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "StartDownload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > StartDownload copies files of an upload from the bucket to a local folder.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_StartDownloadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_StartDownloadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_StartDownloadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func startDownload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_StartDownloadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_StartDownloadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_StartDownloadResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_StartDownloadResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.StartDownload.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "CancelDownload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > CancelDownload stops a download and removes the file it was writing.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_CancelDownloadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_CancelDownloadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_CancelDownloadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func cancelDownload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_CancelDownloadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_CancelDownloadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_CancelDownloadResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CancelDownloadResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.CancelDownload.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "WatchDownloads" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > WatchDownloads streams a snapshot whenever a download changes or progresses.
+        /// > Downloads live only as long as the daemon: they are not kept in the history.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_WatchDownloadsRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_WatchDownloadsRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_DownloadSnapshot` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func watchDownloads<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_WatchDownloadsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_WatchDownloadsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_DownloadSnapshot>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Rabbithole_V1_DownloadSnapshot>) async throws -> Result
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.serverStreaming(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.WatchDownloads.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListBuckets" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > ListBuckets lists the buckets the given access key can see. It works
+        /// > before Configure, so the bucket can be chosen while setting the account up.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_ListBucketsRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_ListBucketsRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_ListBucketsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listBuckets<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_ListBucketsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_ListBucketsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_ListBucketsResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_ListBucketsResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.ListBuckets.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "CreateBucket" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > CreateBucket creates a private bucket. It works before Configure.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_CreateBucketRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_CreateBucketRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_CreateBucketResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func createBucket<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_CreateBucketRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_CreateBucketRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_CreateBucketResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CreateBucketResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.CreateBucket.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -664,6 +1307,268 @@ extension Rabbithole_V1_Daemon.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_RemoveUploadRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_RemoveUploadResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetOptions" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > SetOptions replaces the options that apply to every upload.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_SetOptionsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setOptions<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_SetOptionsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_SetOptionsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.setOptions(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_SetOptionsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_SetOptionsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PauseUpload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > PauseUpload stops sending an upload and keeps what was already sent.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_PauseUploadRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func pauseUpload<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_PauseUploadRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_PauseUploadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.pauseUpload(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_PauseUploadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_PauseUploadResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ResumeUpload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > ResumeUpload puts an upload the user paused back in the queue.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_ResumeUploadRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func resumeUpload<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_ResumeUploadRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_ResumeUploadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.resumeUpload(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_ResumeUploadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_ResumeUploadResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CancelUpload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > CancelUpload stops an upload for good. Files it already sent stay in the
+    /// > bucket and in the history; the rest become canceled.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_CancelUploadRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func cancelUpload<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_CancelUploadRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CancelUploadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.cancelUpload(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_CancelUploadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_CancelUploadResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StartDownload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > StartDownload copies files of an upload from the bucket to a local folder.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_StartDownloadRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startDownload<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_StartDownloadRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_StartDownloadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.startDownload(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_StartDownloadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_StartDownloadResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CancelDownload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > CancelDownload stops a download and removes the file it was writing.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_CancelDownloadRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func cancelDownload<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_CancelDownloadRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CancelDownloadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.cancelDownload(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_CancelDownloadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_CancelDownloadResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchDownloads" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > WatchDownloads streams a snapshot whenever a download changes or progresses.
+    /// > Downloads live only as long as the daemon: they are not kept in the history.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_WatchDownloadsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchDownloads<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_WatchDownloadsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Rabbithole_V1_DownloadSnapshot>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        try await self.watchDownloads(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_WatchDownloadsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_DownloadSnapshot>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListBuckets" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > ListBuckets lists the buckets the given access key can see. It works
+    /// > before Configure, so the bucket can be chosen while setting the account up.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_ListBucketsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listBuckets<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_ListBucketsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_ListBucketsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listBuckets(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_ListBucketsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_ListBucketsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CreateBucket" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > CreateBucket creates a private bucket. It works before Configure.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_CreateBucketRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func createBucket<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_CreateBucketRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CreateBucketResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.createBucket(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_CreateBucketRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_CreateBucketResponse>(),
             options: options,
             onResponse: handleResponse
         )
@@ -863,6 +1768,304 @@ extension Rabbithole_V1_Daemon.ClientProtocol {
             metadata: metadata
         )
         return try await self.removeUpload(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetOptions" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > SetOptions replaces the options that apply to every upload.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setOptions<Result>(
+        _ message: Rabbithole_V1_SetOptionsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_SetOptionsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_SetOptionsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.setOptions(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PauseUpload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > PauseUpload stops sending an upload and keeps what was already sent.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func pauseUpload<Result>(
+        _ message: Rabbithole_V1_PauseUploadRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_PauseUploadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_PauseUploadRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.pauseUpload(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ResumeUpload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > ResumeUpload puts an upload the user paused back in the queue.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func resumeUpload<Result>(
+        _ message: Rabbithole_V1_ResumeUploadRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_ResumeUploadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_ResumeUploadRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.resumeUpload(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CancelUpload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > CancelUpload stops an upload for good. Files it already sent stay in the
+    /// > bucket and in the history; the rest become canceled.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func cancelUpload<Result>(
+        _ message: Rabbithole_V1_CancelUploadRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CancelUploadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_CancelUploadRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.cancelUpload(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StartDownload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > StartDownload copies files of an upload from the bucket to a local folder.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startDownload<Result>(
+        _ message: Rabbithole_V1_StartDownloadRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_StartDownloadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_StartDownloadRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.startDownload(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CancelDownload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > CancelDownload stops a download and removes the file it was writing.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func cancelDownload<Result>(
+        _ message: Rabbithole_V1_CancelDownloadRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CancelDownloadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_CancelDownloadRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.cancelDownload(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchDownloads" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > WatchDownloads streams a snapshot whenever a download changes or progresses.
+    /// > Downloads live only as long as the daemon: they are not kept in the history.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchDownloads<Result>(
+        _ message: Rabbithole_V1_WatchDownloadsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Rabbithole_V1_DownloadSnapshot>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_WatchDownloadsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.watchDownloads(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListBuckets" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > ListBuckets lists the buckets the given access key can see. It works
+    /// > before Configure, so the bucket can be chosen while setting the account up.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listBuckets<Result>(
+        _ message: Rabbithole_V1_ListBucketsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_ListBucketsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_ListBucketsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listBuckets(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CreateBucket" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > CreateBucket creates a private bucket. It works before Configure.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func createBucket<Result>(
+        _ message: Rabbithole_V1_CreateBucketRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_CreateBucketResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_CreateBucketRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.createBucket(
             request: request,
             options: options,
             onResponse: handleResponse
