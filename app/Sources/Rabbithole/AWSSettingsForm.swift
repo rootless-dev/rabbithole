@@ -75,6 +75,12 @@ enum AWSSettingsForm {
         try store.load()
     }
 
+    /// The saved key pair and region for the bucket calls, or nil when there is none or it
+    /// cannot be read. The keychain read happens here, off the main actor.
+    static func access(store: SettingsStore) async -> AWSAccess? {
+        try? store.loadAccess()
+    }
+
     /// Validates `candidate` and saves it. When `keepStoredSecret` is true and the secret
     /// field was left empty, the stored secret is kept: the pair lives in one keychain
     /// item, so it is read once and written back together with the other fields.

@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var preferences: AppPreferences?
     private var loginItem: LoginItemModel?
     private var hotKey: GlobalHotKey?
+    private var optionsSync: UploadOptionsSync?
     private let smallWindows = SmallWindowPresenter()
     /// Set once the app is quitting; composition that is still in progress must not start a daemon.
     private var isShutDown = false
@@ -58,9 +59,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             client: client,
             sleep: { try await Task.sleep(for: $0) },
             makeRequest: { preferences.enqueueRequest(for: $0) })
+        // The upload options follow the preferences and the power source. The forwarder
+        // sends them, in turn with the daemon's configuration; the sync says when to.
+        let power = SystemPowerSource()
         let forwarder = DaemonEventForwarder(
             client: client, events: supervisor.events, viewModel: viewModel,
-            loadSettings: { try store.load() })
+            loadSettings: { try store.load() },
+            resumeInterrupted: { await preferences.resumeAutomatically },
+            options: { await preferences.daemonOptions(onBattery: power.isOnBattery) })
+        let optionsSync = UploadOptionsSync(
+            preferences: preferences, power: power, changed: { forwarder.optionsChanged() })
+        optionsSync.start()
 
         let notifier = UploadNotifier()
         viewModel.uploads.onEnded = { record in
@@ -73,14 +82,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let windowModel = MainWindowModel()
         windowModel.watchFiles = { client.watchFiles(uploadID: $0) }
         viewModel.uploads.onRemoved = { [weak windowModel] id in windowModel?.uploadRemoved(id) }
+        let bucketService = BucketService(client: client)
+        let buckets = BucketListModel(
+            service: bucketService,
+            access: { await AWSSettingsForm.access(store: store) },
+            selection: { (account.bucket, account.region) },
+            pick: { bucket in Task { await account.choose(bucket) } })
         let context = MainContext(
             model: windowModel, tray: viewModel, account: account, preferences: preferences,
-            loginItem: loginItem, actions: actions)
+            loginItem: loginItem, buckets: buckets, actions: actions)
         let mainWindow = MainWindowController(
             context: context, thumbnails: ThumbnailCache(),
             makeSetup: { [weak self] in
                 SetupModel(
                     store: store,
+                    buckets: bucketService,
                     onSaved: { settings in
                         forwarder.settingsChanged(settings)
                         Task { await account.reload() }
@@ -103,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.preferences = preferences
         self.loginItem = loginItem
         self.hotKey = hotKey
+        self.optionsSync = optionsSync
 
         forwarder.start()
         openSetupOnFirstLaunch(viewModel)
@@ -164,6 +181,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let viewModel = self?.viewModel else { throw DaemonError.unavailable }
             try await viewModel.remove(
                 uploadID: uploadID, fileIndexes: fileIndexes, deleteFromBucket: deleteFromBucket)
+        }
+        actions.pauseUpload = { [weak self] id in Task { await self?.viewModel?.pause(uploadID: id) } }
+        actions.resumeUpload = { [weak self] id in Task { await self?.viewModel?.resume(uploadID: id) } }
+        actions.cancelUpload = { [weak self] id in Task { await self?.viewModel?.cancel(uploadID: id) } }
+        actions.download = { [weak self] target in
+            Task {
+                guard let folder = await FilePicker.chooseDownloadFolder() else { return }
+                await self?.viewModel?.download(target, to: folder.path)
+            }
+        }
+        actions.cancelDownload = { [weak self] target in
+            Task { await self?.viewModel?.cancelDownload(target) }
+        }
+        actions.showInFinder = { path in
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
         }
         actions.applyTheme = { theme in NSApp.appearance = theme.appearance }
         actions.registerShortcut = { [weak self] shortcut in self?.hotKey?.register(shortcut) ?? false }

@@ -41,12 +41,26 @@ final class UIFixture {
         actions.removeUpload = { [tray] uploadID, fileIndexes, deleteFromBucket in
             try await tray.remove(uploadID: uploadID, fileIndexes: fileIndexes, deleteFromBucket: deleteFromBucket)
         }
+        actions.pauseUpload = { [tray] id in Task { await tray.pause(uploadID: id) } }
+        actions.resumeUpload = { [tray] id in Task { await tray.resume(uploadID: id) } }
+        actions.cancelUpload = { [tray] id in Task { await tray.cancel(uploadID: id) } }
+        // The folder panel is the system's: tests download straight into Downloads.
+        actions.download = { [tray] target in
+            Task { await tray.download(target, to: "\(UIFixture.home)/Downloads") }
+        }
+        actions.cancelDownload = { [tray] target in Task { await tray.cancelDownload(target) } }
         tray.uploads.onRemoved = { [weak model] id in model?.uploadRemoved(id) }
+        let store = store
+        let buckets = BucketListModel(
+            service: BucketService(client: client),
+            access: { await AWSSettingsForm.access(store: store) },
+            selection: { (account.bucket, account.region) },
+            pick: { bucket in Task { await account.choose(bucket) } })
         context = MainContext(
             model: model, tray: tray, account: account,
             preferences: AppPreferences(defaults: scratch.defaults),
             loginItem: LoginItemModel(service: StubLoginItemService(enabled: true)),
-            actions: actions)
+            buckets: buckets, actions: actions)
         await account.reload()
         await context.loginItem.refresh()
     }
@@ -157,6 +171,58 @@ final class UIFixture {
                 objectKey: "quick-uploads/invoice-october.pdf", bytesTotal: 184_000, bytesSent: 184_000,
                 state: .finished, errorMessage: "",
                 createdAt: time(daysAgo: 0, 11, 55), endedAt: time(daysAgo: 0, 11, 56)))
+        await warmThumbnails()
+    }
+
+    /// The buckets of the mockup's open selector, in its order.
+    static let threeBuckets = [
+        Bucket(name: "carlos-backups", region: "sa-east-1"), Bucket(name: "photos-archive", region: "us-east-1"),
+        Bucket(name: "site-assets", region: "sa-east-1"),
+    ]
+
+    /// The six uploads of the pause, cancel and download mockup: one being sent, one the
+    /// user paused, one paused on battery, one canceled yesterday at 18:20, one that is
+    /// being downloaded and one that was downloaded to ~/Downloads.
+    func loadTransferUploads() async {
+        let today = Calendar.current.startOfDay(for: Date())
+        func time(daysAgo: Int, _ hour: Int, _ minute: Int) -> Date {
+            today.addingTimeInterval(Double(-daysAgo * 86_400 + hour * 3600 + minute * 60))
+        }
+        let home = Self.home
+        let downloads = "\(home)/Downloads"
+        await enqueue(3)
+        tray.apply(.make("up-1", "db-dump.sql.gz", in: "\(home)/Work/backups", total: 4_200_000_000, sent: 1_238_000_000, .uploading))
+        clock.advance(10)
+        tray.apply(.make("up-1", "db-dump.sql.gz", in: "\(home)/Work/backups", total: 4_200_000_000, sent: 1_300_000_000, .uploading))
+        tray.apply(.paused("up-2", "vacation-2026", in: "\(home)/Pictures", total: 1_900_000_000, sent: 800_000_000))
+        tray.apply(
+            .paused(
+                "up-3", "design-assets", in: "\(home)/Work/client", files: 24, finished: 3, total: 640_000_000,
+                sent: 76_000_000, reason: .onHold))
+        tray.apply(
+            UploadSnapshot(
+                id: "up-4", fileName: "raw-footage", localPath: "\(home)/Movies/raw-footage",
+                objectKey: "quick-uploads/raw-footage/", bytesTotal: 1_000_000_000, bytesSent: 380_000_000,
+                state: .canceled, errorMessage: "", kind: .folder, filesTotal: 12, filesFinished: 5,
+                createdAt: time(daysAgo: 1, 18, 2), endedAt: time(daysAgo: 1, 18, 20)))
+        tray.apply(
+            UploadSnapshot(
+                id: "up-5", fileName: "archive-2025", localPath: "\(home)/Documents/archive-2025",
+                objectKey: "quick-uploads/archive-2025/", bytesTotal: 480_000_000, bytesSent: 480_000_000,
+                state: .finished, errorMessage: "", kind: .folder, filesTotal: 40, filesFinished: 40,
+                createdAt: time(daysAgo: 2, 9, 0), endedAt: time(daysAgo: 2, 9, 30)))
+        tray.apply(
+            UploadSnapshot(
+                id: "up-6", fileName: "invoice-october.pdf",
+                localPath: "\(home)/Documents/finance/invoice-october.pdf",
+                objectKey: "quick-uploads/invoice-october.pdf", bytesTotal: 184_000, bytesSent: 184_000,
+                state: .finished, errorMessage: "",
+                createdAt: time(daysAgo: 0, 11, 55), endedAt: time(daysAgo: 0, 11, 56)))
+        tray.apply(
+            DownloadSnapshot.make("dl-5", of: "up-5", to: "\(downloads)/archive-2025", .downloading))
+        tray.apply(
+            DownloadSnapshot.make(
+                "dl-6", of: "up-6", to: "\(downloads)/invoice-october.pdf", total: 184_000, done: 184_000, .finished))
         await warmThumbnails()
     }
 
@@ -456,6 +522,187 @@ final class UISnapshotTests: XCTestCase {
         await refused.confirm()
         XCTAssertNotNil(refused.errorMessage)
         try draw("sheet-delete-error", refused)
+    }
+
+    // MARK: Pause, cancel, download and bucket (design/mockups/transfers.html)
+
+    /// The History list of the mockup with the menu of the sending upload open, and each of
+    /// its rows alone.
+    func testTransferRowsInEveryNewState() async throws {
+        let fixture = await UIFixture()
+        await fixture.loadTransferUploads()
+        fixture.context.model.show(.history)
+        let sending = try XCTUnwrap(fixture.tray.uploads.ledger["up-1"])
+        XCTAssertEqual(UploadAction.available(for: sending), [.pause, .cancelUpload])
+        fixture.openMenu(of: .upload(id: "up-1"), actions: UploadAction.available(for: sending), highlighted: .pause)
+        try both("transfers-history", size: MainView.size) { fixture.mainView() }
+        fixture.context.model.actionsMenu = nil
+
+        let rows = [
+            ("transfers-row-sending", "up-1"), ("transfers-row-paused", "up-2"),
+            ("transfers-row-paused-battery", "up-3"), ("transfers-row-canceled", "up-4"),
+            ("transfers-row-downloading", "up-5"), ("transfers-row-downloaded", "up-6"),
+        ]
+        for (name, id) in rows {
+            let record = try XCTUnwrap(fixture.tray.uploads.ledger[id])
+            try both(name, size: CGSize(width: 754, height: 84)) {
+                UploadRow(
+                    record: record, line: UploadText.historyLine(record, now: Date()),
+                    menus: fixture.context.model, download: fixture.context.downloads[.upload(id: id)]
+                )
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.ink)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.main)
+                .environment(fixture.thumbnails)
+            }
+        }
+
+        // A download that failed says so where the finished one says where it went.
+        fixture.tray.apply(
+            DownloadSnapshot.make("dl-2", of: "up-6", .failed, error: ServiceCondition.offlineMessage))
+        let failed = try XCTUnwrap(fixture.tray.uploads.ledger["up-6"])
+        try both("transfers-row-download-failed", size: CGSize(width: 754, height: 84)) {
+            UploadRow(
+                record: failed, line: UploadText.historyLine(failed, now: Date()),
+                menus: fixture.context.model, download: fixture.context.downloads[.upload(id: "up-6")]
+            )
+            .font(.system(size: 13))
+            .foregroundStyle(Theme.ink)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.main)
+            .environment(fixture.thumbnails)
+        }
+    }
+
+    /// The paused detail header with Resume and Cancel upload, the same upload paused on
+    /// battery, a canceled one, and one that is being downloaded.
+    func testTransferDetailHeaders() async throws {
+        let fixture = await UIFixture()
+        await fixture.loadTransferUploads()
+        for (name, id) in [
+            ("transfers-detail-paused", "up-2"), ("transfers-detail-paused-battery", "up-3"),
+            ("transfers-detail-canceled", "up-4"), ("transfers-detail-downloading", "up-5"),
+            ("transfers-detail-downloaded", "up-6"), ("transfers-detail-sending", "up-1"),
+        ] {
+            fixture.context.model.openDetail(id: id, from: .history)
+            try both(name, size: MainView.size) { fixture.mainView() }
+        }
+    }
+
+    /// The menu by state, as the mockup lists it: sending or waiting, paused by you, paused
+    /// on battery, canceled, finished, being downloaded.
+    func testTheMenuByState() throws {
+        let states: [(String, [UploadAction])] = [
+            ("transfers-menu-sending", [.pause, .cancelUpload]),
+            ("transfers-menu-paused", [.resume, .cancelUpload]),
+            ("transfers-menu-paused-battery", [.cancelUpload]),
+            ("transfers-menu-canceled", [.retry, .download, .remove, .deleteFromBucket]),
+            ("transfers-menu-finished", [.download, .remove, .deleteFromBucket]),
+            ("transfers-menu-downloading", [.cancelDownload]),
+        ]
+        for (name, actions) in states {
+            try both(name) {
+                ActionsMenuView(
+                    menu: OpenActionsMenu(target: .upload(id: "a"), actions: actions), hover: { _, _ in },
+                    choose: { _ in }
+                )
+                .padding(30)
+                .background(Theme.main)
+            }
+        }
+    }
+
+    /// A paused batch in the tray and on Overview's first card.
+    func testPausedBatchInTheTrayAndOnOverview() async throws {
+        let fixture = await UIFixture()
+        await fixture.enqueue(1)
+        fixture.tray.apply(
+            .paused("up-1", "vacation-2026", in: "\(UIFixture.home)/Pictures", total: 1_900_000_000, sent: 800_000_000))
+        try both("transfers-tray-paused") { fixture.trayView() }
+        try both("transfers-overview-paused", size: MainView.size) { fixture.mainView() }
+    }
+
+    /// Settings › Destination and the setup's second step with the bucket selector: closed,
+    /// open, loading and without permission to list.
+    func testBucketSelector() async throws {
+        let fixture = await UIFixture()
+        fixture.client.setBuckets(UIFixture.threeBuckets)
+        let buckets = fixture.context.buckets
+        fixture.context.model.show(pane: .destination)
+        await buckets.loadIfNeeded()
+        buckets.choose(UIFixture.threeBuckets[0])
+        for _ in 0..<200 where fixture.context.account.summary.destination.bucket != "carlos-backups" {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try both("bucket-selector", size: MainView.size) { fixture.mainView() }
+
+        buckets.toggle()
+        buckets.highlighted = .bucket("carlos-backups")
+        try both("bucket-selector-open", size: MainView.size) { fixture.mainView() }
+        buckets.close()
+
+        fixture.client.failList(
+            with: .rejected("AWS denied permission to list buckets: the access key needs the s3:ListAllMyBuckets permission"))
+        await buckets.reload()
+        try both("bucket-selector-denied", size: MainView.size) { fixture.mainView() }
+
+        let first = await UIFixture(configured: false)
+        first.client.setBuckets(UIFixture.threeBuckets)
+        let setup = SetupModel(
+            store: first.store, buckets: BucketService(client: first.client), onSaved: { _ in },
+            onFinished: { _, _ in })
+        first.context.model.setup = setup
+        setup.accessKeyID = "AKIAIOSFODNN7EXAMPLE"
+        setup.secret = "not-a-real-secret-value"
+        setup.region = "sa-east-1"
+        await setup.advance()
+        await setup.buckets.loadIfNeeded()
+        setup.buckets.choose(UIFixture.threeBuckets[0])
+        try both("bucket-first-run", size: MainView.setupSize) { first.mainView() }
+        setup.buckets.toggle()
+        try both("bucket-first-run-open", size: MainView.setupSize) { first.mainView() }
+    }
+
+    /// The "Create a new bucket" window and its two failure layouts.
+    func testCreateBucketWindowAndItsFailures() async throws {
+        func window(failing error: DaemonError?) async -> CreateBucketModel {
+            let model = CreateBucketModel(
+                region: "sa-east-1",
+                service: BucketService(
+                    list: { _ in [] },
+                    create: { _, _ in if let error { throw error } }),
+                access: { AWSAccess(accessKeyID: "AKIAIOSFODNN7EXAMPLE", secretAccessKey: "not-a-real-secret", region: "sa-east-1") },
+                close: { _ in })
+            return model
+        }
+        func draw(_ name: String, _ model: CreateBucketModel) throws {
+            try both(name) {
+                CreateBucketSheet(model: model).clipShape(.rect(cornerRadius: RemovalSheet.cornerRadius))
+            }
+        }
+
+        let plain = await window(failing: nil)
+        plain.name = "carlos-backups-2026"
+        try draw("bucket-create", plain)
+
+        let taken = await window(
+            failing: .alreadyExists(
+                "This name is already taken by another AWS account. Bucket names are unique in all of AWS: try another one."))
+        taken.name = "backups"
+        await taken.confirm()
+        XCTAssertNotNil(taken.nameError)
+        try draw("bucket-create-name-error", taken)
+
+        let denied = await window(
+            failing: .rejected(
+                "AWS denied permission to create buckets: the access key needs the s3:CreateBucket permission"))
+        denied.name = "carlos-backups-2026"
+        await denied.confirm()
+        XCTAssertNotNil(denied.boxError)
+        try draw("bucket-create-box-error", denied)
     }
 
     func testSettingsPanes() async throws {

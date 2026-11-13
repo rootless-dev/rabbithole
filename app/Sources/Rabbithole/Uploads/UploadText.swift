@@ -3,7 +3,8 @@ import UniformTypeIdentifiers
 
 /// The words and numbers shown for uploads, as written in the approved mockups.
 enum UploadText {
-    enum Tone: Equatable, Sendable { case normal, ok, warn, bad }
+    /// `hold` is the amber of a paused upload, `down` the blue of a download.
+    enum Tone: Equatable, Sendable { case normal, ok, warn, bad, hold, down }
 
     struct Line: Equatable, Sendable {
         let text: String
@@ -52,7 +53,14 @@ enum UploadText {
 
     /// The line under an upload's name in the Overview list and in the detail header.
     static func progressLine(_ record: UploadRecord) -> Line {
+        if let refusal = record.actionError { return Line(text: refusal, tone: .bad) }
         switch record.state {
+        case .paused:
+            return Line(
+                text: "\(pausedLead(record.pauseReason)), \(bytes(record.bytesSent)) of \(bytes(record.bytesTotal)) sent",
+                tone: .hold)
+        case .canceled:
+            return Line(text: "Canceled, \(sentBeforeCancel(record))", tone: .normal)
         case .queued:
             return Line(text: "Waiting, \(bytes(record.bytesTotal)) to send", tone: .normal)
         case .uploading:
@@ -80,21 +88,66 @@ enum UploadText {
 
     /// The same line for History, where ended uploads also say when they ended.
     static func historyLine(_ record: UploadRecord, now: Date, calendar: Calendar = .current) -> Line {
-        guard let endedAt = record.endedAt else { return progressLine(record) }
+        guard let endedAt = record.endedAt, record.actionError == nil else { return progressLine(record) }
         let when = dayAndTime(endedAt, now: now, calendar: calendar)
         switch record.state {
         case .finished:
             return Line(text: "Finished \(when), \(bytes(record.bytesTotal)) sent", tone: .ok)
         case .failed:
             return Line(text: "Failed \(when), \(reason(record.errorMessage))", tone: .bad)
-        case .queued, .uploading:
+        case .canceled:
+            return Line(text: "Canceled \(when), \(sentBeforeCancel(record))", tone: .normal)
+        case .queued, .uploading, .paused:
             return progressLine(record)
         }
+    }
+
+    /// "Paused" for an upload the user paused, "Paused while on battery" for one that is
+    /// held with every other upload, which the app only asks for on battery power.
+    static func pausedLead(_ reason: PauseReason?) -> String {
+        reason == .onHold ? "Paused while on battery" : "Paused"
+    }
+
+    /// How far a canceled upload got: "5 of 12 files sent", or the bytes of a single file.
+    private static func sentBeforeCancel(_ record: UploadRecord) -> String {
+        record.kind == .singleFile
+            ? "\(bytes(record.bytesSent)) of \(bytes(record.bytesTotal)) sent"
+            : "\(record.filesFinished) of \(record.filesTotal) files sent"
+    }
+
+    // MARK: Download lines
+
+    /// The line of an upload that is being downloaded, or was: "Downloading to ~/Downloads,
+    /// 120 MB of 480 MB", "Downloaded to ~/Downloads", "Download failed, no internet
+    /// connection". Nil for a canceled download, which leaves nothing to say.
+    static func downloadLine(_ download: DownloadSnapshot, home: String = NSHomeDirectory()) -> Line? {
+        let folder = displayPath(download.destinationFolder, home: home)
+        switch download.state {
+        case .queued, .downloading:
+            return Line(
+                text: "Downloading to \(folder), \(bytes(download.bytesDone)) of \(bytes(download.bytesTotal))",
+                tone: .down)
+        case .finished:
+            return Line(text: "Downloaded to \(folder)", tone: .normal)
+        case .failed:
+            let why = download.errorMessage.isEmpty ? "" : ", \(reason(download.errorMessage))"
+            return Line(text: "Download failed\(why)", tone: .bad)
+        case .canceled:
+            return nil
+        }
+    }
+
+    /// The short status of a file that is being downloaded, at the right of its row.
+    static func fileDownloadLine(_ download: DownloadSnapshot) -> Line {
+        Line(text: "Downloading, \(bytes(download.bytesDone)) of \(bytes(download.bytesTotal))", tone: .down)
     }
 
     /// The short status at the right of a file row in the upload detail.
     static func fileLine(_ file: FileSnapshot) -> Line {
         switch file.state {
+        case .paused:
+            Line(text: "Paused, \(bytes(file.bytesSent)) of \(bytes(file.bytesTotal))", tone: .hold)
+        case .canceled: Line(text: "Canceled, \(bytes(file.bytesTotal))", tone: .normal)
         case .queued: Line(text: "Waiting, \(bytes(file.bytesTotal))", tone: .normal)
         case .uploading:
             Line(text: "\(bytes(file.bytesSent)) of \(bytes(file.bytesTotal))", tone: .normal)

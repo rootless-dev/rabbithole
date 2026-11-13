@@ -11,6 +11,7 @@ final class DaemonEventForwarder: Sendable {
     private enum Command: Sendable {
         case event(DaemonEvent)
         case settingsChanged(AWSSettings)
+        case optionsChanged
     }
 
     /// What is saved, as far as the forwarder knows.
@@ -25,6 +26,8 @@ final class DaemonEventForwarder: Sendable {
     private let events: AsyncStream<DaemonEvent>
     private let loadSettings: @Sendable () throws -> AWSSettings?
     private let sleep: @Sendable (Duration) async throws -> Void
+    private let resumeInterrupted: @Sendable () async -> Bool
+    private let options: (@Sendable () async -> DaemonOptions)?
     private let configurator: DaemonConfigurator
     private let viewModel: TrayViewModel
     private let commands: AsyncStream<Command>
@@ -36,19 +39,28 @@ final class DaemonEventForwarder: Sendable {
     ///   - loadSettings: may block (keychain) and is only called off the main actor. Returning
     ///     nil means nothing is saved; throwing means the saved settings could not be read.
     ///   - sleep: the pause between retries and the attempt timeout, injected so tests do not wait.
+    ///   - resumeInterrupted: the "Resume uploads automatically" preference, read each time
+    ///     the daemon is configured.
+    ///   - options: the options that apply to every upload, read each time they are sent:
+    ///     when the daemon comes up, after it is configured and on `optionsChanged()`.
+    ///     Nil sends none.
     @MainActor
     init(
         client: DaemonClient,
         events: AsyncStream<DaemonEvent>,
         viewModel: TrayViewModel,
         loadSettings: @escaping @Sendable () throws -> AWSSettings?,
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        resumeInterrupted: @escaping @Sendable () async -> Bool = { false },
+        options: (@Sendable () async -> DaemonOptions)? = nil
     ) {
         self.client = client
         self.events = events
         self.viewModel = viewModel
         self.loadSettings = loadSettings
         self.sleep = sleep
+        self.resumeInterrupted = resumeInterrupted
+        self.options = options
         configurator = DaemonConfigurator(client: client, sleep: sleep)
         (commands, commandSink) = AsyncStream<Command>.makeStream()
     }
@@ -64,6 +76,12 @@ final class DaemonEventForwarder: Sendable {
     /// The user saved new settings in the settings window.
     func settingsChanged(_ settings: AWSSettings) {
         commandSink.yield(.settingsChanged(settings))
+    }
+
+    /// An upload option changed (a preference, or the power source): the daemon gets the
+    /// options again, in turn with everything else that is sent to it.
+    func optionsChanged() {
+        commandSink.yield(.optionsChanged)
     }
 
     func stop() {
@@ -127,7 +145,24 @@ final class DaemonEventForwarder: Sendable {
                 } else {
                     await viewModel.settingsSaved()
                 }
+            case .optionsChanged:
+                // A daemon that is not up yet gets them when it is configured.
+                if daemonUp, daemonConfigured { await sendOptions() }
             }
+        }
+    }
+
+    /// Sends the current options. A failure is not retried here: a daemon that could not be
+    /// reached gets them when it is configured again, and one that does not know the call
+    /// keeps working without them. The call is bounded like a configure attempt.
+    private func sendOptions() async {
+        guard let options else { return }
+        let value = await options()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { [client] in try? await client.setOptions(value) }
+            group.addTask { [sleep] in try? await sleep(DaemonConfigurator.attemptTimeout) }
+            await group.next()
+            group.cancelAll()
         }
     }
 
@@ -144,11 +179,18 @@ final class DaemonEventForwarder: Sendable {
         case .nothing:
             settings = nil
         case .value(let value):
-            guard await configurator.configure(value) else {
+            // A daemon that just came up gets the options before its settings too, so that
+            // a hold (the Mac is on battery) is already in place when Configure puts the
+            // interrupted uploads back in the queue.
+            if replacingWatch { await sendOptions() }
+            var sent = value
+            sent.resumeInterrupted = await resumeInterrupted()
+            guard await configurator.configure(sent) else {
                 if Task.isCancelled { return daemonConfigured }
                 await viewModel.configureFailed(keepingPreviousSettings: daemonConfigured)
                 return daemonConfigured
             }
+            await sendOptions()
             settings = value
         }
         // A stop() during configure or the hop to the main actor must not leave a watch behind.
@@ -172,21 +214,36 @@ final class DaemonEventForwarder: Sendable {
         old?.cancel()
     }
 
-    /// Resubscribes after a short pause whenever the stream ends or fails, until cancelled.
+    /// Reads the uploads stream and the downloads stream side by side. Each resubscribes
+    /// after a short pause whenever it ends or fails, until cancelled.
     private func startWatching() -> Task<Void, Never> {
         Task { [self] in
-            while !Task.isCancelled {
-                do {
-                    for try await snapshot in client.watch() {
-                        // A stream that was replaced must not report anything more.
-                        if Task.isCancelled { return }
-                        await viewModel.apply(snapshot)
-                    }
-                } catch {
-                    // The daemon is gone or restarting; try again below.
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { [self] in
+                    await follow({ self.client.watch() }) { await self.viewModel.apply($0) }
                 }
-                try? await sleep(DaemonConfigurator.retryDelay)
+                group.addTask { [self] in
+                    await follow({ self.client.watchDownloads() }) { await self.viewModel.apply($0) }
+                }
             }
+        }
+    }
+
+    private func follow<Snapshot: Sendable>(
+        _ open: @Sendable () -> AsyncThrowingStream<Snapshot, Error>,
+        _ apply: @Sendable (Snapshot) async -> Void
+    ) async {
+        while !Task.isCancelled {
+            do {
+                for try await snapshot in open() {
+                    // A stream that was replaced must not report anything more.
+                    if Task.isCancelled { return }
+                    await apply(snapshot)
+                }
+            } catch {
+                // The daemon is gone or restarting; try again below.
+            }
+            try? await sleep(DaemonConfigurator.retryDelay)
         }
     }
 }

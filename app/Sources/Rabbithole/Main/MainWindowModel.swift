@@ -41,6 +41,14 @@ struct AppActions {
     /// Takes an upload (or the listed files of it) out of the history, and out of the bucket
     /// when the last argument says so. Returns when it is done and throws what was refused.
     var removeUpload: RemovalSheetModel.Perform = { _, _, _ in }
+    var pauseUpload: (_ uploadID: String) -> Void = { _ in }
+    var resumeUpload: (_ uploadID: String) -> Void = { _ in }
+    var cancelUpload: (_ uploadID: String) -> Void = { _ in }
+    /// Asks which folder to download into, then downloads the upload or the one file.
+    var download: (UploadActionTarget) -> Void = { _ in }
+    var cancelDownload: (UploadActionTarget) -> Void = { _ in }
+    /// Shows a downloaded file or folder in Finder.
+    var showInFinder: (_ path: String) -> Void = { _ in }
     /// Applies the light, dark or system appearance to the whole app.
     var applyTheme: (ThemeChoice) -> Void = { _ in }
     /// Registers the tray's global shortcut. Returns false when the system refused it.
@@ -68,6 +76,8 @@ final class MainWindowModel {
     var actionsMenu: OpenActionsMenu?
     /// The confirmation shown as a sheet on the window, if any.
     var removal: RemovalSheetModel?
+    /// The "Create a new bucket" window shown as a sheet on the window, if any.
+    var createBucket: CreateBucketModel?
 
     /// The files of the upload whose detail is open. The daemon's files stream is read only
     /// while a detail is open and the window is showing.

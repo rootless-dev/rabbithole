@@ -161,7 +161,7 @@ private struct ConnectPane: View {
         VStack(alignment: .leading, spacing: 0) {
             PaneHeading(
                 title: "Connect your AWS account",
-                text: "Rabbithole sends your files to your own AWS account. Paste an access key that can write to the bucket you want to use. Deleting files from the bucket later also needs s3:DeleteObject.")
+                text: "Rabbithole sends your files to your own AWS account. Paste an access key that can write to the bucket you want to use. Downloading files back also needs s3:GetObject, and deleting them from the bucket s3:DeleteObject. Optional: s3:ListAllMyBuckets and s3:CreateBucket, to list and create buckets here.")
             SetupField(label: "Access key ID") {
                 BoxTextField(text: $model.accessKeyID)
             }
@@ -198,10 +198,11 @@ private struct BucketPane: View {
         VStack(alignment: .leading, spacing: 0) {
             PaneHeading(
                 title: "Choose where your files go",
-                text: "Type the name of a bucket in your account. Files dropped on the menu bar window go into the quick uploads folder inside it.")
-            SetupField(label: "Bucket", note: "Exactly as it is named in AWS.") {
-                BoxTextField(text: $model.bucket)
+                text: "Pick one of the buckets in your account. Files dropped on the menu bar window go into the quick uploads folder inside it.")
+            SetupField(label: "Bucket", note: model.buckets.note) {
+                BucketSelector(model: model.buckets, style: .setup, typedName: $model.bucket)
             }
+            .task { await model.buckets.loadIfNeeded() }
             SetupField(label: "Quick uploads folder") {
                 BoxTextField(text: $model.folder)
             }

@@ -11,9 +11,10 @@ struct Shortcut: Equatable, Sendable {
     static let standard = Shortcut(keyCode: 0x20, carbonModifiers: 0x0800 | 0x0100, display: "⌥⌘U")
 }
 
-/// App options kept in preferences. Nothing here is secret. Options whose function the engine
-/// does not have yet are still stored and restored, so the choice is there when it arrives;
-/// the ones the engine acts on are marked below.
+/// App options kept in preferences. Nothing here is secret. The two options whose function
+/// the engine does not have yet (automatic retry and its count) are still stored and
+/// restored, so the choice is there when it arrives; how the others reach the engine is
+/// marked below.
 @MainActor
 @Observable
 final class AppPreferences {
@@ -36,14 +37,21 @@ final class AppPreferences {
     /// Comma-separated name patterns left out when a folder is walked.
     var skipPatterns: String { didSet { defaults.set(skipPatterns, forKey: Key.skip) } }
 
-    // Uploads: stored only, the engine does not act on them yet.
+    // Uploads: sent to the daemon each time it is configured, as `resume_interrupted`.
     var resumeAutomatically: Bool { didSet { defaults.set(resumeAutomatically, forKey: Key.resume) } }
-    var retryFailed: Bool { didSet { defaults.set(retryFailed, forKey: Key.retry) } }
-    var retryCount: Int { didSet { defaults.set(retryCount, forKey: Key.retryCount) } }
+
+    // Uploads: sent to the daemon as its options, after it is configured and whenever one
+    // changes, see `daemonOptions(onBattery:)`. "Pause on battery power" becomes the hold
+    // while the Mac runs on battery.
     var limitSpeed: Bool { didSet { defaults.set(limitSpeed, forKey: Key.limitSpeed) } }
     var speedLimitMBps: Int { didSet { defaults.set(speedLimitMBps, forKey: Key.speedLimit) } }
     var pauseOnBattery: Bool { didSet { defaults.set(pauseOnBattery, forKey: Key.battery) } }
     var checkAfterSending: Bool { didSet { defaults.set(checkAfterSending, forKey: Key.verify) } }
+
+    // Uploads: stored only. The engine has no automatic retry yet, so these two are kept
+    // and restored but change nothing.
+    var retryFailed: Bool { didSet { defaults.set(retryFailed, forKey: Key.retry) } }
+    var retryCount: Int { didSet { defaults.set(retryCount, forKey: Key.retryCount) } }
 
     init(defaults: UserDefaults) {
         self.defaults = defaults

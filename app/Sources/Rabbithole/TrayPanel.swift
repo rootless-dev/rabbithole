@@ -202,6 +202,23 @@ enum FilePicker {
         return response == .OK ? panel.urls : []
     }
 
+    /// Lets the user pick the folder a download goes into, starting in Downloads. Nil when
+    /// the panel was cancelled.
+    @MainActor
+    static func chooseDownloadFolder() async -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        panel.message = "Choose where to download to"
+        panel.prompt = "Download"
+        NSApp.activate()
+        let response = await panel.begin()
+        return response == .OK ? panel.url : nil
+    }
+
     /// The files and folders currently copied in Finder, if any. Other clipboard contents give nothing.
     @MainActor
     static func clipboardFiles() -> [URL] {

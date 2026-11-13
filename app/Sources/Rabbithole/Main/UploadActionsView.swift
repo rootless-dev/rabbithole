@@ -4,18 +4,43 @@ import SwiftUI
 // MARK: - Choosing an action
 
 extension MainContext {
-    /// A menu entry was chosen. Try again asks the daemon at once; the other two open their
-    /// confirmation first. The only file of a single-file upload stands for the upload.
+    /// The target the daemon is asked about: the only file of a single-file upload stands
+    /// for the upload.
+    func resolved(_ target: UploadActionTarget) -> UploadActionTarget {
+        uploads[target.uploadID]?.kind == .singleFile ? .upload(id: target.uploadID) : target
+    }
+
+    /// The download shown for a target: the latest one of the upload or of the file.
+    func download(of target: UploadActionTarget) -> DownloadSnapshot? {
+        downloads[resolved(target)]
+    }
+
+    /// A menu entry was chosen. Removing and deleting open their confirmation first, and
+    /// Download… asks for a folder; everything else asks the daemon at once.
     func choose(_ action: UploadAction, for target: UploadActionTarget) {
         model.actionsMenu = nil
         guard let record = uploads[target.uploadID] else { return }
-        var target = target
-        if record.kind == .singleFile { target = .upload(id: record.id) }
+        let target = resolved(target)
 
         let intent: RemovalPrompt.Intent
         switch action {
         case .retry:
             actions.retryFiles(target.uploadID, target.fileIndexes)
+            return
+        case .pause:
+            actions.pauseUpload(record.id)
+            return
+        case .resume:
+            actions.resumeUpload(record.id)
+            return
+        case .cancelUpload:
+            actions.cancelUpload(record.id)
+            return
+        case .download:
+            actions.download(target)
+            return
+        case .cancelDownload:
+            actions.cancelDownload(target)
             return
         case .remove: intent = .remove
         case .deleteFromBucket: intent = .delete
@@ -46,8 +71,8 @@ struct ActionsAnchorKey: PreferenceKey {
 }
 
 /// The button with three vertical dots that opens the actions of an upload or of a file.
-/// Without actions (the upload is sending or waiting) it draws nothing and keeps its place,
-/// so the rows of a list stay aligned.
+/// Without actions (a file that is being sent, waits or is paused) it draws nothing and
+/// keeps its place, so the rows of a list stay aligned.
 struct MoreButton: View {
     static let side: CGFloat = 26
 
@@ -97,7 +122,9 @@ struct MoreButton: View {
 
 // MARK: - The menu
 
-/// The menu's card: one row per action, a rule after Try again, Delete from bucket in red.
+/// The menu's card: one row per action, a rule between what is done with the upload (Try
+/// again, Download…) and what takes it away (Remove from history…, Delete from bucket…),
+/// and Cancel upload and Delete from bucket in red.
 struct ActionsMenuView: View {
     let menu: OpenActionsMenu
     let hover: (UploadAction, Bool) -> Void
@@ -105,15 +132,21 @@ struct ActionsMenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(menu.actions.enumerated()), id: \.offset) { _, action in
+            ForEach(Array(menu.actions.enumerated()), id: \.offset) { index, action in
                 let isHot = menu.highlighted == action
+                if action == .remove, index > 0 {
+                    Rectangle().fill(Theme.line)
+                        .frame(height: 1)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                }
                 Button {
                     choose(action)
                 } label: {
                     Text(action.title)
                         .lineLimit(1)
                         .foregroundStyle(
-                            isHot ? Theme.onAccent : action == .deleteFromBucket ? Theme.bad : Theme.ink
+                            isHot ? Theme.onAccent : action.isDestructive ? Theme.bad : Theme.ink
                         )
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
@@ -123,12 +156,6 @@ struct ActionsMenuView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hover(action, $0) }
-                if action == .retry, menu.actions.count > 1 {
-                    Rectangle().fill(Theme.line)
-                        .frame(height: 1)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                }
             }
         }
         .font(.system(size: 13))

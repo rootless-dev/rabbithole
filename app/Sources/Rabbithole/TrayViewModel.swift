@@ -13,6 +13,9 @@ enum TrayState: Equatable {
     case starting
     case idle
     case uploading(remaining: Int, total: Int, fraction: Double)
+    /// The batch is not over but nothing is being sent: every upload left in it is paused,
+    /// by the user or (`onHold`) because the Mac runs on battery.
+    case paused(remaining: Int, total: Int, fraction: Double, reason: PauseReason)
     case finished
     case failed(String)
 }
@@ -36,6 +39,8 @@ final class TrayViewModel {
     private(set) var feedbackItemCount = 1
     /// The upload history as the daemon tells it; the main window and "Recent uploads" read it.
     let uploads: UploadStore
+    /// The downloads the daemon is running or ran since it started.
+    let downloads: DownloadStore
 
     /// True when dropping or choosing files can start an upload right now.
     var acceptsUploads: Bool { refusalForState() == nil }
@@ -49,6 +54,8 @@ final class TrayViewModel {
         case .starting: "Starting…"
         case .idle: "Ready"
         case .uploading(let remaining, let total, _): "\(remaining) of \(total) files left"
+        case .paused(let remaining, let total, _, let reason):
+            "\(UploadText.pausedLead(reason)), \(remaining) of \(total) files left"
         case .finished: "Upload finished"
         case .failed(let message): message
         }
@@ -72,9 +79,11 @@ final class TrayViewModel {
         client: DaemonClient?,
         sleep: @escaping (Duration) async throws -> Void,
         uploads: UploadStore? = nil,
+        downloads: DownloadStore? = nil,
         makeRequest: @escaping ([String]) -> EnqueueRequest = { EnqueueRequest(paths: $0) }
     ) {
         self.uploads = uploads ?? UploadStore()
+        self.downloads = downloads ?? DownloadStore()
         self.client = client
         self.makeRequest = makeRequest
         self.sleep = sleep
@@ -192,17 +201,93 @@ final class TrayViewModel {
         if fileIndexes.isEmpty { forget(uploadID) }
     }
 
+    // MARK: Pause, resume, cancel
+
+    /// Stops sending an upload and keeps what was sent. The daemon's snapshot shows it paused.
+    func pause(uploadID: String) async {
+        await act(on: uploadID) { try await $0.pause(uploadID: uploadID) }
+    }
+
+    /// Puts an upload the user paused back in the queue.
+    func resume(uploadID: String) async {
+        await act(on: uploadID) { try await $0.resume(uploadID: uploadID) }
+    }
+
+    /// Stops an upload for good. What it already sent stays in the bucket and the history.
+    func cancel(uploadID: String) async {
+        await act(on: uploadID) { try await $0.cancel(uploadID: uploadID) }
+    }
+
+    /// Asks the daemon to do something to one upload. A refusal is noted on the upload, so
+    /// its row says why until its state changes; an upload the daemon no longer knows is
+    /// forgotten here too.
+    private func act(on uploadID: String, _ call: (DaemonClient) async throws -> Void) async {
+        uploads.noteActionError(nil, for: uploadID)
+        guard let client else {
+            uploads.noteActionError(RemovalSheetModel.message(for: DaemonError.unavailable), for: uploadID)
+            return
+        }
+        do {
+            try await call(client)
+        } catch DaemonError.notFound {
+            forget(uploadID)
+        } catch {
+            uploads.noteActionError(RemovalSheetModel.message(for: error), for: uploadID)
+        }
+    }
+
+    // MARK: Downloads
+
+    /// Copies an upload, or one file of it, from the bucket into `destination`. Progress
+    /// and the end arrive on the downloads stream; a refusal is shown where a failed
+    /// download is. Returns the download's id, or nil when it was not started.
+    @discardableResult
+    func download(_ target: UploadActionTarget, to destination: String) async -> String? {
+        guard let client else {
+            downloads.refused(target, message: RemovalSheetModel.message(for: DaemonError.unavailable))
+            return nil
+        }
+        do {
+            let id = try await client.startDownload(
+                uploadID: target.uploadID, fileIndexes: target.fileIndexes, destinationDir: destination)
+            downloads.started(id: id, target: target)
+            return id
+        } catch DaemonError.notFound where target.fileIndexes.isEmpty {
+            forget(target.uploadID)
+        } catch {
+            downloads.refused(target, message: RemovalSheetModel.message(for: error))
+        }
+        return nil
+    }
+
+    /// Stops the download of `target` that is waiting or running, if there is one.
+    func cancelDownload(_ target: UploadActionTarget) async {
+        guard let client, let download = downloads.active(target) else { return }
+        // A download that is already over on the daemon's side says so on the stream.
+        try? await client.cancelDownload(downloadID: download.id)
+    }
+
+    /// Feeds one snapshot from the daemon's downloads stream to the download store.
+    func apply(_ snapshot: DownloadSnapshot) {
+        downloads.apply(snapshot)
+    }
+
     /// The upload left the history: every list and the current batch stop showing it.
     private func forget(_ id: String) {
         uploads.remove(id)
-        guard tracker.remove(id) else { return }
+        downloads.forget(uploadID: id)
+        if tracker.remove(id) { batchChanged() }
+    }
+
+    /// The batch gained, lost or changed an upload: the state follows it. A batch that is
+    /// left empty (its uploads were removed or canceled) has nothing more to report.
+    private func batchChanged() {
         if tracker.total > 0 {
             refreshState()
             return
         }
-        // The batch is empty now: there is no upload left to report on.
         switch state {
-        case .uploading, .finished, .failed:
+        case .uploading, .paused, .finished, .failed:
             state = settingsNotApplied ? .failed(Self.settingsNotAppliedMessage) : .idle
         default:
             break
@@ -222,7 +307,7 @@ final class TrayViewModel {
             break
         case .starting, .unavailable, .notConfigured, .settingsUnreadable, .idle:
             break
-        case .failed, .uploading, .finished, .restartRequired:
+        case .failed, .uploading, .paused, .finished, .restartRequired:
             return
         }
         state = settings == nil ? .notConfigured : .idle
@@ -288,7 +373,7 @@ final class TrayViewModel {
         }
         uploads.apply(snapshot)
         if tracker.apply(snapshot) {
-            refreshState()
+            batchChanged()
         }
     }
 
@@ -301,6 +386,7 @@ final class TrayViewModel {
             // The new daemon has no settings until `configured(with:)` is called.
             tracker.interrupted()
             uploads.interrupt()
+            downloads.clear()
             settingsNotApplied = false
             switch state {
             case .notConfigured, .settingsUnreadable, .restartRequired: break
@@ -309,6 +395,7 @@ final class TrayViewModel {
         case .unavailable:
             tracker.interrupted()
             uploads.interrupt()
+            downloads.clear()
             settingsNotApplied = false
             state = .restartRequired
         }
@@ -323,7 +410,10 @@ final class TrayViewModel {
         default:
             break
         }
-        if tracker.isActive {
+        if let reason = tracker.pause {
+            state = .paused(
+                remaining: tracker.remaining, total: tracker.total, fraction: tracker.fraction, reason: reason)
+        } else if tracker.isActive {
             state = .uploading(
                 remaining: tracker.remaining, total: tracker.total, fraction: tracker.fraction)
         } else if let error = tracker.firstError {

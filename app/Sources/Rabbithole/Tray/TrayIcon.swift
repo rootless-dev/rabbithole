@@ -10,7 +10,10 @@ enum TrayIcon {
     static let steps = 32
 
     /// The progress the icon shows for a tray state: a fraction while uploading, nothing
-    /// otherwise, so the icon is back to plain ears as soon as the uploads end.
+    /// otherwise, so the icon is back to plain ears as soon as the uploads end. A paused
+    /// batch also shows the plain ears: the bar says "sending now", and a bar that stands
+    /// still in the menu bar reads as an upload that is stuck. The tray window says that
+    /// the uploads are paused and how far they got.
     static func progress(for state: TrayState) -> Double? {
         if case .uploading(_, _, let fraction) = state { return fraction }
         return nil

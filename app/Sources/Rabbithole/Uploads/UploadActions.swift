@@ -25,37 +25,61 @@ enum UploadActionTarget: Hashable, Sendable {
 
 /// The entries of the actions menu, in the order they are listed.
 enum UploadAction: Equatable, Sendable {
-    case retry, remove, deleteFromBucket
+    case pause, resume, cancelUpload, retry, download, cancelDownload, remove, deleteFromBucket
 
     var title: String {
         switch self {
+        case .pause: "Pause"
+        case .resume: "Resume"
+        case .cancelUpload: "Cancel upload"
         case .retry: "Try again"
+        case .download: "Download…"
+        case .cancelDownload: "Cancel download"
         case .remove: "Remove from history…"
         case .deleteFromBucket: "Delete from bucket…"
         }
     }
 
-    /// What applies to an upload. One that is sending or waiting has no actions yet: Pause
-    /// and Cancel upload stay in the detail. Try again needs something that failed, and
-    /// Delete from bucket needs something of the upload in the bucket.
-    static func available(for record: UploadRecord) -> [UploadAction] {
-        guard !record.isActive else { return [] }
-        return available(
-            failed: record.state == .failed || record.filesFailed > 0,
-            inBucket: record.filesInBucket > 0)
-    }
+    /// The entries the menu writes in red: the ones that stop or destroy something.
+    var isDestructive: Bool { self == .cancelUpload || self == .deleteFromBucket }
 
-    /// What applies to one file of an upload: nothing while the file is sent or waits.
-    static func available(for file: FileSnapshot) -> [UploadAction] {
-        switch file.state {
-        case .queued, .uploading: []
-        case .failed: available(failed: true, inBucket: false)
-        case .finished: available(failed: false, inBucket: true)
+    /// What applies to an upload, by state, as the approved mockup lists it:
+    /// - being downloaded: Cancel download, and nothing else until it ends;
+    /// - sending or waiting: Pause, Cancel upload;
+    /// - paused by the user: Resume, Cancel upload;
+    /// - paused on battery: Cancel upload (it resumes by itself, and cannot be paused twice);
+    /// - canceled or failed: Try again, Download…, Remove from history…, Delete from bucket…;
+    /// - finished: Download…, Remove from history…, Delete from bucket….
+    /// Try again needs something that was not sent, and Download… and Delete from bucket…
+    /// need something of the upload in the bucket.
+    static func available(for record: UploadRecord, isDownloading: Bool = false) -> [UploadAction] {
+        if isDownloading { return [.cancelDownload] }
+        switch record.state {
+        case .queued, .uploading:
+            return [.pause, .cancelUpload]
+        case .paused:
+            return record.pauseReason == .byUser ? [.resume, .cancelUpload] : [.cancelUpload]
+        case .finished, .failed, .canceled:
+            return ended(
+                canRetry: record.state != .finished || record.filesFailed > 0,
+                inBucket: record.filesInBucket > 0)
         }
     }
 
-    private static func available(failed: Bool, inBucket: Bool) -> [UploadAction] {
-        var actions: [UploadAction] = failed ? [.retry] : []
+    /// What applies to one file of an upload: nothing while the file is sent, waits or is
+    /// paused, since pausing and cancelling are about the whole upload.
+    static func available(for file: FileSnapshot, isDownloading: Bool = false) -> [UploadAction] {
+        if isDownloading { return [.cancelDownload] }
+        switch file.state {
+        case .queued, .uploading, .paused: return []
+        case .failed, .canceled: return ended(canRetry: true, inBucket: false)
+        case .finished: return ended(canRetry: false, inBucket: true)
+        }
+    }
+
+    private static func ended(canRetry: Bool, inBucket: Bool) -> [UploadAction] {
+        var actions: [UploadAction] = canRetry ? [.retry] : []
+        if inBucket { actions.append(.download) }
         actions.append(.remove)
         if inBucket { actions.append(.deleteFromBucket) }
         return actions
@@ -67,7 +91,7 @@ extension UploadRecord {
     var filesInBucket: Int {
         switch state {
         case .finished: max(filesFinished, kind == .singleFile ? 1 : 0)
-        case .queued, .uploading, .failed: filesFinished
+        case .queued, .uploading, .failed, .paused, .canceled: filesFinished
         }
     }
 }
@@ -107,6 +131,8 @@ struct RemovalPrompt: Equatable, Sendable {
     let intent: Intent
     /// The checkbox of "Remove from history": also delete from the bucket.
     var alsoDelete = false
+    /// The upload or file was canceled, not failed: said so when nothing of it was sent.
+    var wasCanceled = false
 
     static let warning = "Files deleted from the bucket cannot be recovered."
 
@@ -131,7 +157,9 @@ struct RemovalPrompt: Equatable, Sendable {
         switch subject {
         case .upload:
             guard hasSomethingInBucket else {
-                return "This upload failed, so there is nothing in the bucket to delete."
+                return wasCanceled
+                    ? "This upload was canceled before anything was sent, so there is nothing in the bucket to delete."
+                    : "This upload failed, so there is nothing in the bucket to delete."
             }
             let files = bucketFiles
             switch intent {
@@ -144,7 +172,9 @@ struct RemovalPrompt: Equatable, Sendable {
             }
         case .file(_, let uploadName, let inBucket):
             guard inBucket else {
-                return "This file failed, so there is nothing in the bucket to delete."
+                return wasCanceled
+                    ? "This file was not sent, so there is nothing in the bucket to delete."
+                    : "This file failed, so there is nothing in the bucket to delete."
             }
             switch intent {
             case .delete:
@@ -219,7 +249,7 @@ extension RemovalPrompt {
             subject: .upload(
                 name: UploadText.name(record), filesInBucket: record.filesInBucket,
                 filesTotal: max(record.filesTotal, 1)),
-            intent: intent)
+            intent: intent, wasCanceled: record.state == .canceled)
     }
 
     /// The confirmation for one file of `record`.
@@ -229,7 +259,7 @@ extension RemovalPrompt {
             subject: .file(
                 name: (file.relativePath as NSString).lastPathComponent, uploadName: UploadText.name(record),
                 inBucket: file.state == .finished),
-            intent: intent)
+            intent: intent, wasCanceled: file.state == .canceled)
     }
 }
 

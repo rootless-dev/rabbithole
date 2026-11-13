@@ -27,7 +27,7 @@ struct SettingsView: View {
                         switch context.model.settingsPane {
                         case .app: AppPane(context: context)
                         case .uploads: UploadsPane(preferences: context.preferences)
-                        case .destination: DestinationPane(account: context.account)
+                        case .destination: DestinationPane(account: context.account, buckets: context.buckets)
                         case .aws: AccountPane(context: context)
                         case .security: SecurityPane(actions: context.actions)
                         }
@@ -305,7 +305,9 @@ private struct ShortcutRecorder: View {
 }
 
 /// Upload behavior. "Uploads at the same time" and "Skip these files" go to the daemon with
-/// every upload; the engine does not act on the others yet, which are stored and restored.
+/// every upload; resuming goes with its configuration; the speed limit, pausing on battery
+/// and checking files are its options, sent again whenever one changes. Only "Retry failed
+/// uploads" and its count are stored without effect: the engine has no automatic retry yet.
 private struct UploadsPane: View {
     let preferences: AppPreferences
 
@@ -353,16 +355,19 @@ private struct UploadsPane: View {
 
 private struct DestinationPane: View {
     let account: AccountModel
+    let buckets: BucketListModel
     @State private var storageClass = "Standard"
     @State private var whenExists = "Keep both"
 
     var body: some View {
         @Bindable var account = account
-        SettingRow(title: "Bucket", isFirst: true) {
-            SmallField(text: $account.bucket, width: 200, prompt: "Bucket name") {
+        SettingRow(title: "Bucket", note: buckets.note, isFirst: true) {
+            BucketSelector(model: buckets, style: .settings, typedName: $account.bucket) {
                 Task { await account.commitDestination() }
             }
         }
+        // The saved key is read after the account is, so the list follows a replaced key.
+        .task(id: account.summary) { await buckets.loadIfNeeded() }
         SettingRow(title: "Quick uploads folder", note: "Where files dropped on the tray window go.") {
             SmallField(text: $account.folder, width: 200) {
                 Task { await account.commitDestination() }
@@ -403,7 +408,7 @@ private struct AccountPane: View {
         let status = ConnectionStatus(context: context)
         SettingRow(
             title: "Access key ID",
-            note: "Needs permission to write to the bucket; s3:DeleteObject only for deleting from it.",
+            note: "Needs permission to write to the bucket; s3:GetObject for downloading and s3:DeleteObject for deleting from it. Optional: s3:ListAllMyBuckets and s3:CreateBucket, to list and create buckets here.",
             isFirst: true
         ) {
             if replacing {

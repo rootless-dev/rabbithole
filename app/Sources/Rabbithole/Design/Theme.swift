@@ -51,6 +51,15 @@ enum Theme {
     static let hoverLine = dynamic(0x443BBC, 0xB2A6FF, 0.51, 0.505)
     /// Shadow under the actions menu and the confirmation sheets.
     static let shadow = dynamic(0x14183C, 0x000000, 0.32, 0.55)
+    /// A paused upload: its ring and its progress line.
+    static let hold = dynamic(0x9A6A12, 0xF0C267)
+    /// A download: its ring and its progress line.
+    static let down = dynamic(0x1479A8, 0x6CC8EE)
+    /// Background of the box that says why a bucket could not be created.
+    static let badTint = dynamic(0xC2372F, 0xFF8A80, 0.10, 0.10)
+    /// The glow around the focused, or refused, name field of "Create a new bucket".
+    static let accentGlow = dynamic(0x4A3FD0, 0xA99BFF, 0.25, 0.25)
+    static let badGlow = dynamic(0xC2372F, 0xFF8A80, 0.18, 0.18)
     static let warn = dynamic(0x8A5A00, 0xFFD98A)
     static let warnBackground = dynamic(0xFFF3D6, 0xFFBE46, 1, 0.14)
 

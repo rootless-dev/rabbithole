@@ -89,6 +89,15 @@ final class AccountModel {
         }
     }
 
+    /// A bucket was chosen in the selector, or created: it is saved at once, together with
+    /// its region when that is known, because the daemon has to reach the bucket where it
+    /// lives.
+    func choose(_ chosen: Bucket) async {
+        bucket = chosen.name
+        if !chosen.region.isEmpty { region = chosen.region }
+        await commitDestination()
+    }
+
     /// Replaces the saved key pair. Returns true when it was saved.
     func replaceCredentials(accessKeyID: String, secret: String) async -> Bool {
         guard !isBusy else { return false }

@@ -13,6 +13,8 @@ struct TrayPresentation: Equatable {
         let tone: StatusTone
         /// Progress from 0 to 1 while uploading; nil hides the percentage and the bar.
         let fraction: Double?
+        /// The uploads are paused: the bar stands still in the paused color.
+        var isPaused = false
     }
 
     let topBlock: TopBlock
@@ -39,8 +41,12 @@ struct TrayPresentation: Equatable {
             topBlock = .drop
         }
 
+        // A paused batch is still a queue: what is dropped now waits with it.
         let isUploading: Bool
-        if case .uploading = state { isUploading = true } else { isUploading = false }
+        switch state {
+        case .uploading, .paused: isUploading = true
+        default: isUploading = false
+        }
 
         switch feedback {
         case .hovering:
@@ -64,6 +70,8 @@ struct TrayPresentation: Equatable {
         switch state {
         case .uploading(_, _, let fraction):
             status = Status(text: statusText, tone: .normal, fraction: fraction)
+        case .paused(_, _, let fraction, _):
+            status = Status(text: statusText, tone: .normal, fraction: fraction, isPaused: true)
         case .idle, .notConfigured:
             status = condition == .offline
                 ? Status(text: ServiceCondition.offlineMessage, tone: .warn, fraction: nil) : nil
@@ -75,7 +83,7 @@ struct TrayPresentation: Equatable {
 
         let working: Bool
         switch state {
-        case .idle, .uploading, .finished, .failed: working = true
+        case .idle, .uploading, .paused, .finished, .failed: working = true
         case .notConfigured, .unavailable, .restartRequired, .settingsUnreadable, .starting: working = false
         }
         uploadsEnabled = working && condition != .keyRejected

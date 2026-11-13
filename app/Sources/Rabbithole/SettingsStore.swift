@@ -48,6 +48,16 @@ final class SettingsStore: Sendable {
         try credentials.load()?.accessKeyID
     }
 
+    /// The saved key pair with the saved region, for the calls that list and create buckets.
+    /// Nil when no credentials are saved. Reads the keychain.
+    func loadAccess() throws -> AWSAccess? {
+        guard let pair = try credentials.load() else { return nil }
+        let region = defaults.string(forKey: Self.regionKey) ?? ""
+        return AWSAccess(
+            accessKeyID: pair.accessKeyID, secretAccessKey: pair.secret,
+            region: region.isEmpty ? "us-east-1" : region)
+    }
+
     /// Saves trimmed values. Callers are expected to have run `validate` first.
     func save(_ s: AWSSettings) throws {
         try credentials.save(

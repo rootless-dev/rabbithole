@@ -8,9 +8,15 @@ struct MainContext {
     let account: AccountModel
     let preferences: AppPreferences
     let loginItem: LoginItemModel
+    /// The bucket selector of Settings › Destination, asking with the saved key.
+    let buckets: BucketListModel
     let actions: AppActions
 
     var uploads: UploadLedger { tray.uploads.ledger }
+    var downloads: DownloadStore { tray.downloads }
+
+    /// The bucket selector on screen: the setup's while it is showing, else the settings'.
+    var activeBuckets: BucketListModel { model.setup?.buckets ?? buckets }
 }
 
 /// The main window: the first-launch setup until an account is connected, then the glass
@@ -43,6 +49,16 @@ struct MainView: View {
                 }
             }
         }
+        // The open bucket selector is drawn over everything too, in Settings and in the setup.
+        .overlayPreferenceValue(BucketAnchorKey.self) { anchor in
+            BucketMenuLayer(
+                model: context.activeBuckets, anchor: anchor,
+                create: {
+                    context.model.createBucket = context.activeBuckets.makeCreateModel { [weak model] in
+                        model?.createBucket = nil
+                    }
+                })
+        }
         .font(.system(size: 13))
         .foregroundStyle(Theme.ink)
         .ignoresSafeArea()
@@ -51,6 +67,12 @@ struct MainView: View {
                 .presentationBackground(Theme.card)
                 .presentationCornerRadius(RemovalSheet.cornerRadius)
                 .interactiveDismissDisabled(removal.isWorking)
+        }
+        .sheet(item: $model.createBucket) { create in
+            CreateBucketSheet(model: create)
+                .presentationBackground(Theme.card)
+                .presentationCornerRadius(RemovalSheet.cornerRadius)
+                .interactiveDismissDisabled(create.isWorking)
         }
     }
 
@@ -189,7 +211,7 @@ struct OverviewView: View {
                 }
                 UploadList(
                     records: model.overviewQuery.apply(to: ledger.ordered), topPadding: 10,
-                    stopped: stopped, menus: model,
+                    stopped: stopped, menus: model, context: context,
                     line: {
                         stopped.contains($0.id)
                             ? UploadText.stoppedLine($0, condition: ledger.condition)
@@ -221,6 +243,15 @@ struct SummaryCards: View {
             if case .uploading(let remaining, let total, let fraction) = state {
                 SummaryCard(label: "Uploading now", value: "\(remaining) of \(total) files left") {
                     ThinBar(fraction: fraction).padding(.top, 6)
+                }
+            } else if case .paused(let remaining, let total, let fraction, let reason) = state {
+                // Nothing is being sent, so the card says so instead of "Uploading now", and
+                // its line stands still in the paused color.
+                SummaryCard(
+                    label: reason == .onHold ? "Paused on battery" : "Paused",
+                    value: "\(remaining) of \(total) files left"
+                ) {
+                    ThinBar(fraction: fraction, color: Theme.hold).padding(.top, 6)
                 }
             } else {
                 SummaryCard(label: "Uploading now", value: "Nothing", isNone: true) { EmptyView() }
@@ -312,6 +343,8 @@ struct UploadList<Empty: View>: View {
     var stopped: Set<String> = []
     /// Where the rows' actions menus open.
     let menus: MainWindowModel
+    /// Where the rows find their downloads and the way to show one in Finder.
+    let context: MainContext
     let line: (UploadRecord) -> UploadText.Line
     let open: (UploadRecord) -> Void
     @ViewBuilder var empty: Empty
@@ -327,7 +360,8 @@ struct UploadList<Empty: View>: View {
                         // anywhere else on it opens the upload.
                         UploadRow(
                             record: record, line: line(record), isStopped: stopped.contains(record.id),
-                            menus: menus
+                            menus: menus, download: context.downloads[.upload(id: record.id)],
+                            showInFinder: context.actions.showInFinder
                         )
                         .onTapGesture { open(record) }
                         .accessibilityAddTraits(.isButton)
@@ -342,7 +376,9 @@ struct UploadList<Empty: View>: View {
 }
 
 /// One upload: its thumbnail inside the progress ring, the name, the local path, a progress
-/// line and, once it has ended, the three dots that open its actions.
+/// line and the three dots that open what can be done with it in its state. While it is
+/// being downloaded the ring and the line follow the download, in blue; a download that
+/// ended adds a second line.
 struct UploadRow: View {
     let record: UploadRecord
     let line: UploadText.Line
@@ -350,16 +386,21 @@ struct UploadRow: View {
     var isStopped = false
     /// Where the actions menu opens; nil draws the row without the button's column.
     var menus: MainWindowModel?
+    /// The latest download of the upload, if it was downloaded since the daemon started.
+    var download: DownloadSnapshot?
+    var showInFinder: (String) -> Void = { _ in }
     @State private var hovered = false
 
     var body: some View {
         let target = UploadActionTarget.upload(id: record.id)
-        let actions = UploadAction.available(for: record)
+        let downloading = download.flatMap { $0.state.isActive ? $0 : nil }
+        let actions = UploadAction.available(for: record, isDownloading: downloading != nil)
         let menuIsOpen = menus?.actionsMenu?.target == target
+        let line = downloading.flatMap { UploadText.downloadLine($0) } ?? line
         HStack(spacing: 12) {
             ProgressRing(
-                fraction: isStopped ? record.fraction : record.ringFraction,
-                color: isStopped ? Theme.muted : record.ringColor
+                fraction: downloading?.fraction ?? (isStopped ? record.fraction : record.ringFraction),
+                color: downloading != nil ? Theme.down : isStopped ? Theme.muted : record.ringColor
             ) {
                 UploadThumbnail(record: record, side: 30)
             }
@@ -382,6 +423,9 @@ struct UploadRow: View {
                     .monospacedDigit()
                     .foregroundStyle(line.tone.color)
                     .lineLimit(1)
+                if let download, downloading == nil {
+                    DownloadResultLine(download: download, showInFinder: showInFinder)
+                }
             }
             if let menus {
                 MoreButton(target: target, actions: actions, menus: menus)
@@ -404,6 +448,30 @@ struct UploadRow: View {
     }
 }
 
+/// The line a download leaves on its upload or file once it ended: "Downloaded to
+/// ~/Downloads" with the link that shows the result in Finder, or why it failed.
+struct DownloadResultLine: View {
+    let download: DownloadSnapshot
+    let showInFinder: (String) -> Void
+
+    var body: some View {
+        if let line = UploadText.downloadLine(download) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(line.text)
+                    .foregroundStyle(line.tone.color)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if download.state == .finished {
+                    Button("Show in Finder") { showInFinder(download.destinationPath) }
+                        .buttonStyle(LinkButtonStyle(fontSize: 12))
+                        .fixedSize()
+                }
+            }
+            .font(.system(size: 12))
+        }
+    }
+}
+
 extension UploadText.Tone {
     var color: Color {
         switch self {
@@ -411,24 +479,30 @@ extension UploadText.Tone {
         case .ok: Theme.ok
         case .warn: Theme.warn
         case .bad: Theme.bad
+        case .hold: Theme.hold
+        case .down: Theme.down
         }
     }
 }
 
 extension UploadRecord {
-    /// A failed upload shows a full ring in the failure color, as History draws it.
+    /// A failed upload shows a full ring in the failure color, as History draws it. Paused
+    /// and canceled uploads keep how far they got.
     var ringFraction: Double { state == .failed ? 1 : fraction }
 
     var ringColor: Color { state.color }
 }
 
 extension UploadState {
-    /// The color of a ring or progress line in this state.
+    /// The color of a ring or progress line in this state: violet while sending, green
+    /// when finished, red when failed, amber when paused and grey when canceled.
     var color: Color {
         switch self {
         case .queued, .uploading: Theme.accent
         case .finished: Theme.ok
         case .failed: Theme.bad
+        case .paused: Theme.hold
+        case .canceled: Theme.muted
         }
     }
 }

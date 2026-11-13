@@ -9,7 +9,7 @@ import Observation
 /// from one group to another by binary search.
 struct UploadFileList: Sendable {
     /// The groups in the order they are listed.
-    static let stateOrder: [UploadState] = [.uploading, .failed, .queued, .finished]
+    static let stateOrder: [UploadState] = [.uploading, .failed, .queued, .paused, .canceled, .finished]
 
     private var files: [Int: FileSnapshot] = [:]
     private var groups: [UploadState: [Int]] = [:]
@@ -47,8 +47,10 @@ struct UploadFileList: Sendable {
         case .all: Self.stateOrder.flatMap { groups[$0] ?? [] }
         case .inProgress: groups[.uploading] ?? []
         case .waiting: groups[.queued] ?? []
+        case .paused: groups[.paused] ?? []
         case .finished: groups[.finished] ?? []
         case .failed: groups[.failed] ?? []
+        case .canceled: groups[.canceled] ?? []
         }
     }
 

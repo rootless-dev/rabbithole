@@ -22,8 +22,42 @@ final class StubCredentialStore: CredentialStore, Sendable {
     }
 }
 
+/// The calls most fakes of the test target have nothing to say about. A fake that cares
+/// about one declares it itself; the app's own client implements every one.
+extension DaemonClient {
+    func setOptions(_ options: DaemonOptions) async throws {}
+    func pause(uploadID: String) async throws {}
+    func resume(uploadID: String) async throws {}
+    func cancel(uploadID: String) async throws {}
+    func startDownload(uploadID: String, fileIndexes: [Int], destinationDir: String) async throws -> String { "dl" }
+    func cancelDownload(downloadID: String) async throws {}
+    func watchDownloads() -> AsyncThrowingStream<DownloadSnapshot, Error> {
+        AsyncThrowingStream { _ in }
+    }
+    func listBuckets(_ access: AWSAccess) async throws -> [Bucket] { [] }
+    func createBucket(_ access: AWSAccess, name: String) async throws {}
+}
+
 final class StubDaemonClient: DaemonClient, Sendable {
+    /// A call about one upload or download, as the daemon would receive it.
+    enum Call: Hashable {
+        case pause(String)
+        case resume(String)
+        case cancel(String)
+        case startDownload(uploadID: String, fileIndexes: [Int], destinationDir: String)
+        case cancelDownload(String)
+        case listBuckets(region: String)
+        case createBucket(name: String, region: String)
+    }
+
     private struct Calls {
+        var log: [Call] = []
+        var options: [DaemonOptions] = []
+        var actionError: DaemonError?
+        var buckets: [Bucket] = []
+        var listError: DaemonError?
+        var createError: DaemonError?
+        var nextDownload = 1
         var requests: [EnqueueRequest] = []
         var nextID = 1
         var enqueueError: DaemonError?
@@ -50,6 +84,58 @@ final class StubDaemonClient: DaemonClient, Sendable {
     }
 
     private let calls = Mutex(Calls())
+
+    /// Every pause, resume, cancel, download and bucket call, in order, failed ones included.
+    var log: [Call] { calls.withLock { $0.log } }
+    /// Every SetOptions call, in order.
+    var options: [DaemonOptions] { calls.withLock { $0.options } }
+
+    /// Pause, resume, cancel and the download calls fail with `error` until it is nil.
+    func failActions(with error: DaemonError?) { calls.withLock { $0.actionError = error } }
+    func setBuckets(_ buckets: [Bucket]) { calls.withLock { $0.buckets = buckets } }
+    func failList(with error: DaemonError?) { calls.withLock { $0.listError = error } }
+    func failCreate(with error: DaemonError?) { calls.withLock { $0.createError = error } }
+
+    private func record(_ call: Call) throws {
+        try calls.withLock { state in
+            state.log.append(call)
+            if let error = state.actionError { throw error }
+        }
+    }
+
+    func setOptions(_ options: DaemonOptions) async throws {
+        calls.withLock { $0.options.append(options) }
+    }
+
+    func pause(uploadID: String) async throws { try record(.pause(uploadID)) }
+    func resume(uploadID: String) async throws { try record(.resume(uploadID)) }
+    func cancel(uploadID: String) async throws { try record(.cancel(uploadID)) }
+
+    func startDownload(uploadID: String, fileIndexes: [Int], destinationDir: String) async throws -> String {
+        try record(.startDownload(uploadID: uploadID, fileIndexes: fileIndexes, destinationDir: destinationDir))
+        return calls.withLock { state in
+            defer { state.nextDownload += 1 }
+            return "dl-\(state.nextDownload)"
+        }
+    }
+
+    func cancelDownload(downloadID: String) async throws { try record(.cancelDownload(downloadID)) }
+
+    func listBuckets(_ access: AWSAccess) async throws -> [Bucket] {
+        try calls.withLock { state in
+            state.log.append(.listBuckets(region: access.region))
+            if let error = state.listError { throw error }
+            return state.buckets
+        }
+    }
+
+    func createBucket(_ access: AWSAccess, name: String) async throws {
+        try calls.withLock { state in
+            state.log.append(.createBucket(name: name, region: access.region))
+            if let error = state.createError { throw error }
+            state.buckets.append(Bucket(name: name, region: access.region))
+        }
+    }
 
     /// Every RetryUpload call, in order, including the ones that were made to fail.
     var retries: [Retry] { calls.withLock { $0.retries } }

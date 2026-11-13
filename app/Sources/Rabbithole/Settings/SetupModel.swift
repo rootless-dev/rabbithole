@@ -36,12 +36,16 @@ final class SetupModel {
     var openAtLogin = true
     var notify = true
 
+    /// The bucket selector of the second step, asking with the key typed in the first.
+    @ObservationIgnored private(set) var buckets: BucketListModel!
+
     @ObservationIgnored private let store: SettingsStore
     @ObservationIgnored private let onSaved: (AWSSettings) -> Void
     @ObservationIgnored private let onFinished: (_ openAtLogin: Bool, _ notify: Bool) -> Void
 
     init(
         store: SettingsStore,
+        buckets service: BucketService = .unavailable,
         onSaved: @escaping (AWSSettings) -> Void,
         onFinished: @escaping (_ openAtLogin: Bool, _ notify: Bool) -> Void
     ) {
@@ -53,6 +57,32 @@ final class SetupModel {
         if !saved.region.isEmpty { region = saved.region }
         bucket = saved.bucket
         folder = saved.uploadsPrefix
+        buckets = BucketListModel(
+            service: service,
+            access: { [weak self] in await self?.access() },
+            selection: { [weak self] in (self?.bucket ?? "", self?.region ?? "") },
+            pick: { [weak self] in self?.choose($0) })
+    }
+
+    /// A bucket was chosen in the selector, or created. One that lives in another region
+    /// than the one picked in the first step brings its region along.
+    func choose(_ chosen: Bucket) {
+        bucket = chosen.name
+        if !chosen.region.isEmpty { region = chosen.region }
+        message = nil
+    }
+
+    /// The key typed in the first step, with the region, for listing and creating buckets.
+    /// After a save in this session an empty secret field stands for the saved secret.
+    private func access() async -> AWSAccess? {
+        let keyID = accessKeyID.trimmingCharacters(in: .whitespacesAndNewlines)
+        var secret = self.secret.trimmingCharacters(in: .whitespacesAndNewlines)
+        if secret.isEmpty, secretIsSaved {
+            let store = store
+            secret = (try? await AWSSettingsForm.load(store: store))?.secretAccessKey ?? ""
+        }
+        guard !keyID.isEmpty, !secret.isEmpty else { return nil }
+        return AWSAccess(accessKeyID: keyID, secretAccessKey: secret, region: region)
     }
 
     var primaryTitle: String { step == .ready ? "Open dashboard" : "Continue" }

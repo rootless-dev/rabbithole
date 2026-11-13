@@ -62,6 +62,7 @@ final class GRPCDaemonClient: DaemonClient {
         request.region = settings.region
         request.bucket = settings.bucket
         request.quickUploadsPrefix = AWSSettings.normalizedPrefix(settings.uploadsPrefix)
+        request.resumeInterrupted = settings.resumeInterrupted
         do {
             _ = try await stub.configure(request)
         } catch {
@@ -132,6 +133,113 @@ final class GRPCDaemonClient: DaemonClient {
         }
     }
 
+    func setOptions(_ options: DaemonOptions) async throws {
+        let stub = try requireStub()
+        var request = Rabbithole_V1_SetOptionsRequest()
+        request.speedLimitBytesPerSecond = max(options.speedLimitBytesPerSecond, 0)
+        request.verifyUploads = options.verifyUploads
+        request.holdUploads = options.holdUploads
+        do {
+            _ = try await stub.setOptions(request)
+        } catch {
+            throw Self.map(error)
+        }
+    }
+
+    func pause(uploadID: String) async throws {
+        let stub = try requireStub()
+        var request = Rabbithole_V1_PauseUploadRequest()
+        request.uploadID = uploadID
+        do {
+            _ = try await stub.pauseUpload(request)
+        } catch {
+            throw Self.map(error, ofUploadAction: true)
+        }
+    }
+
+    func resume(uploadID: String) async throws {
+        let stub = try requireStub()
+        var request = Rabbithole_V1_ResumeUploadRequest()
+        request.uploadID = uploadID
+        do {
+            _ = try await stub.resumeUpload(request)
+        } catch {
+            throw Self.map(error, ofUploadAction: true)
+        }
+    }
+
+    func cancel(uploadID: String) async throws {
+        let stub = try requireStub()
+        var request = Rabbithole_V1_CancelUploadRequest()
+        request.uploadID = uploadID
+        do {
+            _ = try await stub.cancelUpload(request)
+        } catch {
+            throw Self.map(error, ofUploadAction: true)
+        }
+    }
+
+    func startDownload(uploadID: String, fileIndexes: [Int], destinationDir: String) async throws -> String {
+        let stub = try requireStub()
+        var request = Rabbithole_V1_StartDownloadRequest()
+        request.uploadID = uploadID
+        request.fileIndexes = fileIndexes.map { Int32(clamping: $0) }
+        request.destinationDir = destinationDir
+        do {
+            return try await stub.startDownload(request).downloadID
+        } catch {
+            throw Self.map(error, ofUploadAction: true)
+        }
+    }
+
+    func cancelDownload(downloadID: String) async throws {
+        let stub = try requireStub()
+        var request = Rabbithole_V1_CancelDownloadRequest()
+        request.downloadID = downloadID
+        do {
+            _ = try await stub.cancelDownload(request)
+        } catch {
+            throw Self.map(error, ofUploadAction: true)
+        }
+    }
+
+    func watchDownloads() -> AsyncThrowingStream<DownloadSnapshot, Error> {
+        stream { stub, yield in
+            try await stub.watchDownloads(Rabbithole_V1_WatchDownloadsRequest()) { response in
+                for try await message in response.messages {
+                    yield(try DownloadSnapshot(message))
+                }
+            }
+        }
+    }
+
+    func listBuckets(_ access: AWSAccess) async throws -> [Bucket] {
+        let stub = try requireStub()
+        var request = Rabbithole_V1_ListBucketsRequest()
+        request.accessKeyID = access.accessKeyID
+        request.secretAccessKey = access.secretAccessKey
+        request.region = access.region
+        do {
+            return try await stub.listBuckets(request).buckets.map { Bucket(name: $0.name, region: $0.region) }
+        } catch {
+            throw Self.mapBucketCall(error)
+        }
+    }
+
+    func createBucket(_ access: AWSAccess, name: String) async throws {
+        let stub = try requireStub()
+        var request = Rabbithole_V1_CreateBucketRequest()
+        request.accessKeyID = access.accessKeyID
+        request.secretAccessKey = access.secretAccessKey
+        request.region = access.region
+        request.name = name
+        do {
+            _ = try await stub.createBucket(request)
+        } catch {
+            throw Self.mapBucketCall(error)
+        }
+    }
+
     /// Runs a server-streaming call in a task that lives as long as the returned stream is
     /// consumed. Cancelling the consumer ends the call quietly; any other failure is mapped.
     private func stream<Element: Sendable>(
@@ -177,7 +285,28 @@ final class GRPCDaemonClient: DaemonClient {
         return .other("\(error)")
     }
 
-    /// The mapping for RetryUpload and RemoveUpload. Whatever the daemon answers with a
+    private static func mapBucketCall(_ error: any Error) -> DaemonError {
+        if let daemonError = error as? DaemonError { return daemonError }
+        guard let rpcError = error as? RPCError else { return .other("\(type(of: error))") }
+        return mapBucketCall(
+            code: rpcError.code, message: rpcError.message, fromDaemon: rpcError.cause == nil)
+    }
+
+    /// The mapping for ListBuckets and CreateBucket. A problem with the bucket's name keeps
+    /// its own case, because it is shown under the name field: the name is taken
+    /// (AlreadyExists) or not valid (InvalidArgument). Everything else follows the rule of
+    /// the upload actions: the daemon's message is for reading, under any status code.
+    static func mapBucketCall(code: RPCError.Code, message: String, fromDaemon: Bool) -> DaemonError {
+        switch code {
+        case .alreadyExists where !message.isEmpty: .alreadyExists(message)
+        case .invalidArgument where !message.isEmpty: .invalidArgument(message)
+        case .notFound: message.isEmpty ? .other("\(code)") : .rejected(message)
+        default: mapUploadAction(code: code, message: message, fromDaemon: fromDaemon)
+        }
+    }
+
+    /// The mapping for the calls about one upload or download (retry, remove, pause,
+    /// resume, cancel, download). Whatever the daemon answers with a
     /// message is something to show the user as it is (not allowed in the current state, a
     /// missing bucket permission, no connection), so the message survives under any status
     /// code. `fromDaemon` is false when the transport produced the error by itself: then
@@ -205,9 +334,44 @@ extension UploadState {
         case .uploading: self = .uploading
         case .finished: self = .finished
         case .failed: self = .failed
+        case .paused: self = .paused
+        case .canceled: self = .canceled
         case .unspecified, .UNRECOGNIZED:
             throw DaemonError.other("\(what) has unspecified or unknown state")
         }
+    }
+}
+
+extension PauseReason {
+    /// Nil for a reason this app does not know: the upload is then shown as paused, without
+    /// saying why and without offering Resume.
+    fileprivate init?(_ reason: Rabbithole_V1_PauseReason) {
+        switch reason {
+        case .pausedByUser: self = .byUser
+        case .pausedOnHold: self = .onHold
+        case .unspecified, .UNRECOGNIZED: return nil
+        }
+    }
+}
+
+extension DownloadSnapshot {
+    /// Maps a wire message. As with uploads, an unspecified or unknown state throws.
+    init(_ message: Rabbithole_V1_DownloadSnapshot) throws {
+        let state: DownloadState
+        switch message.state {
+        case .downloadQueued: state = .queued
+        case .downloading: state = .downloading
+        case .downloadFinished: state = .finished
+        case .downloadFailed: state = .failed
+        case .downloadCanceled: state = .canceled
+        case .unspecified, .UNRECOGNIZED:
+            throw DaemonError.other("download \(message.downloadID) has unspecified or unknown state")
+        }
+        self.init(
+            id: message.downloadID, uploadID: message.uploadID, fileIndexes: message.fileIndexes.map(Int.init),
+            name: message.name, destinationPath: message.destinationPath, bytesTotal: message.bytesTotal,
+            bytesDone: message.bytesDone, filesTotal: Int(message.filesTotal), filesDone: Int(message.filesDone),
+            filesFailed: Int(message.filesFailed), state: state, errorMessage: message.errorMessage)
     }
 }
 
@@ -233,7 +397,8 @@ extension UploadSnapshot {
                 objectKey: message.objectKey, bytesTotal: message.bytesTotal,
                 bytesSent: message.bytesSent, state: state, errorMessage: message.errorMessage,
                 createdAt: Self.date(milliseconds: message.createdAtMs),
-                endedAt: Self.date(milliseconds: message.endedAtMs))
+                endedAt: Self.date(milliseconds: message.endedAtMs),
+                pauseReason: PauseReason(message.pauseReason))
             return
         }
         self.init(
@@ -251,7 +416,8 @@ extension UploadSnapshot {
             filesFinished: Int(message.filesFinished),
             filesFailed: Int(message.filesFailed),
             createdAt: Self.date(milliseconds: message.createdAtMs),
-            endedAt: Self.date(milliseconds: message.endedAtMs))
+            endedAt: Self.date(milliseconds: message.endedAtMs),
+            pauseReason: PauseReason(message.pauseReason))
     }
 
     /// A wire time in milliseconds since the Unix epoch; zero means it was not set.

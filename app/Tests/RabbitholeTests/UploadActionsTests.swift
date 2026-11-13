@@ -13,18 +13,20 @@ final class UploadActionMenuTests: XCTestCase {
         return ledger[snapshot.id]!
     }
 
-    func testAnUploadThatIsSendingOrWaitingHasNoActions() {
-        XCTAssertEqual(UploadAction.available(for: record(.make("a", "a.bin", total: 10, .queued))), [])
-        XCTAssertEqual(UploadAction.available(for: record(.make("a", "a.bin", total: 10, sent: 4, .uploading))), [])
+    func testAnUploadThatIsSendingOrWaitingCanBePausedOrCanceled() {
+        let running: [UploadAction] = [.pause, .cancelUpload]
+        XCTAssertEqual(UploadAction.available(for: record(.make("a", "a.bin", total: 10, .queued))), running)
+        XCTAssertEqual(
+            UploadAction.available(for: record(.make("a", "a.bin", total: 10, sent: 4, .uploading))), running)
         XCTAssertEqual(
             UploadAction.available(
                 for: record(.folder("a", "trip", files: 12, finished: 5, failed: 1, total: 100, sent: 40, .uploading))),
-            [], "not even with a failed file: Pause and Cancel upload are what the detail offers")
+            running, "nothing else, not even with a failed file, until it has ended")
     }
 
     func testTheMenuByKindOfUploadAsTheMockupListsIt() {
         let finished = record(.folder("a", "trip", files: 12, finished: 12, total: 100, sent: 100, .finished))
-        XCTAssertEqual(UploadAction.available(for: finished), [.remove, .deleteFromBucket])
+        XCTAssertEqual(UploadAction.available(for: finished), [.download, .remove, .deleteFromBucket])
 
         let failedEmpty = record(.make("b", "armadillo.png", total: 10, sent: 3, .failed, error: "Connection lost"))
         XCTAssertEqual(
@@ -32,7 +34,7 @@ final class UploadActionMenuTests: XCTestCase {
 
         let failedPartly = record(
             .folder("c", "trip", files: 12, finished: 9, failed: 3, total: 100, sent: 80, .failed, error: "x"))
-        XCTAssertEqual(UploadAction.available(for: failedPartly), [.retry, .remove, .deleteFromBucket])
+        XCTAssertEqual(UploadAction.available(for: failedPartly), [.retry, .download, .remove, .deleteFromBucket])
 
         XCTAssertEqual(
             [UploadAction.retry, .remove, .deleteFromBucket].map(\.title),
@@ -40,7 +42,7 @@ final class UploadActionMenuTests: XCTestCase {
     }
 
     func testTheMenuOfAFileFollowsTheFileNotItsUpload() {
-        XCTAssertEqual(UploadAction.available(for: .make(0, "a.jpg", total: 10, sent: 10, .finished)), [.remove, .deleteFromBucket])
+        XCTAssertEqual(UploadAction.available(for: .make(0, "a.jpg", total: 10, sent: 10, .finished)), [.download, .remove, .deleteFromBucket])
         XCTAssertEqual(UploadAction.available(for: .make(1, "b.jpg", total: 10, sent: 2, .failed, error: "x")), [.retry, .remove])
         XCTAssertEqual(UploadAction.available(for: .make(2, "c.jpg", total: 10, sent: 2, .uploading)), [])
         XCTAssertEqual(UploadAction.available(for: .make(3, "d.jpg", total: 10, .queued)), [])

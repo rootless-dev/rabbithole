@@ -23,8 +23,21 @@ struct UploadRecord: Identifiable, Equatable, Sendable {
     var filesTotal = 1
     var filesFinished = 0
     var filesFailed = 0
+    /// Why it is paused; nil in any other state, or when the daemon did not say.
+    var pauseReason: PauseReason?
+    /// Why the last Pause, Resume or Cancel upload was refused, in words to show. It
+    /// stands in for the progress line until the upload changes state or is acted on again.
+    var actionError: String?
 
+    /// Being sent or waiting to be.
     var isActive: Bool { state == .queued || state == .uploading }
+
+    /// Not ended: sending, waiting or paused.
+    var isOpen: Bool { !state.hasEnded }
+
+    /// In the daemon's hands right now: sending, waiting, or held with every other upload.
+    /// An upload the user paused is not; it stays as it is when the daemon goes away.
+    var isInFlight: Bool { isActive || (state == .paused && pauseReason != .byUser) }
 
     /// The files and folders this upload was made of.
     var handedPaths: [String] { rootPaths.isEmpty ? [localPath] : rootPaths }
@@ -89,8 +102,9 @@ struct UploadLedger: Equatable, Sendable {
     }
 
     /// Merges one snapshot. Returns the record when this snapshot ended the upload (it became
-    /// finished or failed just now), so the caller can announce it once. A snapshot marked
-    /// removed takes the upload out; see `remove(_:)`.
+    /// finished or failed just now), so the caller can announce it once. An upload the user
+    /// canceled is not announced: they did it themselves. A snapshot marked removed takes
+    /// the upload out; see `remove(_:)`.
     @discardableResult
     mutating func apply(_ snapshot: UploadSnapshot, now: Date) -> UploadRecord? {
         if snapshot.removed {
@@ -104,6 +118,7 @@ struct UploadLedger: Equatable, Sendable {
                 bytesSent: max(snapshot.bytesSent, 0), state: snapshot.state,
                 errorMessage: "", startedAt: snapshot.createdAt ?? now, kind: snapshot.kind,
                 rootPaths: snapshot.rootPaths)
+            record.pauseReason = snapshot.pauseReason
             countFiles(&record, from: snapshot)
             // Ended before this run began: an upload of the history, not news.
             let isHistory = (snapshot.endedAt ?? now) < liveSince
@@ -111,36 +126,50 @@ struct UploadLedger: Equatable, Sendable {
             index[snapshot.id] = records.count
             records.append(record)
             lastSample[snapshot.id] = (now, record.bytesSent)
-            return ended && !isHistory ? record : nil
+            return ended && !isHistory && record.state != .canceled ? record : nil
         }
         var record = records[position]
-        let wasActive = record.isActive
+        let wasActive = record.isOpen
         let previousState = record.state
         if let createdAt = snapshot.createdAt { record.startedAt = createdAt }
         if !snapshot.objectKey.isEmpty { record.objectKey = snapshot.objectKey }
         record.bytesTotal = max(snapshot.bytesTotal, 0)
         countFiles(&record, from: snapshot)
         if wasActive {
-            // While an upload runs, what was sent and how far it got do not go back.
+            // While an upload runs, what was sent and how far it got do not go back. A
+            // paused upload does go back to waiting: that is how it resumes.
             record.bytesSent = max(record.bytesSent, snapshot.bytesSent)
-            if snapshot.state != .queued { record.state = snapshot.state }
+            if snapshot.state != .queued || previousState == .paused { record.state = snapshot.state }
+            if record.state == .paused {
+                record.bytesPerSecond = nil
+                lastSample[record.id] = nil
+            }
             sampleSpeed(&record, now: now)
         } else {
             // An ended upload changes when its failed files are sent again (it goes back to
             // waiting, under the same id) or when some of its files are removed.
             record.bytesSent = max(snapshot.bytesSent, 0)
             record.state = snapshot.state
-            if record.isActive {
+            if record.isOpen {
                 record.errorMessage = ""
                 record.endedAt = nil
                 lastSample[record.id] = (now, record.bytesSent)
             }
         }
+        record.pauseReason = record.state == .paused ? snapshot.pauseReason : nil
+        if record.state != previousState { record.actionError = nil }
         // Coalesced snapshots can take a retried upload from failed straight to finished.
         let isNews = wasActive || snapshot.state != previousState
         let ended = finish(&record, with: snapshot, now: now, isNews: isNews)
         records[position] = record
-        return ended && isNews ? record : nil
+        return ended && isNews && record.state != .canceled ? record : nil
+    }
+
+    /// Notes why Pause, Resume or Cancel upload was refused for an upload, or forgets it
+    /// with nil when the upload is acted on again.
+    mutating func noteActionError(_ message: String?, for id: String) {
+        guard let position = index[id] else { return }
+        records[position].actionError = message
     }
 
     /// Takes an upload out of the history: the user removed it, it is no longer in the
@@ -154,11 +183,13 @@ struct UploadLedger: Equatable, Sendable {
         return true
     }
 
-    /// The daemon restarted or is gone: uploads that were queued or in progress are lost.
-    /// A restarted daemon reports the same uploads as failed with the same message, which
-    /// then only brings its own time of the end.
+    /// The daemon restarted or is gone: uploads that were queued, in progress or on hold are
+    /// lost. A restarted daemon reports the same uploads as failed with the same message,
+    /// which then only brings its own time of the end. Uploads the user paused were not
+    /// being sent, so they stay paused until the daemon says otherwise.
     mutating func interrupt(now: Date) {
-        for position in records.indices where records[position].isActive {
+        for position in records.indices where records[position].isInFlight {
+            records[position].pauseReason = nil
             records[position].state = .failed
             records[position].errorMessage = Self.interruptedMessage
             records[position].endedAt = now
@@ -186,8 +217,14 @@ struct UploadLedger: Equatable, Sendable {
         _ record: inout UploadRecord, with snapshot: UploadSnapshot, now: Date, isNews: Bool
     ) -> Bool {
         switch snapshot.state {
-        case .queued, .uploading:
+        case .queued, .uploading, .paused:
             return false
+        case .canceled:
+            // The user's own doing: it says nothing about the service.
+            record.state = .canceled
+            record.errorMessage = ""
+            record.endedAt = snapshot.endedAt ?? (isNews ? now : record.endedAt ?? now)
+            record.bytesPerSecond = nil
         case .finished:
             record.state = .finished
             record.errorMessage = ""
@@ -227,13 +264,15 @@ struct UploadLedger: Equatable, Sendable {
 // MARK: - Views over the ledger
 
 extension UploadLedger {
-    /// Uploads in progress first, then waiting ones, then ended ones with the newest first.
+    /// Uploads in progress first, then waiting ones, then paused ones, then ended ones with
+    /// the newest first.
     var ordered: [UploadRecord] {
         let uploading = records.filter { $0.state == .uploading }
         let queued = records.filter { $0.state == .queued }
-        let ended = records.filter { !$0.isActive }
+        let paused = records.filter { $0.state == .paused }
+        let ended = records.filter { $0.state.hasEnded }
             .sorted { ($0.endedAt ?? .distantPast) > ($1.endedAt ?? .distantPast) }
-        return uploading + queued + ended
+        return uploading + queued + paused + ended
     }
 
     /// The newest uploads first, for the tray's "Recent uploads" list: by when they were
@@ -320,5 +359,9 @@ final class UploadStore {
 
     func clearCondition() {
         ledger.clearCondition()
+    }
+
+    func noteActionError(_ message: String?, for id: String) {
+        ledger.noteActionError(message, for: id)
     }
 }

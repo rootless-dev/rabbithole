@@ -208,7 +208,8 @@ private struct TrayStatusLine: View {
             .padding(.horizontal, 2)
 
             if let fraction = status.fraction {
-                ThinBar(fraction: fraction, track: Theme.glassTrack)
+                ThinBar(
+                    fraction: fraction, color: status.isPaused ? Theme.hold : Theme.accent, track: Theme.glassTrack)
                     .padding(.horizontal, 2)
             }
         }

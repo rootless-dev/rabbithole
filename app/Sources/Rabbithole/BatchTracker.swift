@@ -27,6 +27,12 @@ struct BatchTracker {
         var filesEnded = 0
         var isDone = false
         var errorMessage: String?
+        /// True while the upload is paused, with why when the daemon said.
+        var isPaused = false
+        var pauseReason: PauseReason?
+
+        /// Held by the daemon with every other upload, so cut off when the daemon goes.
+        var isInFlight: Bool { !isDone && !(isPaused && pauseReason == .byUser) }
 
         var countedBytesSent: Int64 {
             isDone && errorMessage == nil ? bytesTotal : min(max(bytesSent, 0), bytesTotal)
@@ -53,6 +59,15 @@ struct BatchTracker {
     var remaining: Int { entries.values.reduce(0) { $0 + $1.filesLeft } }
 
     var isActive: Bool { entries.values.contains { !$0.isDone } }
+
+    /// Why nothing is being sent although the batch is not over: every upload left in it is
+    /// paused. `.byUser` when the user paused them all, `.onHold` when any is held with
+    /// every other upload. Nil while anything is being sent or waits, and once it is over.
+    var pause: PauseReason? {
+        let open = entries.values.filter { !$0.isDone }
+        guard !open.isEmpty, open.allSatisfy(\.isPaused) else { return nil }
+        return open.allSatisfy { $0.pauseReason == .byUser } ? .byUser : .onHold
+    }
 
     /// Bytes sent over total bytes for the batch, clamped to 0...1. It may drop when a file joins
     /// the batch; per-upload bytes sent never decrease, so it is otherwise monotonic.
@@ -88,7 +103,9 @@ struct BatchTracker {
     /// Returns true when the snapshot changed the current batch.
     @discardableResult
     mutating func apply(_ snapshot: UploadSnapshot) -> Bool {
-        if snapshot.removed { return remove(snapshot.id) }
+        // An upload the user canceled leaves the batch, like one that was removed: it is
+        // neither sent nor failed, so it stops counting. Sending it again brings it back.
+        if snapshot.removed || snapshot.state == .canceled { return remove(snapshot.id) }
         guard entries[snapshot.id] != nil else {
             held[snapshot.id] = snapshot
             return false
@@ -118,19 +135,21 @@ struct BatchTracker {
         register(id: id, items: files)
     }
 
-    /// The daemon restarted: uploads that were queued or in progress are lost.
+    /// The daemon restarted: uploads that were queued, in progress or on hold are lost.
+    /// Uploads the user paused were not being sent and stay paused.
     mutating func interrupted() {
-        for id in order where entries[id]?.isDone == false {
+        for id in order where entries[id]?.isInFlight == true {
             entries[id]?.isDone = true
+            entries[id]?.isPaused = false
             entries[id]?.errorMessage = Self.interruptedMessage
         }
-        held = held.filter { $0.value.state == .finished || $0.value.state == .failed }
+        held = held.filter { $0.value.state.hasEnded || $0.value.pauseReason == .byUser }
     }
 
     private mutating func startNewBatch() {
         order = []
         entries = [:]
-        held = held.filter { $0.value.state != .finished && $0.value.state != .failed }
+        held = held.filter { !$0.value.state.hasEnded }
     }
 
     @discardableResult
@@ -138,7 +157,7 @@ struct BatchTracker {
         guard var entry = entries[id] else { return false }
         if entry.isDone {
             // An ended upload only comes back when its failed files are sent again.
-            guard snapshot.state == .queued || snapshot.state == .uploading else { return false }
+            guard !snapshot.state.hasEnded else { return false }
             if !isActive {
                 // The queue was empty: this upload alone starts the next batch.
                 startNewBatch()
@@ -150,8 +169,11 @@ struct BatchTracker {
         entry.bytesSent = max(entry.bytesSent, snapshot.bytesSent)
         entry.filesTotal = max(snapshot.filesTotal, 1)
         entry.filesEnded = max(entry.filesEnded, snapshot.filesFinished + snapshot.filesFailed)
+        entry.isPaused = snapshot.state == .paused
+        entry.pauseReason = snapshot.pauseReason
         switch snapshot.state {
-        case .queued, .uploading:
+        case .queued, .uploading, .paused, .canceled:
+            // Canceled never gets here: `apply` takes the upload out of the batch.
             break
         case .finished:
             entry.isDone = true

@@ -10,6 +10,11 @@ struct AWSSettings: Equatable, Sendable {
     /// Where quick uploads land in the bucket, sent to the daemon with every configuration.
     var uploadsPrefix: String = AWSSettings.quickUploadsPrefix
 
+    /// Ask the daemon to put uploads that a previous exit cut off back in the queue. It is
+    /// the "Resume uploads automatically" preference, added when the settings are sent; it
+    /// is not saved with them.
+    var resumeInterrupted = false
+
     /// The default quick uploads folder.
     static let quickUploadsPrefix = "quick-uploads/"
 
@@ -25,6 +30,83 @@ struct AWSSettings: Equatable, Sendable {
 
 enum UploadState: Equatable, Sendable {
     case queued, uploading, finished, failed
+    /// Not sending, with what was already sent kept: paused by the user, or held with every
+    /// other upload. It goes back to `queued` when that ends.
+    case paused
+    /// Stopped for good by the user. Files already sent stay; like `failed` it can be retried.
+    case canceled
+
+    /// Finished, failed or canceled: nothing more happens to it by itself.
+    var hasEnded: Bool { self == .finished || self == .failed || self == .canceled }
+}
+
+/// Why an upload is paused.
+enum PauseReason: Equatable, Sendable {
+    /// The user paused this upload.
+    case byUser
+    /// Every upload is on hold, which the app asks for while the Mac runs on battery.
+    case onHold
+}
+
+/// The options that apply to every upload. They are always sent together.
+struct DaemonOptions: Equatable, Sendable {
+    /// The most bytes per second all uploads together may send; zero means no limit.
+    var speedLimitBytesPerSecond: Int64 = 0
+    /// Have S3 check every upload against a checksum of the local file.
+    var verifyUploads = false
+    /// Nothing is sent while this is set.
+    var holdUploads = false
+}
+
+enum DownloadState: Equatable, Sendable {
+    case queued, downloading, finished, failed, canceled
+
+    var isActive: Bool { self == .queued || self == .downloading }
+}
+
+/// One download of an upload's files back to this Mac, as the daemon's downloads stream
+/// reports it. Downloads are not part of the history: they are gone when the daemon exits.
+struct DownloadSnapshot: Equatable, Sendable {
+    let id: String
+    let uploadID: String
+    /// The files being downloaded, by `FileSnapshot.index`.
+    let fileIndexes: [Int]
+    /// The file name or the folder name.
+    let name: String
+    /// Where the result is: the file for a single file, the folder otherwise.
+    let destinationPath: String
+    let bytesTotal: Int64
+    let bytesDone: Int64
+    var filesTotal = 1
+    var filesDone = 0
+    var filesFailed = 0
+    let state: DownloadState
+    var errorMessage = ""
+
+    /// Progress from 0 to 1. A finished download is always 1.
+    var fraction: Double {
+        if state == .finished { return 1 }
+        guard bytesTotal > 0 else { return 0 }
+        return min(max(Double(bytesDone) / Double(bytesTotal), 0), 1)
+    }
+
+    /// The folder the result was written into.
+    var destinationFolder: String { (destinationPath as NSString).deletingLastPathComponent }
+}
+
+/// A bucket of the account, as `ListBuckets` reports it.
+struct Bucket: Equatable, Sendable {
+    let name: String
+    /// The region the bucket lives in; empty when it could not be read.
+    let region: String
+}
+
+/// The credentials and region the bucket calls take, so they work before anything is saved.
+/// Never logged and never part of an error text.
+struct AWSAccess: Equatable, Sendable {
+    var accessKeyID: String
+    var secretAccessKey: String
+    var region: String
 }
 
 /// What was handed over as one upload.
@@ -59,13 +141,16 @@ struct UploadSnapshot: Equatable, Sendable {
     /// When the upload finished or failed, by the daemon's record; nil while it has not ended
     /// or when the daemon did not say.
     let endedAt: Date?
+    /// Why the upload is paused; nil in any other state, or when the daemon did not say.
+    let pauseReason: PauseReason?
 
     init(
         id: String, fileName: String, localPath: String, objectKey: String, bytesTotal: Int64,
         bytesSent: Int64, state: UploadState, errorMessage: String, kind: UploadKind = .singleFile,
         rootPaths: [String]? = nil, filesTotal: Int = 1, filesFinished: Int? = nil, filesFailed: Int = 0,
-        removed: Bool = false, createdAt: Date? = nil, endedAt: Date? = nil
+        removed: Bool = false, createdAt: Date? = nil, endedAt: Date? = nil, pauseReason: PauseReason? = nil
     ) {
+        self.pauseReason = state == .paused ? pauseReason : nil
         self.removed = removed
         self.createdAt = createdAt
         self.endedAt = endedAt
@@ -142,6 +227,9 @@ enum DaemonError: Error, Equatable, Sendable {
     /// current state, a missing bucket permission, no connection); carries the daemon's
     /// readable message.
     case rejected(String)
+    /// What was asked to be created already exists (a bucket name that is taken); carries
+    /// the daemon's readable message.
+    case alreadyExists(String)
     /// Anything else, including malformed responses.
     case other(String)
 }
