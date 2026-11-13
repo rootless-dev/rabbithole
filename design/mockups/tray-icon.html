@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbithole: menu bar icon options</title>
+<style>
+  body { margin:0; padding:28px; background:#eef0f5; color:#161a26; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; }
+  .ti { max-width:1040px; margin:0 auto; }
+  .ti h2 { font-size:22px; margin:0 0 6px; }
+  .ti .subtitle { margin:0 0 18px; color:#5b6278; font-size:14px; line-height:1.5; max-width:72ch; }
+  .ti-card { background:#fff; border-radius:12px; padding:18px 20px 20px; border:1px solid rgba(22,26,38,.1); margin-bottom:18px; }
+  .ti-card h3 { margin:0; font-size:16px; }
+  .ti-card p { margin:4px 0 14px; color:#5b6278; font-size:13px; line-height:1.45; max-width:72ch; }
+  .ti-bars { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .ti-bar { border-radius:10px; padding:14px 16px 12px; }
+  .ti-bar.light { background:linear-gradient(120deg,#cfdcf5,#e7dcf6); color:#161a26; }
+  .ti-bar.dark { background:linear-gradient(120deg,#1d2a52,#2a1b4d); color:#f1f3fa; }
+  .ti-states { display:flex; gap:22px; align-items:flex-end; }
+  .ti-state { text-align:center; font-size:11px; opacity:.9; }
+  .ti-state svg { display:block; margin:0 auto 6px; }
+  .ti-real { display:flex; gap:14px; align-items:center; margin-top:12px; padding-top:10px; border-top:1px solid color-mix(in srgb, currentColor 16%, transparent); font-size:11px; }
+  .ti-real svg { display:block; }
+</style>
+</head>
+<body>
+<div class="ti">
+<h2>Rabbithole menu bar icon (options)</h2>
+<p class="subtitle"><b>Option A was chosen.</b> The app icon's rabbit ears in one colour, as macOS asks of menu bar icons, and three ways to show an upload in progress. Each option is drawn large to read the idea, then at the real 18 points, on a light and a dark menu bar. States: idle, 35%, 80% and just finished.</p>
+<div id="ti-root"></div>
+</div>
+
+<script>
+  // The glyph: two ears over the rim of the hole, in an 18 x 18 box.
+  function ears(scale, dy, mode, p) {
+    var t = 'translate(' + (9 - 9 * scale) + ' ' + dy + ') scale(' + scale + ')';
+    var id = 'f' + Math.random().toString(36).slice(2);
+    var earShapes =
+      '<ellipse cx="6.5" cy="7.2" rx="1.95" ry="5.7" transform="rotate(-10 6.5 12)"/>' +
+      '<ellipse cx="11.5" cy="7.2" rx="1.95" ry="5.7" transform="rotate(10 11.5 12)"/>';
+    var hole = '<ellipse cx="9" cy="13.4" rx="6.7" ry="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/>';
+    if (mode !== 'fill') {
+      return '<g transform="' + t + '">' + hole + '<g fill="currentColor">' + earShapes + '</g></g>';
+    }
+    // Ears as outlines that fill from the bottom with the progress.
+    var top = 13.4 - 12 * p;
+    return '<g transform="' + t + '">' + hole +
+      '<clipPath id="' + id + '"><rect x="0" y="' + top + '" width="18" height="18"/></clipPath>' +
+      '<g fill="none" stroke="currentColor" stroke-width="1.1">' + earShapes + '</g>' +
+      '<g fill="currentColor" clip-path="url(#' + id + ')">' + earShapes + '</g></g>';
+  }
+
+  function arc(p) {
+    var r = 8.1, a = 2 * Math.PI * Math.min(p, 0.9999) - Math.PI / 2;
+    var x = 9 + r * Math.cos(a), y = 9 + r * Math.sin(a);
+    return 'M9 ' + (9 - r) + 'A' + r + ' ' + r + ' 0 ' + (p > 0.5 ? 1 : 0) + ' 1 ' + x.toFixed(3) + ' ' + y.toFixed(3);
+  }
+
+  var check = '<path d="M12.2 12.6l1.7 1.7 3-3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
+
+  var options = [
+    { name: 'A. Bar under the ears', note: 'A thin bar under the icon that fills from left to right. The closest to the progress bar the tray window already shows, and the easiest to read at a glance.',
+      draw: function (p, state) {
+        if (state === 'idle' || state === 'done') return ears(1, 0);
+        return ears(0.84, 0) +
+          '<rect x="1" y="15.6" width="16" height="2" rx="1" fill="currentColor" opacity=".3"/>' +
+          '<rect x="1" y="15.6" width="' + (16 * p) + '" height="2" rx="1" fill="currentColor"/>';
+      } },
+    { name: 'B. Ears that fill up', note: 'While sending, the ears become outlines and fill from the bottom. No extra element, the icon itself is the meter; the finest of the three to read.',
+      draw: function (p, state) {
+        if (state === 'idle' || state === 'done') return ears(1, 0);
+        return ears(1, 0, 'fill', p);
+      } },
+    { name: 'C. Ring around the ears', note: 'A ring around a smaller icon that closes as the upload advances, like the ring around each upload in the main window.',
+      draw: function (p, state) {
+        if (state === 'idle' || state === 'done') return ears(1, 0);
+        return ears(0.62, 2.6) +
+          '<circle cx="9" cy="9" r="8.1" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".3"/>' +
+          '<path d="' + arc(p) + '" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>';
+      } }
+  ];
+
+  var states = [['idle', 0, 'Idle'], ['sending', 0.35, '35%'], ['sending', 0.8, '80%'], ['done', 1, 'Finished']];
+
+  function icon(option, state, size) {
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 18 18">' + option.draw(state[1], state[0]) + '</svg>';
+  }
+
+  var root = document.getElementById('ti-root');
+  options.forEach(function (option) {
+    var bars = ['light', 'dark'].map(function (theme) {
+      var large = states.map(function (s) {
+        return '<div class="ti-state">' + icon(option, s, 72) + s[2] + '</div>';
+      }).join('');
+      var real = states.map(function (s) { return icon(option, s, 18); }).join('');
+      return '<div class="ti-bar ' + theme + '"><div class="ti-states">' + large + '</div><div class="ti-real">' + real + '<span>real size, 18 pt</span></div></div>';
+    }).join('');
+    root.insertAdjacentHTML('beforeend', '<div class="ti-card"><h3>' + option.name + '</h3><p>' + option.note + '</p><div class="ti-bars">' + bars + '</div></div>');
+  });
+</script>
+</body>
+</html>

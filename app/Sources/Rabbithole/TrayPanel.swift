@@ -48,6 +48,8 @@ final class TrayWindowController: NSObject {
     private var recentPanel: TrayPanel!
     private var contentHeight: CGFloat = 150
     private var recentHeight: CGFloat = 150
+    /// The bar length the menu bar icon currently shows; nil for the plain icon.
+    private var iconStep: Int?
 
     init(viewModel: TrayViewModel, actions: AppActions) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -71,11 +73,24 @@ final class TrayWindowController: NSObject {
         menu.onRecentChange = { [weak self] open in self?.showRecent(open) }
 
         if let button = statusItem.button {
-            button.image = NSImage(
-                systemSymbolName: "arrow.up.circle", accessibilityDescription: "Rabbithole")
+            button.image = TrayIcon.image(step: nil)
             button.target = self
             button.action = #selector(toggleFromIcon)
         }
+        followProgress(of: viewModel)
+    }
+
+    /// Keeps the menu bar icon in step with the uploads: a bar under the ears while they
+    /// run, plain ears otherwise. The icon is redrawn only when the bar's length changes.
+    private func followProgress(of viewModel: TrayViewModel) {
+        let step = withObservationTracking {
+            TrayIcon.step(for: TrayIcon.progress(for: viewModel.state))
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followProgress(of: viewModel) }
+        }
+        guard step != iconStep else { return }
+        iconStep = step
+        statusItem.button?.image = TrayIcon.image(step: step)
     }
 
     @objc private func toggleFromIcon() {
