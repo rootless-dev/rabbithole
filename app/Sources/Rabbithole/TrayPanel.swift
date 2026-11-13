@@ -218,12 +218,4 @@ enum FilePicker {
         let response = await panel.begin()
         return response == .OK ? panel.url : nil
     }
-
-    /// The files and folders currently copied in Finder, if any. Other clipboard contents give nothing.
-    @MainActor
-    static func clipboardFiles() -> [URL] {
-        let objects = NSPasteboard.general.readObjects(
-            forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
-        return (objects as? [URL]) ?? []
-    }
 }

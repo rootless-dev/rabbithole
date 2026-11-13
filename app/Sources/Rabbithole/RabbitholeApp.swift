@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The unit tests are hosted inside this app: do not start a daemon or a menu bar icon.
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
         let store = SettingsStore(credentials: KeychainCredentialStore(), defaults: .standard)
+        ClipboardReader.prune(Self.clipboardDirectory, now: Date())
         compose(store: store)
     }
 
@@ -157,8 +158,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         actions.uploadFromClipboard = { [weak self] in
-            let urls = FilePicker.clipboardFiles()
-            Task { await self?.viewModel?.uploadFromClipboard(urls) }
+            let files = Result {
+                try ClipboardReader.files(from: .general, savingIn: Self.clipboardDirectory, now: Date())
+            }
+            Task { await self?.viewModel?.uploadFromClipboard(files) }
         }
         actions.openMainWindow = { [weak self] section in self?.mainWindow?.show(section: section) }
         actions.openSettingsPane = { [weak self] pane in self?.mainWindow?.show(pane: pane) }
@@ -230,6 +233,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+    }
+
+    /// Where images and text sent from the clipboard are saved as files to upload.
+    private static var clipboardDirectory: URL {
+        URL.applicationSupportDirectory
+            .appending(path: "Rabbithole", directoryHint: .isDirectory)
+            .appending(path: "Clipboard", directoryHint: .isDirectory)
     }
 
     private static var socketURL: URL {

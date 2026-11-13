@@ -147,16 +147,20 @@ final class TrayViewModelUploadsTests: XCTestCase {
     func testClipboardWithAFileUploadsItAndWithoutOneIsRefused() async {
         let client = StubDaemonClient()
         let model = makeModel(client: client)
-        await model.uploadFromClipboard([])
-        XCTAssertEqual(model.dropFeedback, .refused("The clipboard has no file to upload"))
+        await model.uploadFromClipboard(.failure(ClipboardReader.Failure.empty))
+        XCTAssertEqual(model.dropFeedback, .refused("The clipboard has nothing to upload"))
         XCTAssertTrue(client.enqueued.isEmpty)
 
-        await model.uploadFromClipboard([URL(fileURLWithPath: "/tmp/copied.pdf")])
+        await model.uploadFromClipboard(.failure(ClipboardReader.Failure.notSaved))
+        XCTAssertEqual(model.dropFeedback, .refused("The clipboard contents could not be saved"))
+        XCTAssertTrue(client.enqueued.isEmpty)
+
+        await model.uploadFromClipboard(.success([URL(fileURLWithPath: "/tmp/copied.pdf")]))
         XCTAssertEqual(client.enqueued, ["/tmp/copied.pdf"])
         XCTAssertEqual(model.state, .uploading(remaining: 1, total: 1, fraction: 0))
 
         let copied = [URL(fileURLWithPath: "/tmp/a.pdf"), URL(fileURLWithPath: "/tmp/photos", isDirectory: true)]
-        await model.uploadFromClipboard(copied)
+        await model.uploadFromClipboard(.success(copied))
         XCTAssertEqual(
             client.requests.last?.paths, ["/tmp/a.pdf", "/tmp/photos"],
             "several copied files and folders are one upload")

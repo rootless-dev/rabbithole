@@ -134,15 +134,18 @@ final class TrayViewModel {
         await confirm(itemCount: urls.count)
     }
 
-    /// "Upload from clipboard": uploads the files and folders copied in Finder, if there are
-    /// any. Clipboard contents that are not files (text, an image) cannot be uploaded yet and
-    /// are refused.
-    func uploadFromClipboard(_ urls: [URL]) async {
-        guard !urls.isEmpty else {
-            refuse("The clipboard has no file to upload")
-            return
+    /// "Upload from clipboard": uploads the files the clipboard gave, which are the files and
+    /// folders copied in Finder, or an image or text saved as a file. An empty clipboard and
+    /// a failed save are refused with their reason.
+    func uploadFromClipboard(_ files: Result<[URL], any Error>) async {
+        switch files {
+        case .success(let urls) where !urls.isEmpty:
+            await drop(urls)
+        case .failure(ClipboardReader.Failure.notSaved):
+            refuse("The clipboard contents could not be saved")
+        default:
+            refuse("The clipboard has nothing to upload")
         }
-        await drop(urls)
     }
 
     /// Sends every failed file of each upload again. The uploads keep their ids and go back
