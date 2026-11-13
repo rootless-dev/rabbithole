@@ -1,0 +1,36 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Mondays at 06:00 UTC, to catch queries added since the last push.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze the daemon
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: go
+          build-mode: manual
+      - name: Build the daemon
+        working-directory: daemon
+        run: go build ./...
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:go
