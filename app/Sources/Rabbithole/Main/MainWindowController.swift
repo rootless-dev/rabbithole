@@ -9,21 +9,29 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     private let context: MainContext
     private let thumbnails: ThumbnailCache
     private let makeSetup: () -> SetupModel
-    private let setDockIconVisible: (Bool) -> Void
+    private let setDockIconVisible: @MainActor (Bool) -> Void
     private var window: NSWindow?
 
     /// `setDockIconVisible` is replaced in tests; by default it switches the app between a
     /// regular app (Dock icon, menu bar) and a menu bar accessory.
     init(
         context: MainContext, thumbnails: ThumbnailCache, makeSetup: @escaping () -> SetupModel,
-        setDockIconVisible: @escaping (Bool) -> Void = { visible in
-            NSApp.setActivationPolicy(visible ? .regular : .accessory)
-        }
+        setDockIconVisible: @escaping @MainActor (Bool) -> Void = { MainWindowController.setSystemDockIcon(visible: $0) }
     ) {
         self.context = context
         self.thumbnails = thumbnails
         self.makeSetup = makeSetup
         self.setDockIconVisible = setDockIconVisible
+    }
+
+    /// Switches the app between a regular app and a menu bar accessory. The app is declared
+    /// as an accessory (LSUIElement), and a Dock tile created by this switch comes up with
+    /// the generic icon unless the app hands the Dock its icon itself.
+    static func setSystemDockIcon(visible: Bool) {
+        NSApp.setActivationPolicy(visible ? .regular : .accessory)
+        if visible {
+            NSApp.applicationIconImage = NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+        }
     }
 
     /// Brings the window forward on `section`, or on the first-launch setup while no AWS

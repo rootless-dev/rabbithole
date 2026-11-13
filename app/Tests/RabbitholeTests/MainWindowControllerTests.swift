@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class MainWindowControllerTests: XCTestCase {
-    private func makeController(_ fixture: UIFixture, record: @escaping (Bool) -> Void) -> MainWindowController {
+    private func makeController(_ fixture: UIFixture, record: @escaping @MainActor (Bool) -> Void) -> MainWindowController {
         MainWindowController(
             context: fixture.context, thumbnails: fixture.thumbnails,
             makeSetup: { fatalError("the account is configured, so setup is never built") },
