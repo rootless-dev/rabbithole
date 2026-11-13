@@ -23,6 +23,8 @@ const (
 	Daemon_EnqueueUpload_FullMethodName    = "/rabbithole.v1.Daemon/EnqueueUpload"
 	Daemon_WatchUploads_FullMethodName     = "/rabbithole.v1.Daemon/WatchUploads"
 	Daemon_WatchUploadFiles_FullMethodName = "/rabbithole.v1.Daemon/WatchUploadFiles"
+	Daemon_RetryUpload_FullMethodName      = "/rabbithole.v1.Daemon/RetryUpload"
+	Daemon_RemoveUpload_FullMethodName     = "/rabbithole.v1.Daemon/RemoveUpload"
 )
 
 // DaemonClient is the client API for Daemon service.
@@ -40,6 +42,11 @@ type DaemonClient interface {
 	// WatchUploadFiles streams every file of one upload once, then a snapshot
 	// whenever one of its files changes state or progresses.
 	WatchUploadFiles(ctx context.Context, in *WatchUploadFilesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileSnapshot], error)
+	// RetryUpload sends failed files of an upload again, inside the same upload.
+	RetryUpload(ctx context.Context, in *RetryUploadRequest, opts ...grpc.CallOption) (*RetryUploadResponse, error)
+	// RemoveUpload takes an upload, or some of its files, out of the history,
+	// and deletes their objects from the bucket when asked to.
+	RemoveUpload(ctx context.Context, in *RemoveUploadRequest, opts ...grpc.CallOption) (*RemoveUploadResponse, error)
 }
 
 type daemonClient struct {
@@ -108,6 +115,26 @@ func (c *daemonClient) WatchUploadFiles(ctx context.Context, in *WatchUploadFile
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Daemon_WatchUploadFilesClient = grpc.ServerStreamingClient[FileSnapshot]
 
+func (c *daemonClient) RetryUpload(ctx context.Context, in *RetryUploadRequest, opts ...grpc.CallOption) (*RetryUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RetryUploadResponse)
+	err := c.cc.Invoke(ctx, Daemon_RetryUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonClient) RemoveUpload(ctx context.Context, in *RemoveUploadRequest, opts ...grpc.CallOption) (*RemoveUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveUploadResponse)
+	err := c.cc.Invoke(ctx, Daemon_RemoveUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DaemonServer is the server API for Daemon service.
 // All implementations must embed UnimplementedDaemonServer
 // for forward compatibility.
@@ -123,6 +150,11 @@ type DaemonServer interface {
 	// WatchUploadFiles streams every file of one upload once, then a snapshot
 	// whenever one of its files changes state or progresses.
 	WatchUploadFiles(*WatchUploadFilesRequest, grpc.ServerStreamingServer[FileSnapshot]) error
+	// RetryUpload sends failed files of an upload again, inside the same upload.
+	RetryUpload(context.Context, *RetryUploadRequest) (*RetryUploadResponse, error)
+	// RemoveUpload takes an upload, or some of its files, out of the history,
+	// and deletes their objects from the bucket when asked to.
+	RemoveUpload(context.Context, *RemoveUploadRequest) (*RemoveUploadResponse, error)
 	mustEmbedUnimplementedDaemonServer()
 }
 
@@ -144,6 +176,12 @@ func (UnimplementedDaemonServer) WatchUploads(*WatchUploadsRequest, grpc.ServerS
 }
 func (UnimplementedDaemonServer) WatchUploadFiles(*WatchUploadFilesRequest, grpc.ServerStreamingServer[FileSnapshot]) error {
 	return status.Error(codes.Unimplemented, "method WatchUploadFiles not implemented")
+}
+func (UnimplementedDaemonServer) RetryUpload(context.Context, *RetryUploadRequest) (*RetryUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RetryUpload not implemented")
+}
+func (UnimplementedDaemonServer) RemoveUpload(context.Context, *RemoveUploadRequest) (*RemoveUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveUpload not implemented")
 }
 func (UnimplementedDaemonServer) mustEmbedUnimplementedDaemonServer() {}
 func (UnimplementedDaemonServer) testEmbeddedByValue()                {}
@@ -224,6 +262,42 @@ func _Daemon_WatchUploadFiles_Handler(srv interface{}, stream grpc.ServerStream)
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Daemon_WatchUploadFilesServer = grpc.ServerStreamingServer[FileSnapshot]
 
+func _Daemon_RetryUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RetryUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServer).RetryUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Daemon_RetryUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServer).RetryUpload(ctx, req.(*RetryUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Daemon_RemoveUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonServer).RemoveUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Daemon_RemoveUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonServer).RemoveUpload(ctx, req.(*RemoveUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Daemon_ServiceDesc is the grpc.ServiceDesc for Daemon service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -238,6 +312,14 @@ var Daemon_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EnqueueUpload",
 			Handler:    _Daemon_EnqueueUpload_Handler,
+		},
+		{
+			MethodName: "RetryUpload",
+			Handler:    _Daemon_RetryUpload_Handler,
+		},
+		{
+			MethodName: "RemoveUpload",
+			Handler:    _Daemon_RemoveUpload_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -55,9 +55,19 @@
   .rm-l2 { margin-top:2px; }
   .rm-prog { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
   .rm-prog.ok { color:var(--ok); } .rm-prog.bad { color:var(--bad); }
-  .rm-link { color:var(--bad); font-size:12px; white-space:nowrap; }
-  .rm-link.go { color:var(--accent); }
-  .rm-links { display:flex; gap:14px; }
+  /* The actions button: three vertical dots, on every row that has actions */
+  .rm-more { flex:none; width:26px; height:26px; border-radius:7px; display:grid; place-content:center; gap:3px; position:relative; }
+  .rm-more > i { width:3.5px; height:3.5px; border-radius:50%; background:var(--muted); display:block; }
+  .rm-more.open { background:var(--track); }
+  .rm-more.open > i { background:var(--ink); }
+  .rm-more.boxed { border:1px solid var(--line); background:var(--card); width:30px; height:28px; }
+  .rm-menu { min-width:186px; border-radius:9px; padding:5px; background:var(--card); border:1px solid var(--line); box-shadow:0 10px 28px var(--shadow); font-size:13px; color:var(--ink); text-align:left; }
+  .rm-more .rm-menu { position:absolute; right:0; top:30px; z-index:2; }
+  .rm-menu div { padding:5px 10px; border-radius:6px; white-space:nowrap; }
+  .rm-menu div.hot { background:var(--accent); color:var(--on); }
+  .rm-menu div.bad { color:var(--bad); }
+  .rm-menu hr { border:0; border-top:1px solid var(--line); margin:4px 6px; }
+  .rm-item, .rm-file { position:relative; }
 
   /* Upload detail */
   .rm-back { color:var(--accent); font-size:12.5px; }
@@ -91,7 +101,6 @@
   .rm-fl b { flex:1; min-width:0; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .rm-fl span { color:var(--muted); font-size:12px; white-space:nowrap; font-variant-numeric:tabular-nums; }
   .rm-fl span.ok { color:var(--ok); } .rm-fl span.bad { color:var(--bad); }
-  .rm-fl span.rm-link { color:var(--bad); } .rm-fl span.rm-link.go { color:var(--accent); }
   .rm-bar { height:2px; border-radius:1px; background:var(--track); overflow:hidden; margin-top:6px; }
   .rm-bar span { display:block; height:100%; background:var(--ok); }
   .rm-bar.bad span { background:var(--bad); }
@@ -114,9 +123,9 @@
 </head>
 <body>
 <div class="rm">
-<h2>Rabbithole remove upload (approved mockup)</h2>
-<p class="subtitle">One action, Remove, on an upload and on a file inside it. Its confirmation asks whether the files should also be deleted from the bucket: unchecked, only the entry leaves the history; checked, the files are deleted from the bucket too. Files on the Mac are never touched.</p>
-<p class="note">Remove shows when the pointer is over a row, and is also in the row's right-click menu. Uploads that are sending or waiting have no Remove: they keep Pause and Cancel upload.</p>
+<h2>Rabbithole upload actions (approved mockup)</h2>
+<p class="subtitle">Every upload, and every file inside one, has a button with three vertical dots that opens its actions: Try again, Remove from history and Delete from bucket. Remove asks whether the files should also be deleted from the bucket; Delete always deletes them. Files on the Mac are never touched.</p>
+<p class="note">The menu lists only what applies: Try again on a failed upload, Delete from bucket when something of the upload is in the bucket. The same menu opens with a right click on the row. Uploads that are sending or waiting have no button yet: Pause and Cancel upload stay in the detail screen.</p>
 
 <template id="rm-tpl">
 <div class="rm-win list">
@@ -125,9 +134,9 @@
   <div class="rm-main">
     <div class="rm-top"><h4>History</h4><div class="rm-search">Search uploads by name or folder</div></div>
     <div class="rm-list">
-      <div class="rm-item"><div class="rm-ring ok" style="--p:100"><div class="rm-ico"><div class="th-page"></div></div></div><div class="rm-txt"><div class="rm-l1"><b>invoice-october.pdf</b><span class="rm-path">~/Documents/finance/invoice-october.pdf</span></div><div class="rm-l2"><span class="rm-prog ok">Finished today at 11:56, 184 KB sent</span></div></div></div>
-      <div class="rm-item hover"><div class="rm-ring ok" style="--p:100"><div class="rm-ico"><div class="th-folder"></div></div></div><div class="rm-txt"><div class="rm-l1"><b>vacation-2026/</b><span class="rm-path">~/Pictures/vacation-2026</span></div><div class="rm-l2"><span class="rm-prog ok">Finished yesterday at 18:20, 1.9 GB sent</span><span class="rm-link">Remove</span></div></div></div>
-      <div class="rm-item hover"><div class="rm-ring bad" style="--p:100"><div class="rm-ico"><div class="th-img"></div></div></div><div class="rm-txt"><div class="rm-l1"><b>armadillo.png</b><span class="rm-path">~/Downloads/armadillo.png</span></div><div class="rm-l2"><span class="rm-prog bad">Failed on Tuesday at 09:14, connection lost</span><span class="rm-links"><span class="rm-link go">Try again</span><span class="rm-link">Remove</span></span></div></div></div>
+      <div class="rm-item"><div class="rm-ring ok" style="--p:100"><div class="rm-ico"><div class="th-page"></div></div></div><div class="rm-txt"><div class="rm-l1"><b>invoice-october.pdf</b><span class="rm-path">~/Documents/finance/invoice-october.pdf</span></div><div class="rm-l2"><span class="rm-prog ok">Finished today at 11:56, 184 KB sent</span></div></div><span class="rm-more"><i></i><i></i><i></i></span></div>
+      <div class="rm-item hover"><div class="rm-ring ok" style="--p:100"><div class="rm-ico"><div class="th-folder"></div></div></div><div class="rm-txt"><div class="rm-l1"><b>vacation-2026/</b><span class="rm-path">~/Pictures/vacation-2026</span></div><div class="rm-l2"><span class="rm-prog ok">Finished yesterday at 18:20, 1.9 GB sent</span></div></div><span class="rm-more open"><i></i><i></i><i></i><div class="rm-menu"><div class="hot">Remove from history…</div><div class="bad">Delete from bucket…</div></div></span></div>
+      <div class="rm-item"><div class="rm-ring bad" style="--p:100"><div class="rm-ico"><div class="th-img"></div></div></div><div class="rm-txt"><div class="rm-l1"><b>armadillo.png</b><span class="rm-path">~/Downloads/armadillo.png</span></div><div class="rm-l2"><span class="rm-prog bad">Failed on Tuesday at 09:14, connection lost</span></div></div><span class="rm-more"><i></i><i></i><i></i></span></div>
     </div>
   </div>
 </div>
@@ -140,7 +149,7 @@
     <div class="rm-head">
       <div class="rm-bigring"><div class="rm-hole"><div class="rm-bigfolder"></div></div></div>
       <div class="rm-title"><h4>vacation-2026/</h4><p>~/Pictures/vacation-2026</p><p class="prog">Finished yesterday at 18:20, 1.9 GB sent</p></div>
-      <div class="rm-acts"><span class="rm-btn bad">Remove</span></div>
+      <div class="rm-acts"><span class="rm-more boxed"><i></i><i></i><i></i></span></div>
     </div>
     <dl class="rm-facts">
       <div><dt>Files</dt><dd>12 of 12 sent</dd></div>
@@ -150,16 +159,23 @@
     </dl>
     <div class="rm-band"><h4>Files in this upload</h4><div class="rm-tabs"><span class="on">All</span><span>Finished</span><span>Failed</span></div></div>
     <div class="rm-files">
-      <div class="rm-file"><div class="rm-mini"><div class="th-img"></div></div><div class="rm-ft"><div class="rm-fl"><b>IMG_4401.jpg</b><span class="ok">Finished, 7.8 MB</span></div><div class="rm-bar"><span style="width:100%"></span></div></div></div>
-      <div class="rm-file hover"><div class="rm-mini"><div class="th-img"></div></div><div class="rm-ft"><div class="rm-fl"><b>IMG_4402.jpg</b><span class="ok">Finished, 8.3 MB</span><span class="rm-link">Remove</span></div><div class="rm-bar"><span style="width:100%"></span></div></div></div>
-      <div class="rm-file"><div class="rm-mini"><div class="th-img"></div></div><div class="rm-ft"><div class="rm-fl"><b>IMG_4403.jpg</b><span class="ok">Finished, 6.6 MB</span></div><div class="rm-bar"><span style="width:100%"></span></div></div></div>
-      <div class="rm-file"><div class="rm-mini"><div class="th-img"></div></div><div class="rm-ft"><div class="rm-fl"><b>IMG_4404.jpg</b><span class="ok">Finished, 7.1 MB</span></div><div class="rm-bar"><span style="width:100%"></span></div></div></div>
+      <div class="rm-file"><div class="rm-mini"><div class="th-img"></div></div><div class="rm-ft"><div class="rm-fl"><b>IMG_4401.jpg</b><span class="ok">Finished, 7.8 MB</span></div><div class="rm-bar"><span style="width:100%"></span></div></div><span class="rm-more"><i></i><i></i><i></i></span></div>
+      <div class="rm-file hover"><div class="rm-mini"><div class="th-img"></div></div><div class="rm-ft"><div class="rm-fl"><b>IMG_4402.jpg</b><span class="ok">Finished, 8.3 MB</span></div><div class="rm-bar"><span style="width:100%"></span></div></div><span class="rm-more open"><i></i><i></i><i></i><div class="rm-menu"><div class="hot">Remove from history…</div><div class="bad">Delete from bucket…</div></div></span></div>
+      <div class="rm-file"><div class="rm-mini"><div class="th-img"></div></div><div class="rm-ft"><div class="rm-fl"><b>IMG_4403.jpg</b><span class="ok">Finished, 6.6 MB</span></div><div class="rm-bar"><span style="width:100%"></span></div></div><span class="rm-more"><i></i><i></i><i></i></span></div>
+      <div class="rm-file"><div class="rm-mini"><div class="th-img"></div></div><div class="rm-ft"><div class="rm-fl"><b>IMG_4404.jpg</b><span class="ok">Finished, 7.1 MB</span></div><div class="rm-bar"><span style="width:100%"></span></div></div><span class="rm-more"><i></i><i></i><i></i></span></div>
     </div>
   </div>
 </div>
 
 <div class="rm-sheets">
-  <p class="rm-cap">Confirmation, as first shown: only the history entry is removed</p>
+  <p class="rm-cap">The menu by kind of upload: finished, failed with nothing in the bucket, failed folder with part of it sent</p>
+  <div class="rm-menu"><div>Remove from history…</div><div class="bad">Delete from bucket…</div></div>
+  <div class="rm-menu"><div>Try again</div><hr><div>Remove from history…</div></div>
+  <div class="rm-menu"><div>Try again</div><hr><div>Remove from history…</div><div class="bad">Delete from bucket…</div></div>
+</div>
+
+<div class="rm-sheets">
+  <p class="rm-cap">Remove from history: unchecked as first shown, then checked</p>
   <div class="rm-sheet">
     <h4>Remove “vacation-2026/” from the history?</h4>
     <p>It leaves this list. Its 12 files stay in the bucket, and nothing on this Mac is touched.</p>
@@ -183,6 +199,22 @@
     <h4>Remove “armadillo.png” from the history?</h4>
     <p>This upload failed, so there is nothing in the bucket to delete.</p>
     <div class="rm-sacts"><span class="rm-sbtn">Cancel</span><span class="rm-sbtn go">Remove</span></div>
+  </div>
+</div>
+
+<div class="rm-sheets">
+  <p class="rm-cap">Delete from bucket: for an upload and for one file</p>
+  <div class="rm-sheet">
+    <h4>Delete “vacation-2026/” from the bucket?</h4>
+    <p>Its 12 files are deleted from the bucket and it leaves the history. Nothing on this Mac is touched.</p>
+    <div class="rm-warn">Files deleted from the bucket cannot be recovered.</div>
+    <div class="rm-sacts"><span class="rm-sbtn">Cancel</span><span class="rm-sbtn del">Delete</span></div>
+  </div>
+  <div class="rm-sheet">
+    <h4>Delete “IMG_4402.jpg” from the bucket?</h4>
+    <p>The file is deleted from the bucket and leaves the list of “vacation-2026/”. Nothing on this Mac is touched.</p>
+    <div class="rm-warn">Files deleted from the bucket cannot be recovered.</div>
+    <div class="rm-sacts"><span class="rm-sbtn">Cancel</span><span class="rm-sbtn del">Delete</span></div>
   </div>
 </div>
 </template>

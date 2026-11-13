@@ -72,12 +72,40 @@ public enum Rabbithole_V1_Daemon: Sendable {
                 type: .serverStreaming
             )
         }
+        /// Namespace for "RetryUpload" metadata.
+        public enum RetryUpload: Sendable {
+            /// Request type for "RetryUpload".
+            public typealias Input = Rabbithole_V1_RetryUploadRequest
+            /// Response type for "RetryUpload".
+            public typealias Output = Rabbithole_V1_RetryUploadResponse
+            /// Descriptor for "RetryUpload".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "RetryUpload",
+                type: .unary
+            )
+        }
+        /// Namespace for "RemoveUpload" metadata.
+        public enum RemoveUpload: Sendable {
+            /// Request type for "RemoveUpload".
+            public typealias Input = Rabbithole_V1_RemoveUploadRequest
+            /// Response type for "RemoveUpload".
+            public typealias Output = Rabbithole_V1_RemoveUploadResponse
+            /// Descriptor for "RemoveUpload".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "rabbithole.v1.Daemon"),
+                method: "RemoveUpload",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "rabbithole.v1.Daemon" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             Configure.descriptor,
             EnqueueUpload.descriptor,
             WatchUploads.descriptor,
-            WatchUploadFiles.descriptor
+            WatchUploadFiles.descriptor,
+            RetryUpload.descriptor,
+            RemoveUpload.descriptor
         ]
     }
 }
@@ -192,6 +220,53 @@ extension Rabbithole_V1_Daemon {
             deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_FileSnapshot>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Rabbithole_V1_FileSnapshot>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "RetryUpload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > RetryUpload sends failed files of an upload again, inside the same upload.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_RetryUploadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_RetryUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_RetryUploadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func retryUpload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_RetryUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_RetryUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_RetryUploadResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_RetryUploadResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "RemoveUpload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > RemoveUpload takes an upload, or some of its files, out of the history,
+        /// > and deletes their objects from the bucket when asked to.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_RemoveUploadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_RemoveUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_RemoveUploadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func removeUpload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_RemoveUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_RemoveUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_RemoveUploadResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_RemoveUploadResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -347,6 +422,75 @@ extension Rabbithole_V1_Daemon {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "RetryUpload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > RetryUpload sends failed files of an upload again, inside the same upload.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_RetryUploadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_RetryUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_RetryUploadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func retryUpload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_RetryUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_RetryUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_RetryUploadResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_RetryUploadResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.RetryUpload.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "RemoveUpload" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > RemoveUpload takes an upload, or some of its files, out of the history,
+        /// > and deletes their objects from the bucket when asked to.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Rabbithole_V1_RemoveUploadRequest` message.
+        ///   - serializer: A serializer for `Rabbithole_V1_RemoveUploadRequest` messages.
+        ///   - deserializer: A deserializer for `Rabbithole_V1_RemoveUploadResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func removeUpload<Result>(
+            request: GRPCCore.ClientRequest<Rabbithole_V1_RemoveUploadRequest>,
+            serializer: some GRPCCore.MessageSerializer<Rabbithole_V1_RemoveUploadRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Rabbithole_V1_RemoveUploadResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_RemoveUploadResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Rabbithole_V1_Daemon.Method.RemoveUpload.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -461,6 +605,65 @@ extension Rabbithole_V1_Daemon.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_WatchUploadFilesRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_FileSnapshot>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RetryUpload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > RetryUpload sends failed files of an upload again, inside the same upload.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_RetryUploadRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func retryUpload<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_RetryUploadRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_RetryUploadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.retryUpload(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_RetryUploadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_RetryUploadResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RemoveUpload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > RemoveUpload takes an upload, or some of its files, out of the history,
+    /// > and deletes their objects from the bucket when asked to.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Rabbithole_V1_RemoveUploadRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func removeUpload<Result>(
+        request: GRPCCore.ClientRequest<Rabbithole_V1_RemoveUploadRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_RemoveUploadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.removeUpload(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Rabbithole_V1_RemoveUploadRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Rabbithole_V1_RemoveUploadResponse>(),
             options: options,
             onResponse: handleResponse
         )
@@ -593,6 +796,73 @@ extension Rabbithole_V1_Daemon.ClientProtocol {
             metadata: metadata
         )
         return try await self.watchUploadFiles(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RetryUpload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > RetryUpload sends failed files of an upload again, inside the same upload.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func retryUpload<Result>(
+        _ message: Rabbithole_V1_RetryUploadRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_RetryUploadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_RetryUploadRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.retryUpload(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RemoveUpload" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > RemoveUpload takes an upload, or some of its files, out of the history,
+    /// > and deletes their objects from the bucket when asked to.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func removeUpload<Result>(
+        _ message: Rabbithole_V1_RemoveUploadRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Rabbithole_V1_RemoveUploadResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Rabbithole_V1_RemoveUploadRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.removeUpload(
             request: request,
             options: options,
             onResponse: handleResponse

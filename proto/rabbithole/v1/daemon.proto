@@ -15,7 +15,32 @@ service Daemon {
   // WatchUploadFiles streams every file of one upload once, then a snapshot
   // whenever one of its files changes state or progresses.
   rpc WatchUploadFiles(WatchUploadFilesRequest) returns (stream FileSnapshot);
+  // RetryUpload sends failed files of an upload again, inside the same upload.
+  rpc RetryUpload(RetryUploadRequest) returns (RetryUploadResponse);
+  // RemoveUpload takes an upload, or some of its files, out of the history,
+  // and deletes their objects from the bucket when asked to.
+  rpc RemoveUpload(RemoveUploadRequest) returns (RemoveUploadResponse);
 }
+
+message RetryUploadRequest {
+  string upload_id = 1;
+  // The files to send again, by FileSnapshot.index. Empty means every failed
+  // file of the upload. A listed file that did not fail is an error.
+  repeated int32 file_indexes = 2;
+}
+
+message RetryUploadResponse {}
+
+message RemoveUploadRequest {
+  string upload_id = 1;
+  // The files to remove, by FileSnapshot.index. Empty means the whole upload.
+  repeated int32 file_indexes = 2;
+  // Also delete the objects from the bucket. When false only the history
+  // forgets them and the objects stay where they are.
+  bool delete_from_bucket = 3;
+}
+
+message RemoveUploadResponse {}
 
 message ConfigureRequest {
   string access_key_id = 1;
@@ -90,6 +115,15 @@ message UploadSnapshot {
   int32 files_total = 11;
   int32 files_finished = 12;
   int32 files_failed = 13;
+  // True on the last snapshot of an upload that left the history: removed by
+  // the user, found missing from the bucket, or belonging to a bucket that is
+  // no longer the configured one. Nothing follows it for this upload_id.
+  bool removed = 14;
+  // When the upload was enqueued, in milliseconds since the Unix epoch.
+  int64 created_at_ms = 15;
+  // When the upload finished or failed, in milliseconds since the Unix epoch.
+  // Zero while it has not ended.
+  int64 ended_at_ms = 16;
 }
 
 // One file of an upload.
@@ -106,4 +140,7 @@ message FileSnapshot {
   int64 bytes_sent = 7;
   UploadState state = 8;
   string error_message = 9;
+  // True on the last snapshot of a file that left its upload: removed by the
+  // user or found missing from the bucket. Nothing follows it for this index.
+  bool removed = 10;
 }
