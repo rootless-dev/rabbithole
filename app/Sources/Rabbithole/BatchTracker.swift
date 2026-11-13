@@ -10,6 +10,10 @@ import Foundation
 /// enqueue call has returned its id. Snapshots of ids that are not registered yet are held
 /// (latest per id) and claimed by `register`; they are never counted otherwise, which also
 /// ignores uploads from earlier batches and history replayed on subscription.
+///
+/// An upload whose failed files are sent again keeps its id and goes back to waiting. When
+/// it belongs to the batch it is counted again by its next snapshot; otherwise `retried`
+/// brings it in.
 struct BatchTracker {
     static let interruptedMessage = "Upload interrupted"
 
@@ -84,11 +88,34 @@ struct BatchTracker {
     /// Returns true when the snapshot changed the current batch.
     @discardableResult
     mutating func apply(_ snapshot: UploadSnapshot) -> Bool {
+        if snapshot.removed { return remove(snapshot.id) }
         guard entries[snapshot.id] != nil else {
             held[snapshot.id] = snapshot
             return false
         }
         return update(snapshot.id, with: snapshot)
+    }
+
+    /// The upload left the history: it stops counting. Returns true when the batch changed.
+    @discardableResult
+    mutating func remove(_ id: String) -> Bool {
+        held[id] = nil
+        guard entries.removeValue(forKey: id) != nil else { return false }
+        order.removeAll { $0 == id }
+        return true
+    }
+
+    /// Call before asking the daemon to send an upload's failed files again: what is held
+    /// for it is its old end, which must not be taken for the outcome of the new attempt.
+    mutating func willRetry(id: String) {
+        if entries[id] == nil { held[id] = nil }
+    }
+
+    /// The daemon accepted sending `files` failed files of an upload again. An upload from
+    /// an earlier batch or an earlier run joins the current batch; one that is already in
+    /// it is counted again by its own snapshots.
+    mutating func retried(id: String, files: Int) {
+        register(id: id, items: files)
     }
 
     /// The daemon restarted: uploads that were queued or in progress are lost.
@@ -108,7 +135,17 @@ struct BatchTracker {
 
     @discardableResult
     private mutating func update(_ id: String, with snapshot: UploadSnapshot) -> Bool {
-        guard var entry = entries[id], !entry.isDone else { return false }
+        guard var entry = entries[id] else { return false }
+        if entry.isDone {
+            // An ended upload only comes back when its failed files are sent again.
+            guard snapshot.state == .queued || snapshot.state == .uploading else { return false }
+            if !isActive {
+                // The queue was empty: this upload alone starts the next batch.
+                startNewBatch()
+                order = [id]
+            }
+            entry = Entry()
+        }
         entry.bytesTotal = max(snapshot.bytesTotal, 0)
         entry.bytesSent = max(entry.bytesSent, snapshot.bytesSent)
         entry.filesTotal = max(snapshot.filesTotal, 1)

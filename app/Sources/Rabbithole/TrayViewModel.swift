@@ -34,7 +34,7 @@ final class TrayViewModel {
     /// How many items `dropFeedback` is about: the ones held over the window while it is
     /// `.hovering`, the ones just added while it is `.confirmed`.
     private(set) var feedbackItemCount = 1
-    /// Every upload seen in this run; the main window and "Recent uploads" read it.
+    /// The upload history as the daemon tells it; the main window and "Recent uploads" read it.
     let uploads: UploadStore
 
     /// True when dropping or choosing files can start an upload right now.
@@ -136,26 +136,77 @@ final class TrayViewModel {
         await drop(urls)
     }
 
-    /// Sends failed uploads again: everything a failed upload was handed is enqueued as one
-    /// new upload. Returns how many uploads were enqueued.
+    /// Sends every failed file of each upload again. The uploads keep their ids and go back
+    /// to waiting. Returns how many uploads the daemon accepted.
     @discardableResult
     func retry(_ records: [UploadRecord]) async -> Int {
-        uploads.clearCondition()
-        guard refusalForState() == nil, let client else { return 0 }
-        var enqueued = 0
+        var accepted = 0
         for record in records {
-            do {
-                let id = try await client.enqueue(makeRequest(record.handedPaths))
-                tracker.register(id: id, items: record.handedPaths.count)
-                refreshState()
-                enqueued += 1
-            } catch {
-                if refusalForState() == nil, !tracker.isActive {
-                    state = .failed(Self.message(forEnqueueError: error))
-                }
+            if await retry(uploadID: record.id, fileIndexes: [], files: record.filesFailed) {
+                accepted += 1
             }
         }
-        return enqueued
+        return accepted
+    }
+
+    /// Sends failed files of one upload again: the ones listed by their index, or every
+    /// failed file when `fileIndexes` is empty. `files` is how many that is, as far as the
+    /// caller knows. Returns whether the daemon accepted.
+    @discardableResult
+    func retry(uploadID: String, fileIndexes: [Int], files: Int? = nil) async -> Bool {
+        uploads.clearCondition()
+        guard refusalForState() == nil, let client else { return false }
+        tracker.willRetry(id: uploadID)
+        do {
+            try await client.retry(uploadID: uploadID, fileIndexes: fileIndexes)
+        } catch DaemonError.notFound {
+            // Already gone from the history: the same as hearing that it was removed. For
+            // listed files it can be only the files that are gone, so the upload is kept.
+            if fileIndexes.isEmpty { forget(uploadID) }
+            return false
+        } catch {
+            if refusalForState() == nil, !tracker.isActive {
+                state = .failed(Self.message(forRetryError: error))
+            }
+            return false
+        }
+        tracker.retried(id: uploadID, files: max(files ?? fileIndexes.count, 1))
+        refreshState()
+        return true
+    }
+
+    /// Takes an upload, or the listed files of it, out of the history, and out of the bucket
+    /// too when asked. Returns once the daemon has done it. An upload the daemon no longer
+    /// knows counts as removed; any other failure is thrown for the caller to show.
+    func remove(uploadID: String, fileIndexes: [Int], deleteFromBucket: Bool) async throws {
+        guard let client else { throw DaemonError.unavailable }
+        do {
+            try await client.remove(
+                uploadID: uploadID, fileIndexes: fileIndexes, deleteFromBucket: deleteFromBucket)
+        } catch DaemonError.notFound {
+            // Not found for listed files can mean only that those files are gone, so the
+            // upload is kept; the caller drops the files, as after a removal.
+            if fileIndexes.isEmpty { forget(uploadID) }
+            return
+        }
+        if fileIndexes.isEmpty { forget(uploadID) }
+    }
+
+    /// The upload left the history: every list and the current batch stop showing it.
+    private func forget(_ id: String) {
+        uploads.remove(id)
+        guard tracker.remove(id) else { return }
+        if tracker.total > 0 {
+            refreshState()
+            return
+        }
+        // The batch is empty now: there is no upload left to report on.
+        switch state {
+        case .uploading, .finished, .failed:
+            state = settingsNotApplied ? .failed(Self.settingsNotAppliedMessage) : .idle
+        default:
+            break
+        }
     }
 
     /// The forwarder's outcome after it configured the daemon (or found nothing to configure):
@@ -231,6 +282,10 @@ final class TrayViewModel {
 
     /// Feeds one snapshot from the daemon's stream to the upload ledger and the batch tracker.
     func apply(_ snapshot: UploadSnapshot) {
+        if snapshot.removed {
+            forget(snapshot.id)
+            return
+        }
         uploads.apply(snapshot)
         if tracker.apply(snapshot) {
             refreshState()
@@ -314,6 +369,17 @@ final class TrayViewModel {
         case .unavailable: "Uploads are unavailable"
         // The daemon says which path it could not use, or that there was nothing to send.
         case .invalidArgument(let message): message.isEmpty ? "This file cannot be read" : message
+        default: "Upload could not be started"
+        }
+    }
+
+    private static func message(forRetryError error: Error) -> String {
+        switch error as? DaemonError {
+        case .notConfigured: "Connect your AWS account first"
+        case .unavailable: "Uploads are unavailable"
+        // The daemon says why it cannot send these files again.
+        case .rejected(let message), .invalidArgument(let message):
+            message.isEmpty ? "Upload could not be started" : message
         default: "Upload could not be started"
         }
     }

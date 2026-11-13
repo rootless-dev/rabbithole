@@ -59,7 +59,8 @@ struct SettingsView: View {
 }
 
 /// What the app really knows about the AWS connection. The engine has no connection test,
-/// so "Connected" is only claimed after an upload finished in this run.
+/// so "Connected" is only claimed after an upload finished in this run. Finished uploads of
+/// the history that earlier runs left do not prove that the key still works.
 struct ConnectionStatus {
     enum Level { case ok, neutral, bad }
 
@@ -71,10 +72,10 @@ struct ConnectionStatus {
         self.init(
             hasCredentials: context.account.summary.hasCredentials,
             unreadable: context.account.summary.credentialsUnreadable,
-            condition: context.uploads.condition, finishedCount: context.uploads.finishedCount)
+            condition: context.uploads.condition, finishedThisRun: context.uploads.hasFinishedLive)
     }
 
-    init(hasCredentials: Bool, unreadable: Bool, condition: ServiceCondition, finishedCount: Int) {
+    init(hasCredentials: Bool, unreadable: Bool, condition: ServiceCondition, finishedThisRun: Bool) {
         if unreadable {
             (short, level) = ("Key unreadable", .bad)
         } else if !hasCredentials {
@@ -83,7 +84,7 @@ struct ConnectionStatus {
             (short, level) = ("Key rejected", .bad)
         } else if condition == .offline {
             (short, level) = ("No connection", .bad)
-        } else if finishedCount > 0 {
+        } else if finishedThisRun {
             (short, level) = ("Connected", .ok)
         } else {
             (short, level) = ("Key saved", .neutral)
@@ -400,7 +401,11 @@ private struct AccountPane: View {
     var body: some View {
         @Bindable var account = context.account
         let status = ConnectionStatus(context: context)
-        SettingRow(title: "Access key ID", isFirst: true) {
+        SettingRow(
+            title: "Access key ID",
+            note: "Needs permission to write to the bucket; s3:DeleteObject only for deleting from it.",
+            isFirst: true
+        ) {
             if replacing {
                 SmallField(text: $newKeyID, width: 200, prompt: "New access key ID")
             } else {

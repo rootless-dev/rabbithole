@@ -43,22 +43,40 @@ enum Theme {
     static let bad = dynamic(0xC2372F, 0xFF8A80)
     static let bannerBad = dynamic(0xB3261E, 0xFF9B92)
     static let bannerBadBackground = dynamic(0xFDE7E4, 0xFF5A50, 1, 0.15)
+    /// Background of the note that deleting from the bucket cannot be undone.
+    static let badSoft = dynamic(0xC2372F, 0xFF8A80, 0.09, 0.12)
+    /// Background of the file row under the pointer.
+    static let hover = dynamic(0x161A26, 0xFFFFFF, 0.045, 0.05)
+    /// Border of the upload row under the pointer: the accent mixed 45% into the line color.
+    static let hoverLine = dynamic(0x443BBC, 0xB2A6FF, 0.51, 0.505)
+    /// Shadow under the actions menu and the confirmation sheets.
+    static let shadow = dynamic(0x14183C, 0x000000, 0.32, 0.55)
     static let warn = dynamic(0x8A5A00, 0xFFD98A)
     static let warnBackground = dynamic(0xFFF3D6, 0xFFBE46, 1, 0.14)
+
+    // The same ink, muted and bad for text that AppKit draws.
+    static let inkNS = dynamicNS(0x161A26, 0xF1F3FA)
+    static let mutedNS = dynamicNS(0x62697E, 0x9AA1B8)
+    static let badNS = dynamicNS(0xC2372F, 0xFF8A80)
 
     static func dynamic(
         _ light: UInt32, _ dark: UInt32, _ lightAlpha: Double = 1, _ darkAlpha: Double = 1
     ) -> Color {
-        Color(
-            nsColor: NSColor(name: nil) { appearance in
-                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                let hex = isDark ? dark : light
-                return NSColor(
-                    srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
-                    green: CGFloat((hex >> 8) & 0xFF) / 255,
-                    blue: CGFloat(hex & 0xFF) / 255,
-                    alpha: isDark ? darkAlpha : lightAlpha)
-            })
+        Color(nsColor: dynamicNS(light, dark, lightAlpha, darkAlpha))
+    }
+
+    static func dynamicNS(
+        _ light: UInt32, _ dark: UInt32, _ lightAlpha: Double = 1, _ darkAlpha: Double = 1
+    ) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let hex = isDark ? dark : light
+            return NSColor(
+                srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255,
+                alpha: isDark ? darkAlpha : lightAlpha)
+        }
     }
 }
 

@@ -79,6 +79,10 @@ private final class ScriptedClient: DaemonClient, Sendable {
         AsyncThrowingStream { $0.finish() }
     }
 
+    func retry(uploadID: String, fileIndexes: [Int]) async throws {}
+
+    func remove(uploadID: String, fileIndexes: [Int], deleteFromBucket: Bool) async throws {}
+
     func watch() -> AsyncThrowingStream<UploadSnapshot, Error> {
         let hold = state.withLock { state -> Bool in
             state.watchCount += 1

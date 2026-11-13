@@ -162,21 +162,60 @@ final class TrayViewModelUploadsTests: XCTestCase {
             "several copied files and folders are one upload")
     }
 
-    func testRetryOfAFailedUploadSendsEverythingItWasHandedAsOneUpload() async {
+    func testRetryOfAFailedUploadAsksForItsFailedFilesInsideTheSameUpload() async {
         let client = StubDaemonClient()
         let model = makeModel(client: client)
         let paths = ["/tmp/report-q3.pdf", "/tmp/photos", "/tmp/notes.txt"]
         await model.drop(paths.map { URL(fileURLWithPath: $0) })
-        model.apply(.several("up-1", paths, files: 9, finished: 6, failed: 3, total: 900, sent: 600, .failed, error: "3 of 9 files could not be sent"))
+        let failed = UploadSnapshot.several("up-1", paths, files: 9, finished: 6, failed: 3, total: 900, sent: 600, .failed, error: "3 of 9 files could not be sent")
+        model.apply(failed)
         XCTAssertEqual(model.state, .failed("3 of 9 files could not be sent"))
 
         let count = await model.retry(model.uploads.ledger.records)
         XCTAssertEqual(count, 1)
-        XCTAssertEqual(client.requests.map(\.paths), [paths, paths])
-        XCTAssertEqual(model.state, .uploading(remaining: 3, total: 3, fraction: 0))
+        XCTAssertEqual(client.retries, [.init(uploadID: "up-1", fileIndexes: [])], "empty means every failed file")
+        XCTAssertEqual(client.requests.count, 1, "nothing is enqueued as a new upload")
+
+        // The daemon puts the same upload back in the queue, and the batch counts it again.
+        model.apply(.several("up-1", paths, files: 9, finished: 6, total: 900, sent: 600, .queued))
+        XCTAssertEqual(model.uploads.ledger.records.count, 1)
+        XCTAssertEqual(model.uploads.ledger["up-1"]?.state, .queued)
+        XCTAssertEqual(model.state, .uploading(remaining: 3, total: 9, fraction: 600.0 / 900))
+
+        model.apply(.several("up-1", paths, files: 9, finished: 9, total: 900, sent: 900, .finished))
+        XCTAssertEqual(model.state, .finished)
     }
 
-    func testRetryEnqueuesEachFailedFileAgainAndClearsTheCondition() async {
+    func testRetryOfOneFileNamesItsIndexAndAnUploadOfAnEarlierRunJoinsTheBatch() async {
+        let client = StubDaemonClient()
+        let model = makeModel(client: client)
+        // Replayed history: this run never enqueued it.
+        model.apply(.folder("old", "trip", files: 12, finished: 11, failed: 1, total: 1200, sent: 1100, .failed, error: "1 of 12 files could not be sent"))
+        XCTAssertEqual(model.state, .idle)
+
+        let accepted = await model.retry(uploadID: "old", fileIndexes: [7])
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(client.retries, [.init(uploadID: "old", fileIndexes: [7])])
+        XCTAssertEqual(model.state, .uploading(remaining: 1, total: 1, fraction: 0))
+
+        model.apply(.folder("old", "trip", files: 12, finished: 11, total: 1200, sent: 1100, .uploading))
+        XCTAssertEqual(model.state, .uploading(remaining: 1, total: 12, fraction: 1100.0 / 1200))
+        model.apply(.folder("old", "trip", files: 12, finished: 12, total: 1200, sent: 1200, .finished))
+        XCTAssertEqual(model.state, .finished)
+    }
+
+    func testTheOldEndOfARetriedUploadIsNotTakenForTheNewOne() async {
+        let client = StubDaemonClient()
+        let model = makeModel(client: client)
+        // Held by the batch tracker as an unknown id: the end that the retry is about.
+        model.apply(.make("old", "a", in: "/tmp", total: 5, .failed, error: "Connection lost"))
+        await model.retry(uploadID: "old", fileIndexes: [])
+        XCTAssertEqual(
+            model.state, .uploading(remaining: 1, total: 1, fraction: 0),
+            "not failed again before the daemon even started")
+    }
+
+    func testRetryClearsTheConditionAndSendsOnlyWhatThisOutageStopped() async {
         let client = StubDaemonClient()
         let model = makeModel(client: client)
         await model.drop([URL(fileURLWithPath: "/tmp/a")])
@@ -186,28 +225,103 @@ final class TrayViewModelUploadsTests: XCTestCase {
         let failed = model.uploads.ledger.failedByCondition
         let count = await model.retry(failed)
         XCTAssertEqual(count, 1)
-        XCTAssertEqual(client.enqueued, ["/tmp/a", "/tmp/a"])
+        XCTAssertEqual(client.retries.map(\.uploadID), ["up-1"])
         XCTAssertEqual(model.uploads.ledger.condition, .none)
-        XCTAssertEqual(model.state, .uploading(remaining: 1, total: 1, fraction: 0))
     }
 
-    func testRetryThatCannotEnqueueShowsWhyAndRetryWhileUnavailableDoesNothing() async {
+    func testRetryThatTheDaemonRefusesShowsWhyAndRetryWhileUnavailableDoesNothing() async {
         let client = StubDaemonClient()
         let model = makeModel(client: client)
         await model.drop([URL(fileURLWithPath: "/tmp/a")])
         model.apply(.make("up-1", "a", in: "/tmp", total: 5, .failed, error: "Bucket not found"))
         let failed = model.uploads.ledger.records
 
-        client.failEnqueue(with: .invalidArgument("gone"))
+        client.failRetry(with: .rejected("This upload is being sent"))
         let none = await model.retry(failed)
         XCTAssertEqual(none, 0)
-        XCTAssertEqual(model.state, .failed("gone"), "the daemon's own words are shown")
+        XCTAssertEqual(model.state, .failed("This upload is being sent"), "the daemon's own words are shown")
 
-        client.failEnqueue(with: nil)
+        client.failRetry(with: nil)
         model.handle(.unavailable)
         let refused = await model.retry(failed)
         XCTAssertEqual(refused, 0)
-        XCTAssertEqual(client.enqueued, ["/tmp/a"])
+        XCTAssertEqual(client.retries.count, 1, "the daemon is not asked while it is gone")
+    }
+
+    func testRetryOfAnUploadTheDaemonNoLongerKnowsDropsItFromTheHistory() async {
+        let client = StubDaemonClient()
+        let model = makeModel(client: client)
+        var removed: [String] = []
+        model.uploads.onRemoved = { removed.append($0) }
+        await model.drop([URL(fileURLWithPath: "/tmp/a")])
+        model.apply(.make("up-1", "a", in: "/tmp", total: 5, .failed, error: "Connection lost"))
+
+        client.failRetry(with: .notFound)
+        let accepted = await model.retry(uploadID: "up-1", fileIndexes: [])
+        XCTAssertFalse(accepted)
+        XCTAssertNil(model.uploads.ledger["up-1"])
+        XCTAssertEqual(removed, ["up-1"])
+        XCTAssertEqual(model.state, .idle, "nothing is left to report as failed")
+    }
+
+    // MARK: Removing
+
+    func testARemovedSnapshotDropsTheUploadEverywhere() async {
+        let client = StubDaemonClient()
+        let model = makeModel(client: client)
+        await model.drop([URL(fileURLWithPath: "/tmp/a")])
+        await model.drop([URL(fileURLWithPath: "/tmp/b")])
+        model.apply(.make("up-1", "a", in: "/tmp", total: 10, sent: 10, .finished))
+        model.apply(.make("up-2", "b", in: "/tmp", total: 10, sent: 2, .failed, error: "Connection lost"))
+        XCTAssertEqual(model.state, .failed("Connection lost"))
+
+        model.apply(.removed(id: "up-2"))
+        XCTAssertEqual(model.uploads.ledger.records.map(\.id), ["up-1"])
+        XCTAssertEqual(model.state, .finished, "the batch no longer holds the failed upload")
+
+        model.apply(.removed(id: "up-1"))
+        XCTAssertTrue(model.uploads.ledger.records.isEmpty)
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertEqual(model.uploads.ledger.recent(limit: 5), [])
+    }
+
+    func testRemoveAsksTheDaemonAndForgetsTheUploadOnceItIsDone() async throws {
+        let client = StubDaemonClient()
+        let model = makeModel(client: client)
+        model.apply(.folder("old", "trip", files: 12, finished: 12, total: 1200, sent: 1200, .finished))
+
+        try await model.remove(uploadID: "old", fileIndexes: [3], deleteFromBucket: false)
+        XCTAssertNotNil(model.uploads.ledger["old"], "removing one file keeps the upload")
+
+        try await model.remove(uploadID: "old", fileIndexes: [], deleteFromBucket: true)
+        XCTAssertEqual(
+            client.removals,
+            [
+                .init(uploadID: "old", fileIndexes: [3], deleteFromBucket: false),
+                .init(uploadID: "old", fileIndexes: [], deleteFromBucket: true),
+            ])
+        XCTAssertNil(model.uploads.ledger["old"], "gone without waiting for the stream to say so")
+    }
+
+    func testRemoveTreatsNotFoundAsRemovedAndThrowsEveryOtherFailure() async throws {
+        let client = StubDaemonClient()
+        let model = makeModel(client: client)
+        model.apply(.make("a", "a", in: "/tmp", total: 10, sent: 10, .finished))
+        model.apply(.make("b", "b", in: "/tmp", total: 10, sent: 10, .finished))
+
+        client.failRemove(with: .rejected("AWS denied permission to delete from the bucket (s3:DeleteObject)"))
+        do {
+            try await model.remove(uploadID: "a", fileIndexes: [], deleteFromBucket: true)
+            XCTFail("expected the daemon's refusal")
+        } catch {
+            XCTAssertEqual(
+                error as? DaemonError, .rejected("AWS denied permission to delete from the bucket (s3:DeleteObject)"))
+        }
+        XCTAssertNotNil(model.uploads.ledger["a"], "a failed removal keeps the upload listed")
+
+        client.failRemove(with: .notFound)
+        try await model.remove(uploadID: "b", fileIndexes: [], deleteFromBucket: false)
+        XCTAssertNil(model.uploads.ledger["b"], "already gone is the same as removed")
     }
 
     func testHoverRemembersHowManyItemsAreHeld() {
@@ -643,18 +757,18 @@ final class SmallLogicTests: XCTestCase {
         XCTAssertEqual(MainSection.allCases.map(\.title), ["Overview", "History", "Settings"])
     }
 
-    func testConnectionStatusOnlyClaimsConnectedAfterAFinishedUpload() {
-        func status(_ has: Bool, _ unreadable: Bool, _ condition: ServiceCondition, _ finished: Int) -> String {
+    func testConnectionStatusOnlyClaimsConnectedAfterAnUploadFinishedInThisRun() {
+        func status(_ has: Bool, _ unreadable: Bool, _ condition: ServiceCondition, _ finished: Bool) -> String {
             ConnectionStatus(
-                hasCredentials: has, unreadable: unreadable, condition: condition, finishedCount: finished
+                hasCredentials: has, unreadable: unreadable, condition: condition, finishedThisRun: finished
             ).short
         }
-        XCTAssertEqual(status(false, false, .none, 0), "Not connected")
-        XCTAssertEqual(status(true, false, .none, 0), "Key saved")
-        XCTAssertEqual(status(true, false, .none, 2), "Connected")
-        XCTAssertEqual(status(true, false, .keyRejected, 2), "Key rejected")
-        XCTAssertEqual(status(true, false, .offline, 2), "No connection")
-        XCTAssertEqual(status(false, true, .none, 0), "Key unreadable")
+        XCTAssertEqual(status(false, false, .none, false), "Not connected")
+        XCTAssertEqual(status(true, false, .none, false), "Key saved")
+        XCTAssertEqual(status(true, false, .none, true), "Connected")
+        XCTAssertEqual(status(true, false, .keyRejected, true), "Key rejected")
+        XCTAssertEqual(status(true, false, .offline, true), "No connection")
+        XCTAssertEqual(status(false, true, .none, false), "Key unreadable")
     }
 
     func testShortcutFromAKeyPress() {

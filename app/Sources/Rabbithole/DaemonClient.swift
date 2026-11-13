@@ -17,4 +17,17 @@ protocol DaemonClient: Sendable {
     /// Streams every file of one upload once, then each file that changes, until the consuming
     /// task is cancelled or the daemon fails. An unknown id fails with `DaemonError.notFound`.
     func watchFiles(uploadID: String) -> AsyncThrowingStream<FileSnapshot, Error>
+
+    /// Sends failed files of an upload again, inside the same upload, which goes back to
+    /// waiting. `fileIndexes` are `FileSnapshot.index` values; empty means every failed file.
+    /// Throws `DaemonError.notFound` when the upload is no longer in the history and
+    /// `DaemonError.rejected` with a readable message when it cannot be done.
+    func retry(uploadID: String, fileIndexes: [Int]) async throws
+
+    /// Takes an upload, or the listed files of it, out of the history, and deletes their
+    /// objects from the bucket when `deleteFromBucket` is set. `fileIndexes` empty means the
+    /// whole upload. Returns once the work is done, which can take a while for a big folder.
+    /// Throws `DaemonError.notFound` when it is already gone and `DaemonError.rejected` with a
+    /// readable message when it cannot be done.
+    func remove(uploadID: String, fileIndexes: [Int], deleteFromBucket: Bool) async throws
 }

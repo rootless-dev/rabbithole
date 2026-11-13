@@ -246,12 +246,100 @@ final class BatchTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.firstError, "first")
     }
 
-    func testFinishedStateIsNotOverwrittenByLateNonFinalSnapshot() {
+    func testAnEndedUploadIsNotChangedByAnotherReportOfItsEnd() {
         var tracker = BatchTracker()
         tracker.register(id: "a")
-        tracker.apply(snapshot("a", .finished, sent: 100))
-        tracker.apply(snapshot("a", .uploading, sent: 50))
+        tracker.apply(snapshot("a", .failed, sent: 40, error: "first"))
+        XCTAssertFalse(tracker.apply(snapshot("a", .failed, sent: 40, error: "replayed")))
 
         XCTAssertEqual(tracker.remaining, 0)
+        XCTAssertEqual(tracker.firstError, "first")
+    }
+
+    // MARK: Retry inside the same upload
+
+    func testARetriedUploadOfTheBatchIsCountedAgainByItsNextSnapshot() {
+        var tracker = BatchTracker()
+        tracker.register(id: "ok")
+        tracker.register(id: "bad")
+        tracker.apply(snapshot("ok", .finished, sent: 100))
+        tracker.apply(snapshot("bad", .failed, sent: 40, error: "Connection lost"))
+        XCTAssertFalse(tracker.isActive)
+
+        // The queue was empty, so the retried upload alone is the next batch.
+        tracker.willRetry(id: "bad")
+        tracker.retried(id: "bad", files: 1)
+        XCTAssertFalse(tracker.isActive, "nothing changes until the daemon reports it waiting")
+        XCTAssertTrue(tracker.apply(snapshot("bad", .queued, sent: 40)))
+        XCTAssertTrue(tracker.isActive)
+        XCTAssertEqual(tracker.total, 1)
+        XCTAssertEqual(tracker.remaining, 1)
+        XCTAssertNil(tracker.firstError)
+
+        tracker.apply(snapshot("bad", .finished, sent: 100))
+        XCTAssertFalse(tracker.isActive)
+        XCTAssertNil(tracker.firstError)
+        XCTAssertEqual(tracker.fraction, 1)
+    }
+
+    func testARetriedUploadJoinsABatchThatIsStillRunning() {
+        var tracker = BatchTracker()
+        tracker.register(id: "bad")
+        tracker.register(id: "running")
+        tracker.apply(snapshot("bad", .failed, error: "Connection lost"))
+        tracker.apply(snapshot("running", .uploading, sent: 50))
+
+        tracker.apply(snapshot("bad", .uploading, sent: 10))
+        XCTAssertEqual(tracker.total, 2)
+        XCTAssertEqual(tracker.remaining, 2)
+        XCTAssertNil(tracker.firstError)
+    }
+
+    func testARetriedUploadFromOutsideTheBatchIsRegisteredWithoutItsOldEnd() {
+        var tracker = BatchTracker()
+        // History replayed on subscription: held, never counted.
+        tracker.apply(snapshot("old", .failed, sent: 40, error: "Connection lost"))
+        XCTAssertEqual(tracker.heldCount, 1)
+
+        tracker.willRetry(id: "old")
+        XCTAssertEqual(tracker.heldCount, 0, "the old failure must not be claimed as the new outcome")
+        tracker.retried(id: "old", files: 3)
+        XCTAssertTrue(tracker.isActive)
+        XCTAssertEqual(tracker.total, 3)
+        XCTAssertNil(tracker.firstError)
+    }
+
+    func testARetryThatEndedBeforeTheCallReturnedIsClaimedWithItsOutcome() {
+        var tracker = BatchTracker()
+        tracker.apply(snapshot("old", .failed, error: "Connection lost"))
+        tracker.willRetry(id: "old")
+        // Coalesced: the new attempt already finished when the call returns.
+        tracker.apply(snapshot("old", .finished, sent: 100))
+        tracker.retried(id: "old", files: 1)
+        XCTAssertFalse(tracker.isActive)
+        XCTAssertNil(tracker.firstError)
+        XCTAssertEqual(tracker.total, 1)
+    }
+
+    // MARK: Removed uploads
+
+    func testARemovedUploadStopsCountingAndAHeldOneIsDropped() {
+        var tracker = BatchTracker()
+        tracker.register(id: "a")
+        tracker.register(id: "b")
+        tracker.apply(snapshot("a", .finished, sent: 100))
+        tracker.apply(snapshot("b", .failed, error: "Connection lost"))
+        tracker.apply(snapshot("history", .finished, sent: 100))
+        XCTAssertEqual(tracker.heldCount, 1)
+
+        XCTAssertTrue(tracker.apply(.removed(id: "b")), "the batch changed")
+        XCTAssertEqual(tracker.total, 1)
+        XCTAssertNil(tracker.firstError)
+
+        XCTAssertFalse(tracker.apply(.removed(id: "history")), "it was never part of the batch")
+        XCTAssertEqual(tracker.heldCount, 0)
+        XCTAssertFalse(tracker.remove("b"))
+        XCTAssertTrue(tracker.remove("a"))
+        XCTAssertEqual(tracker.total, 0)
     }
 }

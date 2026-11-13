@@ -161,7 +161,7 @@ private struct ConnectPane: View {
         VStack(alignment: .leading, spacing: 0) {
             PaneHeading(
                 title: "Connect your AWS account",
-                text: "Rabbithole sends your files to your own AWS account. Paste an access key that can write to the bucket you want to use.")
+                text: "Rabbithole sends your files to your own AWS account. Paste an access key that can write to the bucket you want to use. Deleting files from the bucket later also needs s3:DeleteObject.")
             SetupField(label: "Access key ID") {
                 BoxTextField(text: $model.accessKeyID)
             }

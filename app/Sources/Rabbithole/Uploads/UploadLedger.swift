@@ -1,8 +1,9 @@
 import Foundation
 import Observation
 
-/// One upload as the app knows it in this run: the daemon's latest snapshot plus what only the
-/// app can add (when it was first seen, when it ended, how fast it is going).
+/// One upload of the history: the daemon's latest snapshot plus what only the app can add
+/// (how fast it is going). The times are the daemon's; the app's clock stands in only when a
+/// snapshot does not carry them.
 struct UploadRecord: Identifiable, Equatable, Sendable {
     let id: String
     var fileName: String
@@ -25,8 +26,13 @@ struct UploadRecord: Identifiable, Equatable, Sendable {
 
     var isActive: Bool { state == .queued || state == .uploading }
 
-    /// The files and folders this upload was made of, which is what sending it again takes.
+    /// The files and folders this upload was made of.
     var handedPaths: [String] { rootPaths.isEmpty ? [localPath] : rootPaths }
+
+    /// How long an ended upload took, from being handed over to its end.
+    var duration: TimeInterval? {
+        endedAt.map { max($0.timeIntervalSince(startedAt), 0) }
+    }
 
     /// Progress from 0 to 1. A finished upload is always 1, including an empty file.
     var fraction: Double {
@@ -57,9 +63,10 @@ enum ServiceCondition: Equatable, Sendable {
     static let keyRejectedMessage = "AWS rejected the access key"
 }
 
-/// Every upload seen in this run, in arrival order, with the rules for merging snapshots.
-/// The daemon keeps uploads only while it lives and the app keeps them only while it runs,
-/// so this is the whole history the app can show.
+/// The upload history as the daemon tells it, in arrival order, with the rules for merging
+/// snapshots. The daemon stores the history and replays all of it on every subscription, so
+/// the ledger holds uploads of earlier runs too; `liveSince` tells those apart from what
+/// ended while this run was watching.
 struct UploadLedger: Equatable, Sendable {
     static let interruptedMessage = BatchTracker.interruptedMessage
     /// Minimum spacing between two speed samples.
@@ -67,6 +74,9 @@ struct UploadLedger: Equatable, Sendable {
 
     private(set) var records: [UploadRecord] = []
     private(set) var condition: ServiceCondition = .none
+    /// When this run began. An upload first seen already ended, with an end before this, is
+    /// history: it is listed, but it is not announced and says nothing about the service now.
+    var liveSince: Date = .distantPast
     private var index: [String: Int] = [:]
     private var lastSample: [String: (at: Date, bytes: Int64)] = [:]
 
@@ -79,37 +89,74 @@ struct UploadLedger: Equatable, Sendable {
     }
 
     /// Merges one snapshot. Returns the record when this snapshot ended the upload (it became
-    /// finished or failed just now), so the caller can announce it once.
+    /// finished or failed just now), so the caller can announce it once. A snapshot marked
+    /// removed takes the upload out; see `remove(_:)`.
     @discardableResult
     mutating func apply(_ snapshot: UploadSnapshot, now: Date) -> UploadRecord? {
+        if snapshot.removed {
+            remove(snapshot.id)
+            return nil
+        }
         guard let position = index[snapshot.id] else {
             var record = UploadRecord(
                 id: snapshot.id, fileName: snapshot.fileName, localPath: snapshot.localPath,
                 objectKey: snapshot.objectKey, bytesTotal: max(snapshot.bytesTotal, 0),
                 bytesSent: max(snapshot.bytesSent, 0), state: snapshot.state,
-                errorMessage: "", startedAt: now, kind: snapshot.kind, rootPaths: snapshot.rootPaths)
+                errorMessage: "", startedAt: snapshot.createdAt ?? now, kind: snapshot.kind,
+                rootPaths: snapshot.rootPaths)
             countFiles(&record, from: snapshot)
-            let ended = finish(&record, with: snapshot, now: now)
+            // Ended before this run began: an upload of the history, not news.
+            let isHistory = (snapshot.endedAt ?? now) < liveSince
+            let ended = finish(&record, with: snapshot, now: now, isNews: !isHistory)
             index[snapshot.id] = records.count
             records.append(record)
             lastSample[snapshot.id] = (now, record.bytesSent)
-            return ended ? record : nil
+            return ended && !isHistory ? record : nil
         }
         var record = records[position]
-        // A finished or failed upload never comes back: late or replayed snapshots are ignored.
-        guard record.isActive else { return nil }
-        record.bytesTotal = max(snapshot.bytesTotal, 0)
-        record.bytesSent = max(record.bytesSent, snapshot.bytesSent)
+        let wasActive = record.isActive
+        let previousState = record.state
+        if let createdAt = snapshot.createdAt { record.startedAt = createdAt }
         if !snapshot.objectKey.isEmpty { record.objectKey = snapshot.objectKey }
-        if snapshot.state != .queued { record.state = snapshot.state }
+        record.bytesTotal = max(snapshot.bytesTotal, 0)
         countFiles(&record, from: snapshot)
-        sampleSpeed(&record, now: now)
-        let ended = finish(&record, with: snapshot, now: now)
+        if wasActive {
+            // While an upload runs, what was sent and how far it got do not go back.
+            record.bytesSent = max(record.bytesSent, snapshot.bytesSent)
+            if snapshot.state != .queued { record.state = snapshot.state }
+            sampleSpeed(&record, now: now)
+        } else {
+            // An ended upload changes when its failed files are sent again (it goes back to
+            // waiting, under the same id) or when some of its files are removed.
+            record.bytesSent = max(snapshot.bytesSent, 0)
+            record.state = snapshot.state
+            if record.isActive {
+                record.errorMessage = ""
+                record.endedAt = nil
+                lastSample[record.id] = (now, record.bytesSent)
+            }
+        }
+        // Coalesced snapshots can take a retried upload from failed straight to finished.
+        let isNews = wasActive || snapshot.state != previousState
+        let ended = finish(&record, with: snapshot, now: now, isNews: isNews)
         records[position] = record
-        return ended ? record : nil
+        return ended && isNews ? record : nil
+    }
+
+    /// Takes an upload out of the history: the user removed it, it is no longer in the
+    /// bucket, or the bucket changed. Returns false when it was not there.
+    @discardableResult
+    mutating func remove(_ id: String) -> Bool {
+        guard let position = index.removeValue(forKey: id) else { return false }
+        records.remove(at: position)
+        lastSample[id] = nil
+        for later in position..<records.count { index[records[later].id] = later }
+        return true
     }
 
     /// The daemon restarted or is gone: uploads that were queued or in progress are lost.
+    /// A restarted daemon reports the same uploads as failed with the same message, which
+    /// then only brings its own time of the end.
     mutating func interrupt(now: Date) {
         for position in records.indices where records[position].isActive {
             records[position].state = .failed
@@ -124,32 +171,36 @@ struct UploadLedger: Equatable, Sendable {
         condition = .none
     }
 
-    /// Takes the file counters of a snapshot. Like bytes sent, the counts of ended files
-    /// never go back.
+    /// Takes the file counters of a snapshot as the daemon gives them: they go down when a
+    /// failed file is sent again or a file is removed.
     private func countFiles(_ record: inout UploadRecord, from snapshot: UploadSnapshot) {
         record.filesTotal = max(snapshot.filesTotal, 0)
-        record.filesFinished = max(record.filesFinished, snapshot.filesFinished)
-        record.filesFailed = max(record.filesFailed, snapshot.filesFailed)
+        record.filesFinished = max(snapshot.filesFinished, 0)
+        record.filesFailed = max(snapshot.filesFailed, 0)
     }
 
-    /// Applies a terminal snapshot to `record`. Returns true when it ended the upload.
+    /// Applies a terminal snapshot to `record`. Returns true when the snapshot is terminal.
+    /// Only news (an upload that ended while this run was watching) changes the service
+    /// condition; history and repeated reports of the same end do not.
     private mutating func finish(
-        _ record: inout UploadRecord, with snapshot: UploadSnapshot, now: Date
+        _ record: inout UploadRecord, with snapshot: UploadSnapshot, now: Date, isNews: Bool
     ) -> Bool {
         switch snapshot.state {
         case .queued, .uploading:
             return false
         case .finished:
             record.state = .finished
+            record.errorMessage = ""
             record.bytesSent = record.bytesTotal
-            record.endedAt = now
+            record.endedAt = snapshot.endedAt ?? (isNews ? now : record.endedAt ?? now)
             record.bytesPerSecond = nil
-            condition = .none
+            if isNews { condition = .none }
         case .failed:
             record.state = .failed
             record.errorMessage = snapshot.errorMessage.isEmpty ? "Upload failed" : snapshot.errorMessage
-            record.endedAt = now
+            record.endedAt = snapshot.endedAt ?? (isNews ? now : record.endedAt ?? now)
             record.bytesPerSecond = nil
+            guard isNews else { break }
             switch record.errorMessage {
             case ServiceCondition.offlineMessage: condition = .offline
             case ServiceCondition.keyRejectedMessage: condition = .keyRejected
@@ -185,12 +236,23 @@ extension UploadLedger {
         return uploading + queued + ended
     }
 
-    /// The newest uploads first, for the tray's "Recent uploads" list.
+    /// The newest uploads first, for the tray's "Recent uploads" list: by when they were
+    /// handed over, and by arrival among uploads of the same moment.
     func recent(limit: Int) -> [UploadRecord] {
-        Array(records.reversed().prefix(limit))
+        let newestFirst = records.enumerated().sorted { one, other in
+            one.element.startedAt != other.element.startedAt
+                ? one.element.startedAt > other.element.startedAt : one.offset > other.offset
+        }
+        return newestFirst.prefix(limit).map(\.element)
     }
 
     var finishedCount: Int { records.filter { $0.state == .finished }.count }
+
+    /// True once an upload finished while this run was watching, which is the only proof
+    /// the app has that the saved key works right now.
+    var hasFinishedLive: Bool {
+        records.contains { $0.state == .finished && ($0.endedAt ?? .distantPast) >= liveSince }
+    }
 
     /// How many files the finished uploads hold.
     var finishedFileCount: Int {
@@ -206,7 +268,8 @@ extension UploadLedger {
             .max { ($0.endedAt ?? .distantPast) < ($1.endedAt ?? .distantPast) }
     }
 
-    /// Failed uploads that can be sent again because of the current condition.
+    /// Failed uploads that can be sent again because of the current condition: the ones
+    /// that failed for it in this run, not every old failure with the same words.
     var failedByCondition: [UploadRecord] {
         let message: String
         switch condition {
@@ -214,7 +277,9 @@ extension UploadLedger {
         case .offline: message = ServiceCondition.offlineMessage
         case .keyRejected: message = ServiceCondition.keyRejectedMessage
         }
-        return records.filter { $0.state == .failed && $0.errorMessage == message }
+        return records.filter {
+            $0.state == .failed && $0.errorMessage == message && ($0.endedAt ?? .distantPast) >= liveSince
+        }
     }
 }
 
@@ -223,18 +288,30 @@ extension UploadLedger {
 @Observable
 final class UploadStore {
     private(set) var ledger = UploadLedger()
-    /// Called once for each upload that just finished or failed.
+    /// Called once for each upload that just finished or failed. Uploads of the history that
+    /// the daemon replays are not announced.
     @ObservationIgnored var onEnded: ((UploadRecord) -> Void)?
+    /// Called with the id of each upload that left the history.
+    @ObservationIgnored var onRemoved: ((String) -> Void)?
     @ObservationIgnored private let now: () -> Date
 
     init(now: @escaping () -> Date = Date.init) {
         self.now = now
+        ledger.liveSince = now()
     }
 
     func apply(_ snapshot: UploadSnapshot) {
-        if let ended = ledger.apply(snapshot, now: now()) {
+        if snapshot.removed {
+            remove(snapshot.id)
+        } else if let ended = ledger.apply(snapshot, now: now()) {
             onEnded?(ended)
         }
+    }
+
+    /// Takes an upload out of the history, because the daemon said so or answered that it
+    /// no longer knows it.
+    func remove(_ id: String) {
+        if ledger.remove(id) { onRemoved?(id) }
     }
 
     func interrupt() {

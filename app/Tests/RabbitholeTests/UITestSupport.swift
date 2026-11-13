@@ -30,9 +30,53 @@ final class StubDaemonClient: DaemonClient, Sendable {
         var files: [String: [FileSnapshot]] = [:]
         var filesError: DaemonError?
         var watchedFiles: [String] = []
+        var retries: [Retry] = []
+        var retryError: DaemonError?
+        var removals: [Removal] = []
+        var removeError: DaemonError?
+        var holdRemovals = false
+        var heldRemovals: [CheckedContinuation<Void, Never>] = []
+    }
+
+    struct Retry: Equatable {
+        let uploadID: String
+        let fileIndexes: [Int]
+    }
+
+    struct Removal: Equatable {
+        let uploadID: String
+        let fileIndexes: [Int]
+        let deleteFromBucket: Bool
     }
 
     private let calls = Mutex(Calls())
+
+    /// Every RetryUpload call, in order, including the ones that were made to fail.
+    var retries: [Retry] { calls.withLock { $0.retries } }
+    /// Every RemoveUpload call, in order, including the ones that were made to fail.
+    var removals: [Removal] { calls.withLock { $0.removals } }
+
+    func failRetry(with error: DaemonError?) {
+        calls.withLock { $0.retryError = error }
+    }
+
+    func failRemove(with error: DaemonError?) {
+        calls.withLock { $0.removeError = error }
+    }
+
+    /// Remove calls do not answer until `releaseRemovals()`, like a daemon busy deleting.
+    func holdRemovals() {
+        calls.withLock { $0.holdRemovals = true }
+    }
+
+    func releaseRemovals() {
+        let held = calls.withLock { state -> [CheckedContinuation<Void, Never>] in
+            state.holdRemovals = false
+            defer { state.heldRemovals = [] }
+            return state.heldRemovals
+        }
+        for continuation in held { continuation.resume() }
+    }
 
     /// One request per upload, as the daemon would receive them.
     var requests: [EnqueueRequest] { calls.withLock { $0.requests } }
@@ -78,6 +122,26 @@ final class StubDaemonClient: DaemonClient, Sendable {
             for file in files { continuation.yield(file) }
             continuation.finish(throwing: error)
         }
+    }
+
+    func retry(uploadID: String, fileIndexes: [Int]) async throws {
+        try calls.withLock { state in
+            state.retries.append(Retry(uploadID: uploadID, fileIndexes: fileIndexes))
+            if let error = state.retryError { throw error }
+        }
+    }
+
+    func remove(uploadID: String, fileIndexes: [Int], deleteFromBucket: Bool) async throws {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let hold = calls.withLock { state -> Bool in
+                state.removals.append(
+                    Removal(uploadID: uploadID, fileIndexes: fileIndexes, deleteFromBucket: deleteFromBucket))
+                if state.holdRemovals { state.heldRemovals.append(continuation) }
+                return state.holdRemovals
+            }
+            if !hold { continuation.resume() }
+        }
+        if let error = calls.withLock({ $0.removeError }) { throw error }
     }
 }
 

@@ -30,7 +30,7 @@ final class UploadLedgerTests: XCTestCase {
         XCTAssertEqual(ledger["a"]?.fraction, 0.6)
     }
 
-    func testFinishingReturnsTheRecordOnceAndLaterSnapshotsAreIgnored() {
+    func testFinishingReturnsTheRecordOnceAndAReplayChangesNothing() {
         var ledger = UploadLedger()
         ledger.apply(.make("a", "f.bin", total: 100, sent: 10, .uploading), now: start)
         let ended = ledger.apply(
@@ -38,11 +38,132 @@ final class UploadLedgerTests: XCTestCase {
         XCTAssertEqual(ended?.state, .finished)
         XCTAssertEqual(ended?.endedAt, start.addingTimeInterval(5))
         XCTAssertEqual(ended?.fraction, 1)
-        // A replay after resubscribing, or a late progress snapshot, changes nothing.
+        // The daemon replays the history on every subscription.
         XCTAssertNil(ledger.apply(.make("a", "f.bin", total: 100, sent: 100, .finished), now: start.addingTimeInterval(9)))
-        XCTAssertNil(ledger.apply(.make("a", "f.bin", total: 100, sent: 50, .uploading), now: start.addingTimeInterval(9)))
         XCTAssertEqual(ledger["a"]?.state, .finished)
         XCTAssertEqual(ledger["a"]?.endedAt, start.addingTimeInterval(5))
+    }
+
+    // MARK: A history that outlives the run
+
+    private func stored(
+        _ id: String, _ state: UploadState, created: TimeInterval, ended: TimeInterval?, error: String = ""
+    ) -> UploadSnapshot {
+        UploadSnapshot(
+            id: id, fileName: "\(id).bin", localPath: "/tmp/\(id).bin", objectKey: "quick-uploads/\(id).bin",
+            bytesTotal: 100, bytesSent: state == .finished ? 100 : 40, state: state, errorMessage: error,
+            createdAt: start.addingTimeInterval(created), endedAt: ended.map(start.addingTimeInterval))
+    }
+
+    func testTheDaemonsTimesAreUsedInsteadOfTheClock() {
+        var ledger = UploadLedger()
+        ledger.apply(stored("a", .finished, created: -90_000, ended: -89_700), now: start)
+        XCTAssertEqual(ledger["a"]?.startedAt, start.addingTimeInterval(-90_000))
+        XCTAssertEqual(ledger["a"]?.endedAt, start.addingTimeInterval(-89_700))
+        XCTAssertEqual(ledger["a"]?.duration, 300)
+
+        ledger.apply(stored("b", .uploading, created: -60, ended: nil), now: start)
+        ledger.apply(stored("b", .finished, created: -60, ended: -2), now: start)
+        XCTAssertEqual(ledger["b"]?.endedAt, start.addingTimeInterval(-2), "not the moment the app heard of it")
+    }
+
+    func testReplayedHistoryIsListedButIsNotNewsAndSaysNothingAboutTheServiceNow() {
+        var ledger = UploadLedger()
+        ledger.liveSince = start
+        XCTAssertNil(
+            ledger.apply(stored("old-ok", .finished, created: -500, ended: -400), now: start),
+            "an upload of an earlier run is not announced again")
+        XCTAssertNil(
+            ledger.apply(
+                stored("old-offline", .failed, created: -300, ended: -200, error: "No internet connection"),
+                now: start))
+        XCTAssertEqual(ledger.records.map(\.id), ["old-ok", "old-offline"])
+        XCTAssertEqual(ledger.condition, .none, "a failure of last week does not mean there is no connection now")
+        XCTAssertFalse(ledger.hasFinishedLive)
+        XCTAssertEqual(ledger.finishedCount, 1)
+
+        let fresh = ledger.apply(
+            stored("new-offline", .failed, created: 5, ended: 9, error: "No internet connection"),
+            now: start.addingTimeInterval(9))
+        XCTAssertEqual(fresh?.id, "new-offline", "first seen already ended, but it ended in this run")
+        XCTAssertEqual(ledger.condition, .offline)
+        XCTAssertEqual(
+            ledger.failedByCondition.map(\.id), ["new-offline"],
+            "Try now sends what this outage stopped, not every old failure with the same words")
+
+        XCTAssertEqual(
+            ledger.apply(stored("new-ok", .finished, created: 10, ended: 12), now: start.addingTimeInterval(12))?.id,
+            "new-ok")
+        XCTAssertTrue(ledger.hasFinishedLive)
+    }
+
+    func testARetriedUploadComesBackUnderTheSameIdAndEndsAgain() {
+        var ledger = UploadLedger()
+        ledger.apply(.folder("a", "trip", files: 12, finished: 9, failed: 3, total: 1200, sent: 900, .failed, error: "3 of 12 files could not be sent"), now: start)
+        XCTAssertEqual(ledger["a"]?.filesFailed, 3)
+
+        // RetryUpload: the same upload goes back to waiting with nothing failed.
+        XCTAssertNil(ledger.apply(.folder("a", "trip", files: 12, finished: 9, total: 1200, sent: 900, .queued), now: start.addingTimeInterval(60)))
+        XCTAssertEqual(ledger.records.count, 1, "no second entry for the new attempt")
+        XCTAssertEqual(ledger["a"]?.state, .queued)
+        XCTAssertEqual(ledger["a"]?.filesFailed, 0)
+        XCTAssertEqual(ledger["a"]?.errorMessage, "")
+        XCTAssertNil(ledger["a"]?.endedAt)
+        XCTAssertEqual(ledger["a"]?.startedAt, start, "it is still the upload that was handed over then")
+
+        ledger.apply(.folder("a", "trip", files: 12, finished: 10, total: 1200, sent: 1000, .uploading), now: start.addingTimeInterval(61))
+        let ended = ledger.apply(.folder("a", "trip", files: 12, finished: 12, total: 1200, sent: 1200, .finished), now: start.addingTimeInterval(70))
+        XCTAssertEqual(ended?.state, .finished, "the new end is announced")
+        XCTAssertEqual(ledger["a"]?.endedAt, start.addingTimeInterval(70))
+    }
+
+    func testACoalescedRetryThatGoesStraightFromFailedToFinishedIsAnnounced() {
+        var ledger = UploadLedger()
+        ledger.apply(.make("a", "a.bin", total: 10, sent: 4, .failed, error: "Connection lost"), now: start)
+        let ended = ledger.apply(.make("a", "a.bin", total: 10, sent: 10, .finished), now: start.addingTimeInterval(30))
+        XCTAssertEqual(ended?.state, .finished)
+        XCTAssertEqual(ledger["a"]?.errorMessage, "")
+        XCTAssertEqual(ledger.condition, .none)
+    }
+
+    func testTheDaemonsInterruptedRecordMeetsTheAppsOwnMarkWithoutASecondEntryOrAnnouncement() {
+        var ledger = UploadLedger()
+        ledger.apply(stored("a", .uploading, created: -30, ended: nil), now: start)
+        ledger.interrupt(now: start.addingTimeInterval(1))
+        let marked = ledger["a"]
+
+        // The restarted daemon replays the upload as it stored it.
+        let replayed = ledger.apply(
+            stored("a", .failed, created: -30, ended: 0.5, error: "Upload interrupted"), now: start.addingTimeInterval(4))
+        XCTAssertNil(replayed, "the app already showed it as interrupted")
+        XCTAssertEqual(ledger.records.count, 1)
+        XCTAssertEqual(ledger["a"]?.state, marked?.state)
+        XCTAssertEqual(ledger["a"]?.errorMessage, marked?.errorMessage, "the row does not change its words")
+        XCTAssertEqual(ledger["a"]?.endedAt, start.addingTimeInterval(0.5), "only the daemon's time of the end comes in")
+    }
+
+    func testARemovedSnapshotTakesTheUploadOutAndTheOthersKeepTheirPlaces() {
+        var ledger = UploadLedger()
+        for id in ["a", "b", "c"] { ledger.apply(.make(id, "\(id).bin", total: 10, sent: 10, .finished), now: start) }
+        XCTAssertNil(ledger.apply(.removed(id: "b"), now: start))
+        XCTAssertEqual(ledger.records.map(\.id), ["a", "c"])
+        XCTAssertNil(ledger["b"])
+        XCTAssertEqual(ledger["c"]?.fileName, "c.bin", "the index still finds what moved up")
+        XCTAssertEqual(ledger.finishedCount, 2)
+
+        XCTAssertNil(ledger.apply(.removed(id: "never-seen"), now: start), "removing what is not there is harmless")
+        XCTAssertFalse(ledger.remove("b"))
+        XCTAssertTrue(ledger.remove("a"))
+        XCTAssertEqual(ledger.ordered.map(\.id), ["c"])
+    }
+
+    func testRecentGoesByWhenUploadsWereHandedOverNotByReplayOrder() {
+        var ledger = UploadLedger()
+        ledger.apply(stored("newest", .finished, created: -10, ended: -5), now: start)
+        ledger.apply(stored("oldest", .finished, created: -900, ended: -800), now: start)
+        ledger.apply(stored("middle", .failed, created: -100, ended: -90), now: start)
+        XCTAssertEqual(ledger.recent(limit: 2).map(\.id), ["newest", "middle"])
+        XCTAssertEqual(ledger.ordered.map(\.id), ["newest", "middle", "oldest"])
     }
 
     func testAnUploadFirstSeenAlreadyFinishedIsReportedAsEnded() {
@@ -147,6 +268,29 @@ final class UploadLedgerTests: XCTestCase {
         store.interrupt()
         XCTAssertEqual(store.ledger["b"]?.state, .failed)
     }
+
+    @MainActor
+    func testStoreDoesNotAnnounceHistoryAndTellsWhenAnUploadLeaves() {
+        let clock = TestClock()
+        let store = UploadStore(now: { clock.now })
+        var ended: [String] = []
+        var removed: [String] = []
+        store.onEnded = { ended.append($0.id) }
+        store.onRemoved = { removed.append($0) }
+
+        store.apply(
+            UploadSnapshot(
+                id: "yesterday", fileName: "a", localPath: "/tmp/a", objectKey: "k", bytesTotal: 1, bytesSent: 1,
+                state: .finished, errorMessage: "", createdAt: clock.now.addingTimeInterval(-90_000),
+                endedAt: clock.now.addingTimeInterval(-89_000)))
+        XCTAssertEqual(ended, [], "no notification for what an earlier run sent")
+        XCTAssertEqual(store.ledger.records.count, 1)
+
+        store.apply(.removed(id: "yesterday"))
+        store.apply(.removed(id: "yesterday"))
+        XCTAssertEqual(removed, ["yesterday"], "told once")
+        XCTAssertTrue(store.ledger.records.isEmpty)
+    }
 }
 
 final class UploadQueryTests: XCTestCase {
@@ -248,10 +392,14 @@ final class UploadQueryTests: XCTestCase {
         XCTAssertEqual(ledger["a"]?.filesTotal, 12)
 
         ledger.apply(.folder("a", "vacation-2026", files: 12, finished: 5, failed: 1, total: 1200, sent: 600, .uploading), now: start)
-        // A late snapshot never takes ended files back.
-        ledger.apply(.folder("a", "vacation-2026", files: 12, finished: 4, total: 1200, sent: 500, .uploading), now: start)
         XCTAssertEqual(ledger["a"]?.filesFinished, 5)
         XCTAssertEqual(ledger["a"]?.filesFailed, 1)
+        // The failed file is sent again while the rest still runs: it is no longer failed,
+        // and what was sent does not go back.
+        ledger.apply(.folder("a", "vacation-2026", files: 12, finished: 5, total: 1200, sent: 560, .uploading), now: start)
+        XCTAssertEqual(ledger["a"]?.filesFinished, 5)
+        XCTAssertEqual(ledger["a"]?.filesFailed, 0)
+        XCTAssertEqual(ledger["a"]?.bytesSent, 600)
 
         ledger.apply(.folder("a", "vacation-2026", files: 12, finished: 12, total: 1200, sent: 1200, .finished), now: start)
         ledger.apply(.make("b", "notes.txt", total: 5, sent: 5, .finished), now: start)

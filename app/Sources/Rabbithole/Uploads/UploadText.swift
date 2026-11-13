@@ -40,6 +40,14 @@ enum UploadText {
         return "about \(Int((Double(minutes) / 60).rounded(.up))) h"
     }
 
+    /// "12 s", "5 min 12 s", "2 h 5 min": how long a finished upload took.
+    static func took(seconds: Double) -> String {
+        let total = Int(max(seconds, 0).rounded())
+        if total < 60 { return "\(total) s" }
+        if total < 3600 { return "\(total / 60) min \(total % 60) s" }
+        return "\(total / 3600) h \(total % 3600 / 60) min"
+    }
+
     // MARK: Progress lines
 
     /// The line under an upload's name in the Overview list and in the detail header.

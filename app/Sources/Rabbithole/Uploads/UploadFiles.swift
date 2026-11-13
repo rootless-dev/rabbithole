@@ -20,15 +20,24 @@ struct UploadFileList: Sendable {
     subscript(index: Int) -> FileSnapshot? { files[index] }
 
     /// Stores the latest state of a file. Returns true when the listing changed: the file is
-    /// new or moved to another state. Progress alone returns false.
+    /// new, moved to another state or left the upload. Progress alone returns false.
     @discardableResult
     mutating func apply(_ file: FileSnapshot) -> Bool {
+        if file.removed { return remove(file.index) }
         let previous = files.updateValue(file, forKey: file.index)
         if let previous {
             guard previous.state != file.state else { return false }
             remove(file.index, from: previous.state)
         }
         insert(file.index, into: file.state)
+        return true
+    }
+
+    /// Takes a file out of the listing. Returns false when it was not there.
+    @discardableResult
+    mutating func remove(_ index: Int) -> Bool {
+        guard let file = files.removeValue(forKey: index) else { return false }
+        remove(index, from: file.state)
         return true
     }
 
@@ -141,12 +150,24 @@ final class UploadFilesModel {
         return list[index]
     }
 
+    /// How a `follow` call ended.
+    enum FollowEnd: Equatable, Sendable {
+        /// The stream closed by itself, or the call was cancelled or replaced.
+        case done
+        /// The daemon went away while streaming: asking again later can work.
+        case interrupted
+        /// The daemon does not know the upload.
+        case unknownUpload
+    }
+
     /// Reads the files stream of one upload until the calling task is cancelled or the
     /// stream ends. Files already known for the same upload stay on screen meanwhile; the
     /// stream sends every file again and brings them up to date.
-    func follow(uploadID: String, stream: AsyncThrowingStream<FileSnapshot, Error>) async {
+    @discardableResult
+    func follow(uploadID: String, stream: AsyncThrowingStream<FileSnapshot, Error>) async -> FollowEnd {
         // Replaced before it started: the newer call owns the list.
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return .done }
+        var end = FollowEnd.done
         if self.uploadID != uploadID {
             self.uploadID = uploadID
             list = UploadFileList()
@@ -156,24 +177,39 @@ final class UploadFilesModel {
         }
         do {
             for try await file in stream {
-                guard !Task.isCancelled, self.uploadID == uploadID else { return }
+                guard !Task.isCancelled, self.uploadID == uploadID else { return .done }
                 if list.apply(file) { orderChanged = true }
                 contentChanged = true
                 schedulePublish()
             }
         } catch {
             if !Task.isCancelled {
+                // What a restarted daemon reports for these files is the same failure with
+                // the same message, so marking them here does not fight its record.
                 if list.interrupt(message: UploadLedger.interruptedMessage) {
                     orderChanged = true
                     contentChanged = true
                 }
                 if list.isEmpty { phase = .unavailable }
+                end = (error as? DaemonError) == .notFound ? .unknownUpload : .interrupted
             }
         }
-        guard !Task.isCancelled, self.uploadID == uploadID else { return }
+        guard !Task.isCancelled, self.uploadID == uploadID else { return .done }
         publishTask?.cancel()
         publishTask = nil
         publish()
+        return end
+    }
+
+    /// Takes files out of the list of `uploadID` at once, without waiting for the stream to
+    /// say so: the daemon confirmed their removal, or no longer knows them.
+    func remove(indexes: [Int], of uploadID: String) {
+        guard self.uploadID == uploadID else { return }
+        var changed = false
+        for index in indexes where list.remove(index) { changed = true }
+        guard changed else { return }
+        orderVersion += 1
+        contentVersion += 1
     }
 
     /// Forgets the files, for when the detail closes.

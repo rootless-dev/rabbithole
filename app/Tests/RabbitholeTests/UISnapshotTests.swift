@@ -32,11 +32,21 @@ final class UIFixture {
         // Files are shown as soon as they arrive, so a render does not wait for the interval.
         let model = MainWindowModel(detailFiles: UploadFilesModel(publishInterval: .zero))
         model.watchFiles = { [client] in client.watchFiles(uploadID: $0) }
+        // The upload actions are wired as the app wires them.
+        var actions = AppActions()
+        actions.retry = { [tray] records in Task { await tray.retry(records) } }
+        actions.retryFiles = { [tray] uploadID, fileIndexes in
+            Task { await tray.retry(uploadID: uploadID, fileIndexes: fileIndexes) }
+        }
+        actions.removeUpload = { [tray] uploadID, fileIndexes, deleteFromBucket in
+            try await tray.remove(uploadID: uploadID, fileIndexes: fileIndexes, deleteFromBucket: deleteFromBucket)
+        }
+        tray.uploads.onRemoved = { [weak model] id in model?.uploadRemoved(id) }
         context = MainContext(
             model: model, tray: tray, account: account,
             preferences: AppPreferences(defaults: scratch.defaults),
             loginItem: LoginItemModel(service: StubLoginItemService(enabled: true)),
-            actions: AppActions())
+            actions: actions)
         await account.reload()
         await context.loginItem.refresh()
     }
@@ -110,6 +120,51 @@ final class UIFixture {
         tray.apply(.folder("up-5", "design-assets", in: clientWork, files: 24, total: 640_000_000, .queued))
         clock.advance(120)
         await warmThumbnails()
+    }
+
+    /// The three ended uploads of the upload actions mockup, with the daemon's times: a file
+    /// finished today, the "vacation-2026" folder finished yesterday after 5 min 12 s, and a
+    /// file that failed three days ago with nothing in the bucket. The folder's twelve files
+    /// are all finished.
+    func loadEndedUploads() async {
+        let today = Calendar.current.startOfDay(for: Date())
+        func time(daysAgo: Int, _ hour: Int, _ minute: Int, _ second: Int = 0) -> Date {
+            today.addingTimeInterval(Double(-daysAgo * 86_400 + hour * 3600 + minute * 60 + second))
+        }
+        let sizes: [Int64] = [78, 83, 66, 71, 79, 76, 80, 74, 69, 72, 81, 77].map { $0 * 100_000 }
+        client.setFiles(
+            sizes.enumerated().map { index, size in
+                .make(
+                    index, "vacation-2026/IMG_44\(String(format: "%02d", index + 1)).jpg", of: "up-2",
+                    in: "\(Self.home)/Pictures", total: size, sent: size, .finished)
+            }, of: "up-2")
+        tray.apply(
+            UploadSnapshot(
+                id: "up-3", fileName: "armadillo.png", localPath: "\(Self.home)/Downloads/armadillo.png",
+                objectKey: "", bytesTotal: 900_000, bytesSent: 300_000, state: .failed,
+                errorMessage: "Connection lost", filesFailed: 1,
+                createdAt: time(daysAgo: 3, 9, 13), endedAt: time(daysAgo: 3, 9, 14)))
+        tray.apply(
+            UploadSnapshot(
+                id: "up-2", fileName: "vacation-2026", localPath: "\(Self.home)/Pictures/vacation-2026",
+                objectKey: "quick-uploads/vacation-2026/", bytesTotal: 1_900_000_000, bytesSent: 1_900_000_000,
+                state: .finished, errorMessage: "", kind: .folder, filesTotal: 12, filesFinished: 12,
+                createdAt: time(daysAgo: 1, 18, 14, 48), endedAt: time(daysAgo: 1, 18, 20)))
+        tray.apply(
+            UploadSnapshot(
+                id: "up-1", fileName: "invoice-october.pdf",
+                localPath: "\(Self.home)/Documents/finance/invoice-october.pdf",
+                objectKey: "quick-uploads/invoice-october.pdf", bytesTotal: 184_000, bytesSent: 184_000,
+                state: .finished, errorMessage: "",
+                createdAt: time(daysAgo: 0, 11, 55), endedAt: time(daysAgo: 0, 11, 56)))
+        await warmThumbnails()
+    }
+
+    /// Opens the actions menu of `target` as a click on its three dots does, with the
+    /// pointer resting on `highlighted`.
+    func openMenu(of target: UploadActionTarget, actions: [UploadAction], highlighted: UploadAction? = nil) {
+        context.model.openActionsMenu(for: target, actions: actions)
+        context.model.actionsMenu?.highlighted = highlighted
     }
 
     /// Generates the stand-in previews before drawing, as they would be on a second look.
@@ -296,6 +351,111 @@ final class UISnapshotTests: XCTestCase {
                     .environment(fixture.thumbnails)
             }
         }
+    }
+
+    // MARK: Upload actions (design/mockups/remove-upload.html)
+
+    func testHistoryWithTheActionsButtonAndItsOpenMenu() async throws {
+        let fixture = await UIFixture()
+        await fixture.loadEndedUploads()
+        fixture.context.model.show(.history)
+        try both("actions-history", size: MainView.size) { fixture.mainView() }
+
+        let folder = try XCTUnwrap(fixture.tray.uploads.ledger["up-2"])
+        fixture.openMenu(of: .upload(id: "up-2"), actions: UploadAction.available(for: folder), highlighted: .remove)
+        try both("actions-history-menu", size: MainView.size) { fixture.mainView() }
+
+        // Overview draws the same rows; the ones still sending or waiting have no button.
+        let mixed = await UIFixture()
+        await mixed.loadMixedUploads()
+        let failed = try XCTUnwrap(mixed.tray.uploads.ledger["up-6"])
+        mixed.openMenu(of: .upload(id: "up-6"), actions: UploadAction.available(for: failed))
+        try both("actions-overview-menu", size: MainView.size) { mixed.mainView() }
+    }
+
+    func testUploadDetailWithTheActionsButtonAndAFileMenu() async throws {
+        let fixture = await UIFixture()
+        await fixture.loadEndedUploads()
+        try await fixture.openDetail("up-2", from: .history, expecting: 12)
+        try both("actions-detail", size: MainView.size) { fixture.mainView() }
+
+        let file = try XCTUnwrap(fixture.context.model.detailFiles.file(at: 1))
+        fixture.openMenu(
+            of: .file(uploadID: "up-2", index: 1), actions: UploadAction.available(for: file), highlighted: .remove)
+        try both("actions-detail-file-menu", size: MainView.size) { fixture.mainView() }
+
+        let folder = try XCTUnwrap(fixture.tray.uploads.ledger["up-2"])
+        fixture.openMenu(of: .upload(id: "up-2"), actions: UploadAction.available(for: folder))
+        try both("actions-detail-header-menu", size: MainView.size) { fixture.mainView() }
+
+        // A failed single file: Try again lives in the menus, no longer in a link.
+        fixture.context.model.openDetail(id: "up-3", from: .history)
+        let failed = try XCTUnwrap(fixture.tray.uploads.ledger["up-3"])
+        fixture.openMenu(of: .upload(id: "up-3"), actions: UploadAction.available(for: failed))
+        try both("actions-detail-failed-menu", size: MainView.size) { fixture.mainView() }
+    }
+
+    /// The three menus the mockup lists by kind of upload, alone.
+    func testTheMenuByKindOfUpload() throws {
+        let kinds: [(String, [UploadAction])] = [
+            ("actions-menu-finished", [.remove, .deleteFromBucket]),
+            ("actions-menu-failed", [.retry, .remove]),
+            ("actions-menu-failed-partly", [.retry, .remove, .deleteFromBucket]),
+        ]
+        for (name, actions) in kinds {
+            try both(name) {
+                ActionsMenuView(
+                    menu: OpenActionsMenu(target: .upload(id: "a"), actions: actions), hover: { _, _ in },
+                    choose: { _ in }
+                )
+                .padding(30)
+                .background(Theme.main)
+            }
+        }
+    }
+
+    /// Every confirmation the mockup draws, plus the two states it describes in words:
+    /// the daemon working, and the daemon's refusal shown in the sheet.
+    func testRemoveAndDeleteConfirmations() async throws {
+        let folder = RemovalPrompt.Subject.upload(name: "vacation-2026/", filesInBucket: 12, filesTotal: 12)
+        let file = RemovalPrompt.Subject.file(name: "IMG_4402.jpg", uploadName: "vacation-2026/", inBucket: true)
+        let failed = RemovalPrompt.Subject.upload(name: "armadillo.png", filesInBucket: 0, filesTotal: 1)
+        let target = UploadActionTarget.upload(id: "up-2")
+        func sheet(_ prompt: RemovalPrompt, perform: @escaping RemovalSheetModel.Perform = { _, _, _ in }) -> RemovalSheetModel {
+            RemovalSheetModel(prompt: prompt, perform: perform, close: { _ in })
+        }
+        func draw(_ name: String, _ model: RemovalSheetModel) throws {
+            try both(name) { RemovalSheet(model: model).clipShape(.rect(cornerRadius: RemovalSheet.cornerRadius)) }
+        }
+
+        try draw("sheet-remove", sheet(RemovalPrompt(target: target, subject: folder, intent: .remove)))
+        try draw(
+            "sheet-remove-checked",
+            sheet(RemovalPrompt(target: target, subject: folder, intent: .remove, alsoDelete: true)))
+        try draw("sheet-remove-file", sheet(RemovalPrompt(target: target, subject: file, intent: .remove)))
+        try draw("sheet-remove-failed", sheet(RemovalPrompt(target: target, subject: failed, intent: .remove)))
+        try draw("sheet-delete", sheet(RemovalPrompt(target: target, subject: folder, intent: .delete)))
+        try draw("sheet-delete-file", sheet(RemovalPrompt(target: target, subject: file, intent: .delete)))
+
+        // The daemon is deleting a big folder: the button shows progress, Cancel is off.
+        let (gate, release) = AsyncStream<Void>.makeStream()
+        let working = sheet(
+            RemovalPrompt(target: target, subject: folder, intent: .delete),
+            perform: { _, _, _ in for await _ in gate { break } })
+        let confirming = Task { await working.confirm() }
+        while !working.isWorking { await Task.yield() }
+        try draw("sheet-delete-working", working)
+        release.yield()
+        await confirming.value
+
+        let refused = sheet(
+            RemovalPrompt(target: target, subject: folder, intent: .delete),
+            perform: { _, _, _ in
+                throw DaemonError.rejected("AWS denied permission to delete from the bucket (s3:DeleteObject)")
+            })
+        await refused.confirm()
+        XCTAssertNotNil(refused.errorMessage)
+        try draw("sheet-delete-error", refused)
     }
 
     func testSettingsPanes() async throws {

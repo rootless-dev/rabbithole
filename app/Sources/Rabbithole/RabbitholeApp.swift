@@ -72,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let loginItem = LoginItemModel(service: SystemLoginItemService())
         let windowModel = MainWindowModel()
         windowModel.watchFiles = { client.watchFiles(uploadID: $0) }
+        viewModel.uploads.onRemoved = { [weak windowModel] id in windowModel?.uploadRemoved(id) }
         let context = MainContext(
             model: windowModel, tray: viewModel, account: account, preferences: preferences,
             loginItem: loginItem, actions: actions)
@@ -155,6 +156,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         actions.retry = { [weak self] records in
             Task { await self?.viewModel?.retry(records) }
+        }
+        actions.retryFiles = { [weak self] uploadID, fileIndexes in
+            Task { await self?.viewModel?.retry(uploadID: uploadID, fileIndexes: fileIndexes) }
+        }
+        actions.removeUpload = { [weak self] uploadID, fileIndexes, deleteFromBucket in
+            guard let viewModel = self?.viewModel else { throw DaemonError.unavailable }
+            try await viewModel.remove(
+                uploadID: uploadID, fileIndexes: fileIndexes, deleteFromBucket: deleteFromBucket)
         }
         actions.applyTheme = { theme in NSApp.appearance = theme.appearance }
         actions.registerShortcut = { [weak self] shortcut in self?.hotKey?.register(shortcut) ?? false }

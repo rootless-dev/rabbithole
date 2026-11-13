@@ -103,17 +103,20 @@ final class DaemonEventForwarder: Sendable {
                     saved, daemonConfigured: false, replacingWatch: true)
             case .event(.restarted):
                 daemonUp = true
-                // Uploads are interrupted and the new daemon has no settings: say so first.
-                await viewModel.handle(.restarted)
+                // The old stream goes first, so nothing it still holds lands after the
+                // uploads were marked interrupted. Then say so: the new daemon has no
+                // settings yet, and once it has them it replays the history, where the same
+                // uploads are recorded as interrupted.
                 replaceWatch(with: nil)
+                await viewModel.handle(.restarted)
                 daemonConfigured = await bringUp(
                     saved, daemonConfigured: false, replacingWatch: true)
             case .event(.unavailable):
                 daemonUp = false
                 daemonConfigured = false
                 terminal = true
-                await viewModel.handle(.unavailable)
                 replaceWatch(with: nil)
+                await viewModel.handle(.unavailable)
             case .settingsChanged(let settings):
                 saved = .value(settings)
                 if terminal {
@@ -175,6 +178,8 @@ final class DaemonEventForwarder: Sendable {
             while !Task.isCancelled {
                 do {
                     for try await snapshot in client.watch() {
+                        // A stream that was replaced must not report anything more.
+                        if Task.isCancelled { return }
                         await viewModel.apply(snapshot)
                     }
                 } catch {

@@ -71,6 +71,8 @@ private final class FakeClient: DaemonClient {
     func watchFiles(uploadID: String) -> AsyncThrowingStream<FileSnapshot, Error> {
         AsyncThrowingStream { $0.finish() }
     }
+    func retry(uploadID: String, fileIndexes: [Int]) async throws {}
+    func remove(uploadID: String, fileIndexes: [Int], deleteFromBucket: Bool) async throws {}
 }
 
 /// Counts calls and hands out one scripted answer per call; `true` once the script runs out.

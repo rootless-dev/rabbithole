@@ -109,7 +109,9 @@ struct ProgressRing<Content: View>: View {
 
 /// The bordered buttons of the mockups: plain on a card background, primary on the accent.
 struct BoxButtonStyle: ButtonStyle {
-    enum Kind { case plain, primary, danger }
+    /// `danger` is red text on the plain box; `destructive` is the filled red button that
+    /// confirms deleting from the bucket.
+    enum Kind { case plain, primary, danger, destructive }
 
     var kind: Kind = .plain
     var horizontal: CGFloat = 14
@@ -130,17 +132,16 @@ struct BoxButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.system(size: style.fontSize, weight: style.kind == .primary ? .semibold : .regular))
+                .font(.system(size: style.fontSize, weight: isFilled ? .semibold : .regular))
                 .lineLimit(1)
                 .foregroundStyle(foreground)
                 .frame(maxWidth: style.fullWidth ? .infinity : nil)
                 // The mockups' CSS padding excludes the 1 point border; add it back.
                 .padding(.horizontal, style.horizontal + 1)
                 .padding(.vertical, style.vertical + 1)
-                .background(
-                    style.kind == .primary ? Theme.accent : style.fill, in: .rect(cornerRadius: style.radius))
+                .background(background, in: .rect(cornerRadius: style.radius))
                 .overlay {
-                    if style.kind != .primary {
+                    if !isFilled {
                         RoundedRectangle(cornerRadius: style.radius).strokeBorder(Theme.line, lineWidth: 1)
                     }
                 }
@@ -148,10 +149,20 @@ struct BoxButtonStyle: ButtonStyle {
                 .contentShape(.rect(cornerRadius: style.radius))
         }
 
+        private var isFilled: Bool { style.kind == .primary || style.kind == .destructive }
+
+        private var background: Color {
+            switch style.kind {
+            case .plain, .danger: style.fill
+            case .primary: Theme.accent
+            case .destructive: Theme.bad
+            }
+        }
+
         private var foreground: Color {
             switch style.kind {
             case .plain: Theme.ink
-            case .primary: Theme.onAccent
+            case .primary, .destructive: Theme.onAccent
             case .danger: Theme.bad
             }
         }

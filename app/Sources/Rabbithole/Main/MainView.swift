@@ -23,6 +23,7 @@ struct MainView: View {
     let context: MainContext
 
     var body: some View {
+        @Bindable var model = context.model
         Group {
             if let setup = context.model.setup {
                 SetupView(model: setup)
@@ -36,11 +37,21 @@ struct MainView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .background(Theme.main)
                 }
+                // The open actions menu is drawn over everything, hanging from its button.
+                .overlayPreferenceValue(ActionsAnchorKey.self) { anchors in
+                    ActionsMenuLayer(context: context, anchors: anchors)
+                }
             }
         }
         .font(.system(size: 13))
         .foregroundStyle(Theme.ink)
         .ignoresSafeArea()
+        .sheet(item: $model.removal) { removal in
+            RemovalSheet(model: removal)
+                .presentationBackground(Theme.card)
+                .presentationCornerRadius(RemovalSheet.cornerRadius)
+                .interactiveDismissDisabled(removal.isWorking)
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -178,7 +189,7 @@ struct OverviewView: View {
                 }
                 UploadList(
                     records: model.overviewQuery.apply(to: ledger.ordered), topPadding: 10,
-                    stopped: stopped,
+                    stopped: stopped, menus: model,
                     line: {
                         stopped.contains($0.id)
                             ? UploadText.stoppedLine($0, condition: ledger.condition)
@@ -198,8 +209,8 @@ struct OverviewView: View {
     }
 }
 
-/// The three cards on top of Overview. The middle card counts what this run of the app
-/// sent: the engine does not know the bucket's total yet.
+/// The three cards on top of Overview. The middle card counts the finished uploads of the
+/// history, which the daemon keeps across runs: the engine does not know the bucket's total.
 struct SummaryCards: View {
     let state: TrayState
     let ledger: UploadLedger
@@ -220,7 +231,7 @@ struct SummaryCards: View {
                 }
             } else {
                 SummaryCard(label: "Stored in the cloud", value: "0 files", isNone: true) {
-                    Text("since Rabbithole was opened").cardNote()
+                    Text("nothing in the history yet").cardNote()
                 }
             }
             if let last = ledger.lastFinished, let endedAt = last.endedAt {
@@ -236,7 +247,7 @@ struct SummaryCards: View {
 
     private var storedNote: String {
         let count = ledger.finishedFileCount
-        return "\(count.formatted(.number.locale(Locale(identifier: "en_US")))) \(count == 1 ? "file" : "files") since Rabbithole was opened"
+        return "\(count.formatted(.number.locale(Locale(identifier: "en_US")))) \(count == 1 ? "file" : "files") in the history"
     }
 }
 
@@ -299,6 +310,8 @@ struct UploadList<Empty: View>: View {
     var topPadding: CGFloat = 10
     /// Ids of uploads drawn as stopped where they were, instead of as failed.
     var stopped: Set<String> = []
+    /// Where the rows' actions menus open.
+    let menus: MainWindowModel
     let line: (UploadRecord) -> UploadText.Line
     let open: (UploadRecord) -> Void
     @ViewBuilder var empty: Empty
@@ -310,13 +323,14 @@ struct UploadList<Empty: View>: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(records) { record in
-                        Button {
-                            open(record)
-                        } label: {
-                            UploadRow(
-                                record: record, line: line(record), isStopped: stopped.contains(record.id))
-                        }
-                        .buttonStyle(.plain)
+                        // Not a button: the row holds one (the three dots), and a click
+                        // anywhere else on it opens the upload.
+                        UploadRow(
+                            record: record, line: line(record), isStopped: stopped.contains(record.id),
+                            menus: menus
+                        )
+                        .onTapGesture { open(record) }
+                        .accessibilityAddTraits(.isButton)
                     }
                 }
                 .padding(.top, topPadding)
@@ -327,15 +341,21 @@ struct UploadList<Empty: View>: View {
     }
 }
 
-/// One upload: its thumbnail inside the progress ring, the name, the local path and a
-/// progress line.
+/// One upload: its thumbnail inside the progress ring, the name, the local path, a progress
+/// line and, once it has ended, the three dots that open its actions.
 struct UploadRow: View {
     let record: UploadRecord
     let line: UploadText.Line
     /// Stopped by a lost connection or a rejected key: the ring keeps how far it got.
     var isStopped = false
+    /// Where the actions menu opens; nil draws the row without the button's column.
+    var menus: MainWindowModel?
+    @State private var hovered = false
 
     var body: some View {
+        let target = UploadActionTarget.upload(id: record.id)
+        let actions = UploadAction.available(for: record)
+        let menuIsOpen = menus?.actionsMenu?.target == target
         HStack(spacing: 12) {
             ProgressRing(
                 fraction: isStopped ? record.fraction : record.ringFraction,
@@ -363,12 +383,24 @@ struct UploadRow: View {
                     .foregroundStyle(line.tone.color)
                     .lineLimit(1)
             }
+            if let menus {
+                MoreButton(target: target, actions: actions, menus: menus)
+            }
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 9)
         .background(Theme.card, in: .rect(cornerRadius: 9))
-        .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.line, lineWidth: 1) }
+        .overlay {
+            RoundedRectangle(cornerRadius: 9)
+                .strokeBorder(menus != nil && (hovered || menuIsOpen) ? Theme.hoverLine : Theme.line, lineWidth: 1)
+        }
         .contentShape(.rect(cornerRadius: 9))
+        .onHover { hovered = $0 }
+        .background {
+            if let menus, !actions.isEmpty {
+                SecondaryClickArea { menus.openActionsMenu(for: target, actions: actions, at: $0) }
+            }
+        }
     }
 }
 

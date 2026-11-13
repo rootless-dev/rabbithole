@@ -44,6 +44,10 @@ private final class FakeDaemonClient: DaemonClient, Sendable {
     func watchFiles(uploadID: String) -> AsyncThrowingStream<FileSnapshot, Error> {
         AsyncThrowingStream { $0.finish() }
     }
+
+    func retry(uploadID: String, fileIndexes: [Int]) async throws {}
+
+    func remove(uploadID: String, fileIndexes: [Int], deleteFromBucket: Bool) async throws {}
 }
 
 private final class SleepRecorder: Sendable {
@@ -424,8 +428,7 @@ final class TrayViewModelTests: XCTestCase {
             client: client,
             makeRequest: { EnqueueRequest(paths: $0, skipPatterns: [".DS_Store", "*.tmp"], parallelFiles: 6) })
         await model.drop([file])
-        model.apply(snapshot("up-1", .failed, error: "Bucket not found"))
-        await model.retry(model.uploads.ledger.records)
+        await model.drop([file])
 
         let expected = EnqueueRequest(paths: [file.path], skipPatterns: [".DS_Store", "*.tmp"], parallelFiles: 6)
         XCTAssertEqual(client.requests, [expected, expected])

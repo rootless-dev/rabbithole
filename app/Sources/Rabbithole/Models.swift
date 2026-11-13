@@ -51,12 +51,24 @@ struct UploadSnapshot: Equatable, Sendable {
     let filesTotal: Int
     let filesFinished: Int
     let filesFailed: Int
+    /// True on the last snapshot of an upload that left the history. Only `id` means anything
+    /// then.
+    let removed: Bool
+    /// When the upload was enqueued, by the daemon's record; nil when it did not say.
+    let createdAt: Date?
+    /// When the upload finished or failed, by the daemon's record; nil while it has not ended
+    /// or when the daemon did not say.
+    let endedAt: Date?
 
     init(
         id: String, fileName: String, localPath: String, objectKey: String, bytesTotal: Int64,
         bytesSent: Int64, state: UploadState, errorMessage: String, kind: UploadKind = .singleFile,
-        rootPaths: [String]? = nil, filesTotal: Int = 1, filesFinished: Int? = nil, filesFailed: Int = 0
+        rootPaths: [String]? = nil, filesTotal: Int = 1, filesFinished: Int? = nil, filesFailed: Int = 0,
+        removed: Bool = false, createdAt: Date? = nil, endedAt: Date? = nil
     ) {
+        self.removed = removed
+        self.createdAt = createdAt
+        self.endedAt = endedAt
         self.id = id
         self.fileName = fileName
         self.localPath = localPath
@@ -70,6 +82,13 @@ struct UploadSnapshot: Equatable, Sendable {
         self.filesTotal = filesTotal
         self.filesFinished = filesFinished ?? (state == .finished ? filesTotal : 0)
         self.filesFailed = filesFailed
+    }
+
+    /// The last snapshot of an upload that left the history.
+    static func removed(id: String) -> UploadSnapshot {
+        UploadSnapshot(
+            id: id, fileName: "", localPath: "", objectKey: "", bytesTotal: 0, bytesSent: 0,
+            state: .failed, errorMessage: "", removed: true)
     }
 }
 
@@ -87,6 +106,16 @@ struct FileSnapshot: Equatable, Sendable {
     let bytesSent: Int64
     let state: UploadState
     let errorMessage: String
+    /// True on the last snapshot of a file that left its upload. Only `uploadID` and `index`
+    /// mean anything then.
+    var removed = false
+
+    /// The last snapshot of a file that left its upload.
+    static func removed(uploadID: String, index: Int) -> FileSnapshot {
+        FileSnapshot(
+            uploadID: uploadID, index: index, relativePath: "", localPath: "", objectKey: "",
+            bytesTotal: 0, bytesSent: 0, state: .failed, errorMessage: "", removed: true)
+    }
 }
 
 /// What one enqueue call hands to the daemon: the files and folders that become one upload
@@ -109,6 +138,10 @@ enum DaemonError: Error, Equatable, Sendable {
     case unavailable
     /// The daemon does not know the upload that was asked for.
     case notFound
+    /// The daemon would not or could not do what was asked of an upload (not allowed in its
+    /// current state, a missing bucket permission, no connection); carries the daemon's
+    /// readable message.
+    case rejected(String)
     /// Anything else, including malformed responses.
     case other(String)
 }

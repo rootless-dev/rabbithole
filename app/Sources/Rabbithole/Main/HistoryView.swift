@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// History: a search field, state filters with counts, file type chips and the list, in the
-/// same row style as Overview. It lists the uploads of this run of the app.
+/// same row style as Overview. It lists the history the daemon keeps, earlier runs included.
 struct HistoryView: View {
     let context: MainContext
 
@@ -39,7 +39,7 @@ struct HistoryView: View {
 
             TimelineView(.periodic(from: .now, by: 60)) { timeline in
                 UploadList(
-                    records: query.apply(to: all), topPadding: 12,
+                    records: query.apply(to: all), topPadding: 12, menus: model,
                     line: { UploadText.historyLine($0, now: timeline.date) },
                     open: { model.openDetail(id: $0.id, from: .history) },
                     empty: {
@@ -120,11 +120,15 @@ struct UploadDetailView: View {
                         .lineLimit(1)
                         .truncationMode(.head)
                         .padding(.top, 3)
-                    Text(headline.text)
-                        .monospacedDigit()
-                        .foregroundStyle(headline.tone == .normal ? Theme.ink : headline.tone.color)
-                        .lineLimit(1)
-                        .padding(.top, 8)
+                    TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                        // An ended upload also says when it ended, as History does.
+                        let headline = UploadText.historyLine(record, now: timeline.date)
+                        Text(headline.text)
+                            .monospacedDigit()
+                            .foregroundStyle(headline.tone == .normal ? Theme.ink : headline.tone.color)
+                            .lineLimit(1)
+                            .padding(.top, 8)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 actionButtons
@@ -137,10 +141,16 @@ struct UploadDetailView: View {
             TimelineView(.periodic(from: .now, by: 60)) { timeline in
                 HStack(alignment: .top, spacing: 14) {
                     Fact(label: "Files", value: UploadText.filesSent(record))
-                    Fact(label: "Speed", value: record.bytesPerSecond.map(UploadText.speed) ?? "–")
+                    // A finished upload says how long it took and where it went; until then
+                    // the same places hold the speed and where it is going.
+                    if record.state == .finished, let duration = record.duration {
+                        Fact(label: "Took", value: UploadText.took(seconds: duration))
+                    } else {
+                        Fact(label: "Speed", value: record.bytesPerSecond.map(UploadText.speed) ?? "–")
+                    }
                     Fact(label: "Started", value: UploadText.started(record.startedAt, now: timeline.date))
                     Fact(
-                        label: "Goes to",
+                        label: record.state == .finished ? "Went to" : "Goes to",
                         value: UploadText.destination(
                             record, prefix: context.account.summary.destination.uploadsPrefix))
                 }
@@ -149,24 +159,20 @@ struct UploadDetailView: View {
                 .padding(.top, 14)
             }
 
+            // Once the upload has ended nothing is being sent or waiting, so those two tabs
+            // go away, and a filter left on one of them shows every file.
+            let filter = Self.fileFilter(model.detailFilter, for: record)
             ListBand(title: "Files in this upload", topPadding: 12) {
                 FilterTabs(
-                    tabs: [
-                        .init(value: UploadStateFilter.all, title: "All"),
-                        .init(value: .inProgress, title: "Sending"),
-                        .init(value: .waiting, title: "Waiting"),
-                        .init(value: .finished, title: "Finished"),
-                        .init(value: .failed, title: "Failed"),
-                    ],
-                    selection: $model.detailFilter)
+                    tabs: Self.fileTabs(for: record),
+                    selection: Binding(get: { filter }, set: { model.detailFilter = $0 }))
             }
 
             UploadFileRows(
-                files: model.detailFiles, filter: model.detailFilter,
+                files: model.detailFiles, filter: filter,
                 hiddenPrefix: UploadText.hiddenFilePrefix(record),
                 standIn: record.kind == .singleFile ? FileSnapshot(standingFor: record) : nil,
-                canRetryFiles: record.kind == .singleFile,
-                retry: { context.actions.retry([record]) }
+                menus: model
             )
             .equatable()
         }
@@ -174,10 +180,23 @@ struct UploadDetailView: View {
         .padding(.top, 14)
     }
 
-    private var headline: UploadText.Line { UploadText.progressLine(record) }
+    /// The state tabs over the files: all five while the upload runs, and without Sending
+    /// and Waiting once it has ended.
+    static func fileTabs(for record: UploadRecord) -> [FilterTabs<UploadStateFilter>.Tab] {
+        let running: [FilterTabs<UploadStateFilter>.Tab] =
+            record.isActive ? [.init(value: .inProgress, title: "Sending"), .init(value: .waiting, title: "Waiting")] : []
+        return [.init(value: .all, title: "All")] + running
+            + [.init(value: .finished, title: "Finished"), .init(value: .failed, title: "Failed")]
+    }
+
+    /// The filter in effect: one of the tabs that are shown.
+    static func fileFilter(_ chosen: UploadStateFilter, for record: UploadRecord) -> UploadStateFilter {
+        fileTabs(for: record).contains { $0.value == chosen } ? chosen : .all
+    }
 
     /// Pausing and cancelling are designed but the engine cannot do them yet, so the buttons
-    /// are shown disabled while an upload runs. A failed upload can really be sent again.
+    /// are shown disabled while an upload runs. Once it has ended, the three dots open what
+    /// can be done with it.
     @ViewBuilder private var actionButtons: some View {
         let style = BoxButtonStyle(horizontal: 13, vertical: 5, radius: 7, fontSize: 12.5)
         HStack(spacing: 8) {
@@ -191,11 +210,10 @@ struct UploadDetailView: View {
                     .buttonStyle(BoxButtonStyle(kind: .danger, horizontal: 13, vertical: 5, radius: 7, fontSize: 12.5))
                     .disabled(true)
                     .help("Cancelling is not available yet")
-            case .failed:
-                Button("Try again") { context.actions.retry([record]) }
-                    .buttonStyle(style)
-            case .finished:
-                EmptyView()
+            case .failed, .finished:
+                MoreButton(
+                    target: .upload(id: record.id), actions: UploadAction.available(for: record),
+                    menus: context.model, boxed: true)
             }
         }
     }
@@ -229,13 +247,12 @@ private struct UploadFileRows: View, Equatable {
     /// The one file of a single-file upload, drawn from the upload itself until the files
     /// stream delivers it (or when the daemon no longer knows the upload).
     let standIn: FileSnapshot?
-    /// Sending one file again is possible only when the file is the whole upload.
-    let canRetryFiles: Bool
-    let retry: () -> Void
+    /// Where the rows' actions menus open.
+    let menus: MainWindowModel
 
     nonisolated static func == (lhs: UploadFileRows, rhs: UploadFileRows) -> Bool {
         lhs.files === rhs.files && lhs.filter == rhs.filter && lhs.hiddenPrefix == rhs.hiddenPrefix
-            && lhs.standIn == rhs.standIn && lhs.canRetryFiles == rhs.canRetryFiles
+            && lhs.standIn == rhs.standIn && lhs.menus === rhs.menus
     }
 
     var body: some View {
@@ -247,9 +264,7 @@ private struct UploadFileRows: View, Equatable {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(indexes, id: \.self) { index in
-                            LiveFileRow(
-                                files: files, index: index, hiddenPrefix: hiddenPrefix,
-                                retry: canRetryFiles ? retry : nil)
+                            LiveFileRow(files: files, index: index, hiddenPrefix: hiddenPrefix, menus: menus)
                         }
                     }
                     .padding(.top, 4)
@@ -259,7 +274,7 @@ private struct UploadFileRows: View, Equatable {
             }
         } else if let standIn {
             if filter.includes(standIn.state) {
-                FileRow(file: standIn, name: standIn.relativePath, retry: canRetryFiles ? retry : nil)
+                FileRow(file: standIn, name: standIn.relativePath, menus: menus)
                     .padding(.top, 4)
                     .padding(.trailing, 14)
                 Spacer(minLength: 0)
@@ -307,24 +322,28 @@ private struct LiveFileRow: View {
     let files: UploadFilesModel
     let index: Int
     let hiddenPrefix: String
-    let retry: (() -> Void)?
+    let menus: MainWindowModel
 
     var body: some View {
         if let file = files.file(at: index) {
-            FileRow(file: file, name: UploadText.fileName(file, hiding: hiddenPrefix), retry: retry)
+            FileRow(file: file, name: UploadText.fileName(file, hiding: hiddenPrefix), menus: menus)
         }
     }
 }
 
-/// One file of an upload: a plain thumbnail, the name, a short status and a thin line.
+/// One file of an upload: a plain thumbnail, the name, a short status, a thin line and,
+/// once the file has ended, the three dots that open its actions.
 private struct FileRow: View {
     let file: FileSnapshot
     let name: String
-    /// Sends the file again; nil draws the link switched off.
-    let retry: (() -> Void)?
+    let menus: MainWindowModel
+    @State private var hovered = false
 
     var body: some View {
         let line = UploadText.fileLine(file)
+        let target = UploadActionTarget.file(uploadID: file.uploadID, index: file.index)
+        let actions = UploadAction.available(for: file)
+        let menuIsOpen = menus.actionsMenu?.target == target
         HStack(spacing: 12) {
             ThumbnailView(path: file.localPath, fileName: name, side: 26)
                 .frame(width: 30, height: 26)
@@ -340,21 +359,23 @@ private struct FileRow: View {
                         .monospacedDigit()
                         .foregroundStyle(line.tone.color)
                         .lineLimit(1)
-                    if file.state == .failed {
-                        // The engine cannot send one file of a folder again yet: there the
-                        // link is drawn switched off, and the upload's own button sends all.
-                        Button("Try again", action: retry ?? {})
-                            .buttonStyle(LinkButtonStyle(fontSize: 12))
-                            .disabled(retry == nil)
-                            .opacity(retry == nil ? 0.45 : 1)
-                            .help(retry == nil ? "Use Try again at the top to send this upload again" : "")
-                    }
                 }
                 ThinBar(fraction: file.barFraction, color: file.state.color)
             }
+            MoreButton(target: target, actions: actions, menus: menus)
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 7)
+        // The rule under the row takes its own point, as the mockup's border does.
+        .padding(.bottom, 1)
+        .background(hovered || menuIsOpen ? Theme.hover : .clear)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .contentShape(.rect)
+        .onHover { hovered = $0 }
+        .background {
+            if !actions.isEmpty {
+                SecondaryClickArea { menus.openActionsMenu(for: target, actions: actions, at: $0) }
+            }
+        }
     }
 }
