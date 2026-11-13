@@ -716,3 +716,7 @@ func (fakeS3) CompleteMultipart(context.Context, string, string, []uploader.Comp
 	return nil
 }
 func (fakeS3) AbortMultipart(context.Context, string, string) error { return nil }
+func (fakeS3) DeleteObjects(_ context.Context, keys []string) ([]string, error) {
+	return keys, nil
+}
+func (fakeS3) ListKeys(context.Context, string, func(string)) error { return nil }

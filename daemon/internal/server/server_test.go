@@ -165,11 +165,13 @@ func (e *env) startQueue(t *testing.T) {
 	})
 }
 
-func newEnv(t *testing.T, r queue.Runner) *env {
+func newEnv(t *testing.T, r queue.Runner) *env { return newEnvWith(t, r) }
+
+func newEnvWith(t *testing.T, r queue.Runner, opts ...server.Option) *env {
 	t.Helper()
 	logs := &syncBuffer{}
 	q := queue.New(r, time.Now)
-	srv := server.New(q, logging.New(logs, "debug", "rabbitholed"))
+	srv := server.New(q, logging.New(logs, "debug", "rabbitholed"), opts...)
 
 	lis := bufconn.Listen(1 << 20)
 	gs := grpc.NewServer()

@@ -262,16 +262,16 @@ func (s *Store) Save(c queue.Changes) error {
 }
 
 func updateUploads(tx *sql.Tx, recs []queue.UploadRecord) error {
-	stmt, err := tx.Prepare(`UPDATE uploads SET object_key = ?, bytes_sent = ?, state = ?, error_message = ?,
-		files_finished = ?, files_failed = ?, region = ?, prefix = ?, ended_at_ms = ? WHERE id = ?`)
+	stmt, err := tx.Prepare(`UPDATE uploads SET object_key = ?, bytes_total = ?, bytes_sent = ?, state = ?, error_message = ?,
+		files_total = ?, files_finished = ?, files_failed = ?, region = ?, prefix = ?, ended_at_ms = ? WHERE id = ?`)
 	if err != nil {
 		return fmt.Errorf("prepare upload update: %w", err)
 	}
 	defer func() { _ = stmt.Close() }()
 	for _, rec := range recs {
 		sn := rec.Snapshot
-		if _, err := stmt.Exec(sn.ObjectKey, sn.BytesSent, int(sn.State), sn.ErrorMessage,
-			sn.FilesFinished, sn.FilesFailed, rec.Region, rec.Prefix, ms(sn.EndedAt), sn.ID); err != nil {
+		if _, err := stmt.Exec(sn.ObjectKey, sn.BytesTotal, sn.BytesSent, int(sn.State), sn.ErrorMessage,
+			sn.FilesTotal, sn.FilesFinished, sn.FilesFailed, rec.Region, rec.Prefix, ms(sn.EndedAt), sn.ID); err != nil {
 			return fmt.Errorf("update upload: %w", err)
 		}
 	}

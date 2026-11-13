@@ -152,6 +152,76 @@ func (c *client) AbortMultipart(ctx context.Context, key, uploadID string) error
 	return mapError(err)
 }
 
+// DeleteObjects deletes the keys in one request. S3 reports a missing key as
+// deleted, and so does this: only a key S3 refused to delete is left out of
+// the result. The error never carries the text S3 sent back for a key.
+func (c *client) DeleteObjects(ctx context.Context, keys []string) ([]string, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	if len(keys) > uploader.MaxDeleteBatch {
+		return nil, fmt.Errorf("awss3: %d keys exceed the limit of %d per request", len(keys), uploader.MaxDeleteBatch)
+	}
+	objects := make([]types.ObjectIdentifier, len(keys))
+	for i, k := range keys {
+		objects[i] = types.ObjectIdentifier{Key: aws.String(k)}
+	}
+	out, err := c.s3.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+		Bucket: aws.String(c.bucket),
+		Delete: &types.Delete{Objects: objects, Quiet: aws.Bool(true)},
+	})
+	if err != nil {
+		return nil, mapErrorWithDenial(err, uploader.ErrDeleteDenied)
+	}
+	return deletedKeys(keys, out.Errors)
+}
+
+// deletedKeys returns the keys that are not among the failures. It reports the
+// first failure as an error built from its code alone.
+func deletedKeys(keys []string, failures []types.Error) ([]string, error) {
+	failed := map[string]string{}
+	var first string
+	for _, f := range failures {
+		code := aws.ToString(f.Code)
+		if code == "NoSuchKey" {
+			continue // already gone
+		}
+		failed[aws.ToString(f.Key)] = code
+		if first == "" {
+			first = code
+		}
+	}
+	deleted := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if _, bad := failed[k]; !bad {
+			deleted = append(deleted, k)
+		}
+	}
+	if len(failed) == 0 {
+		return deleted, nil
+	}
+	return deleted, mapErrorWithDenial(&smithy.GenericAPIError{Code: first}, uploader.ErrDeleteDenied)
+}
+
+// ListKeys lists every key under prefix, one page at a time. It needs only
+// s3:ListBucket. A denied listing maps to ErrForbidden.
+func (c *client) ListKeys(ctx context.Context, prefix string, visit func(key string)) error {
+	pages := s3.NewListObjectsV2Paginator(c.s3, &s3.ListObjectsV2Input{
+		Bucket: aws.String(c.bucket),
+		Prefix: aws.String(prefix),
+	})
+	for pages.HasMorePages() {
+		page, err := pages.NextPage(ctx)
+		if err != nil {
+			return mapErrorWithDenial(err, uploader.ErrForbidden)
+		}
+		for _, obj := range page.Contents {
+			visit(aws.ToString(obj.Key))
+		}
+	}
+	return nil
+}
+
 // ErrorDetails returns the AWS error code and the HTTP status an error carries,
 // for diagnostics. Either is zero-valued when the error does not carry it. It
 // never returns the error's text, which may echo request content.

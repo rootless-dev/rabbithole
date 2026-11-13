@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -72,6 +73,9 @@ type Store interface {
 	FailInterrupted(message string, at time.Time) error
 	// DeleteUpload removes an upload with its items and files.
 	DeleteUpload(uploadID string) error
+	// DeleteFiles removes the files with the given FileSnapshot.Index values
+	// from an upload. It does not touch the upload's own counters.
+	DeleteFiles(uploadID string, indexes []int) error
 }
 
 // Logger is what the queue needs to report a storage failure.
@@ -125,10 +129,21 @@ func (m *memStore) Save(c Changes) error {
 		}
 	}
 	for _, rec := range c.Files {
-		if files := m.files[rec.Snapshot.UploadID]; rec.Snapshot.Index >= 0 && rec.Snapshot.Index < len(files) {
-			files[rec.Snapshot.Index] = rec
+		// By FileSnapshot.Index: once files are removed it is not the position.
+		files := m.files[rec.Snapshot.UploadID]
+		if at := slices.IndexFunc(files, func(f FileRecord) bool { return f.Snapshot.Index == rec.Snapshot.Index }); at >= 0 {
+			files[at] = rec
 		}
 	}
+	return nil
+}
+
+func (m *memStore) DeleteFiles(id string, indexes []int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.files[id] = slices.DeleteFunc(m.files[id], func(f FileRecord) bool {
+		return slices.Contains(indexes, f.Snapshot.Index)
+	})
 	return nil
 }
 

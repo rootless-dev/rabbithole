@@ -70,6 +70,8 @@ func (q *Queue) checkRetryableLocked(s uploader.Settings, id string) error {
 	switch {
 	case !ok:
 		return ErrUnknownUpload
+	case u.busy:
+		return ErrUploadActive
 	case u.snap.State != Failed:
 		return ErrUploadNotFailed
 	case u.bucket != s.Bucket:

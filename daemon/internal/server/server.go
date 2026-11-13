@@ -21,19 +21,38 @@ import (
 type Server struct {
 	pb.UnimplementedDaemonServer
 
-	queue *queue.Queue
-	log   *logging.Logger
+	queue        *queue.Queue
+	log          *logging.Logger
+	objects      Objects
+	onConfigured func(uploader.Settings)
 
 	mu       sync.Mutex
 	settings uploader.Settings
 	hasConf  bool
 }
 
+// Option changes how New builds a Server.
+type Option func(*Server)
+
+// WithObjects lets RemoveUpload delete objects from the bucket through o.
+// Without it a removal that asks for the objects to go is refused.
+func WithObjects(o Objects) Option { return func(s *Server) { s.objects = o } }
+
+// WithOnConfigured makes the server call fn each time Configure succeeds, with
+// the new settings. fn must not block.
+func WithOnConfigured(fn func(uploader.Settings)) Option {
+	return func(s *Server) { s.onConfigured = fn }
+}
+
 // New returns a Server that enqueues uploads on q.
-func New(q *queue.Queue, log *logging.Logger) *Server {
+func New(q *queue.Queue, log *logging.Logger, opts ...Option) *Server {
 	// Until Configure names a bucket no upload is shown.
 	q.SetBucket("")
-	return &Server{queue: q, log: log}
+	s := &Server{queue: q, log: log}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Configure replaces the AWS settings used by uploads enqueued from now on.
@@ -63,6 +82,9 @@ func (s *Server) Configure(_ context.Context, req *pb.ConfigureRequest) (*pb.Con
 	s.settings, s.hasConf = st, true
 	s.mu.Unlock()
 	s.queue.SetBucket(st.Bucket)
+	if s.onConfigured != nil {
+		s.onConfigured(st)
+	}
 
 	s.log.Info("configured", "region", st.Region, "bucket", st.Bucket, "prefix", st.Prefix)
 	return &pb.ConfigureResponse{}, nil
@@ -102,6 +124,8 @@ func (s *Server) retryStatus(id string, err error) error {
 		return status.Error(codes.FailedPrecondition, "Only a failed file can be retried")
 	case errors.Is(err, queue.ErrOtherBucket):
 		return status.Error(codes.FailedPrecondition, "This upload belongs to another bucket")
+	case errors.Is(err, queue.ErrUploadActive):
+		return status.Error(codes.FailedPrecondition, "This upload is being removed")
 	}
 	s.log.Error("retry failed", "upload_id", id, "error", err.Error())
 	return status.Error(codes.Internal, "could not retry upload")

@@ -305,6 +305,24 @@ func TestOpenRefusesADatabaseOfANewerSchema(t *testing.T) {
 	}
 }
 
+func TestSaveStoresTheFileCountAndByteTotalOfAnUpload(t *testing.T) {
+	s, _ := openTemp(t)
+	rec, items, files := folderUpload("u1", 1)
+	if err := s.CreateUpload(rec, items, files); err != nil {
+		t.Fatal(err)
+	}
+
+	rec.Snapshot.FilesTotal, rec.Snapshot.BytesTotal = 1, 5
+	if err := s.Save(queue.Changes{Uploads: []queue.UploadRecord{rec}}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Uploads()
+	if err != nil || len(got) != 1 || got[0].Snapshot.FilesTotal != 1 || got[0].Snapshot.BytesTotal != 5 {
+		t.Fatalf("stored upload = %+v (err %v), want 1 file and 5 bytes", got, err)
+	}
+}
+
 func TestOpenFailsWhenThePathIsAFolder(t *testing.T) {
 	dir := t.TempDir()
 

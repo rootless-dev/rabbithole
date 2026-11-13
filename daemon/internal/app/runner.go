@@ -59,6 +59,34 @@ func (r *runner) ResolveFolder(ctx context.Context, s uploader.Settings, name st
 	return "", err
 }
 
+// DeleteObjects deletes the objects with exactly these keys from the bucket of
+// s, in batches of at most uploader.MaxDeleteBatch, and logs one line if it
+// fails, like Run. It returns the keys deleted, also when it fails.
+func (r *runner) DeleteObjects(ctx context.Context, s uploader.Settings, keys []string) ([]string, error) {
+	client, err := r.client(ctx, s)
+	var deleted []string
+	if err == nil {
+		deleted, err = uploader.DeleteKeys(ctx, client, keys)
+	}
+	if err != nil {
+		r.logFailureOf(ctx, "delete from bucket failed", []any{"keys", len(keys), "deleted", len(deleted)}, err)
+	}
+	return deleted, err
+}
+
+// ListKeys lists every key under prefix in the bucket of s, and logs one line
+// if that fails, like Run.
+func (r *runner) ListKeys(ctx context.Context, s uploader.Settings, prefix string, visit func(key string)) error {
+	client, err := r.client(ctx, s)
+	if err == nil {
+		err = client.ListKeys(ctx, prefix, visit)
+	}
+	if err != nil {
+		r.logFailureOf(ctx, "bucket listing failed", []any{"prefix", prefix}, err)
+	}
+	return err
+}
+
 // client returns the S3 client for s, building one only when s differs from
 // the settings of the client it already has.
 func (r *runner) client(ctx context.Context, s uploader.Settings) (uploader.S3, error) {
@@ -76,7 +104,13 @@ func (r *runner) client(ctx context.Context, s uploader.Settings) (uploader.S3, 
 }
 
 func (r *runner) logFailure(ctx context.Context, msg, file string, err error) {
-	kv := []any{"file", file, "reason", uploader.Message(err)}
+	r.logFailureOf(ctx, msg, []any{"file", file}, err)
+}
+
+// logFailureOf logs one line with the fields in what, the readable reason, and
+// the AWS error code and HTTP status when err has them.
+func (r *runner) logFailureOf(ctx context.Context, msg string, what []any, err error) {
+	kv := append(what, "reason", uploader.Message(err))
 	code, status := awss3.ErrorDetails(err)
 	if code != "" {
 		kv = append(kv, "aws_code", code)

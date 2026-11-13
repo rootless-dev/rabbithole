@@ -106,6 +106,7 @@ type upload struct {
 	prefix      string
 	lastPublish time.Time
 	parallel    int
+	busy        bool // files are being removed; see remove.go
 
 	// items and files are kept only while the upload is queued or running; once
 	// it ends they are read from the store when needed.
@@ -120,6 +121,7 @@ type Queue struct {
 	wake    chan struct{} // capacity 1: signals Run that work may be waiting
 	store   Store
 	journal *journal
+	onEnded func() // called after each upload ends; may be nil
 
 	mu       sync.Mutex
 	uploads  map[string]*upload
@@ -149,6 +151,10 @@ func WithStore(s Store, log Logger) Option {
 		q.journal = newJournal(s, log)
 	}
 }
+
+// WithOnEnded makes the queue call fn each time an upload ends, outside its
+// lock. fn must not block.
+func WithOnEnded(fn func()) Option { return func(q *Queue) { q.onEnded = fn } }
 
 // New returns a Queue that runs uploads with r and reads the time from now.
 func New(r Runner, now func() time.Time, opts ...Option) *Queue {
@@ -439,6 +445,9 @@ func (q *Queue) process(ctx context.Context, id string) {
 	r.resolveFolders()
 	r.sendFiles()
 	r.finish(ctx)
+	if q.onEnded != nil {
+		q.onEnded()
+	}
 }
 
 // resolveFolders decides, once, where each folder of the upload lands.
@@ -695,49 +704,8 @@ func (r *run) settleOutcome() {
 		u.snap.State, u.snap.ErrorMessage = Failed, u.files[0].snap.ErrorMessage
 	default:
 		u.snap.State = Failed
-		u.snap.ErrorMessage = fmt.Sprintf("%d of %d files could not be sent", u.snap.FilesFailed, u.snap.FilesTotal)
+		u.snap.ErrorMessage = failedFilesMessage(u.snap.FilesFailed, u.snap.FilesTotal)
 	}
-}
-
-// recordOf is the stored form of an upload.
-func recordOf(u *upload) UploadRecord {
-	return UploadRecord{Snapshot: u.snap, Bucket: u.bucket, Region: u.region, Prefix: u.prefix, Parallel: u.parallel}
-}
-
-func itemRecords(items []item) []ItemRecord {
-	out := make([]ItemRecord, len(items))
-	for i, it := range items {
-		out[i] = ItemRecord{Index: i, Path: it.path, IsDir: it.isDir, DestName: it.destName, Resolved: it.resolved}
-	}
-	return out
-}
-
-func fileRecord(f *fileState) FileRecord {
-	return FileRecord{Snapshot: f.snap, Item: f.plan.item, Inner: f.plan.inner, Unreadable: f.plan.unreadable}
-}
-
-func fileRecords(files []*fileState) []FileRecord {
-	out := make([]FileRecord, len(files))
-	for i, f := range files {
-		out[i] = fileRecord(f)
-	}
-	return out
-}
-
-func filesSnapshots(files []*fileState) []FileSnapshot {
-	out := make([]FileSnapshot, 0, len(files))
-	for _, f := range files {
-		out = append(out, f.snap)
-	}
-	return out
-}
-
-func recordSnapshots(recs []FileRecord) []FileSnapshot {
-	out := make([]FileSnapshot, 0, len(recs))
-	for _, r := range recs {
-		out = append(out, r.Snapshot)
-	}
-	return out
 }
 
 // persistUpload queues the upload's current state for the store. The caller

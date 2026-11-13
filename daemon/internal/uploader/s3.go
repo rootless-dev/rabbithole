@@ -17,6 +17,8 @@ var (
 	ErrForbidden = errors.New("existence check denied")
 	// ErrWriteDenied means a write call was denied.
 	ErrWriteDenied = errors.New("write denied")
+	// ErrDeleteDenied means a delete call was denied (missing s3:DeleteObject).
+	ErrDeleteDenied = errors.New("delete denied")
 	// ErrBucketInaccessible means AWS has disabled all access to the bucket,
 	// which is what a bucket name owned by another account usually answers.
 	ErrBucketInaccessible = errors.New("bucket inaccessible")
@@ -72,4 +74,31 @@ type S3 interface {
 	UploadPart(ctx context.Context, key, uploadID string, number int32, body io.Reader, size int64) (etag string, err error)
 	CompleteMultipart(ctx context.Context, key, uploadID string, parts []CompletedPart) error
 	AbortMultipart(ctx context.Context, key, uploadID string) error
+	// DeleteObjects deletes up to MaxDeleteBatch objects by exact key in one
+	// request and returns the keys that are gone; a key that did not exist
+	// counts as gone. When it fails part-way, deleted still lists the keys
+	// that were deleted. A denied delete is reported as ErrDeleteDenied.
+	DeleteObjects(ctx context.Context, keys []string) (deleted []string, err error)
+	// ListKeys calls visit with every key under prefix, page after page. When
+	// it returns an error the listing is incomplete.
+	ListKeys(ctx context.Context, prefix string, visit func(key string)) error
+}
+
+// MaxDeleteBatch is the most keys one S3 DeleteObjects request may carry.
+const MaxDeleteBatch = 1000
+
+// DeleteKeys deletes keys from the bucket of s3 in batches of at most
+// MaxDeleteBatch, stopping at the first batch that fails. It returns the keys
+// deleted so far, including those of a batch that failed part-way.
+func DeleteKeys(ctx context.Context, s3 S3, keys []string) ([]string, error) {
+	var deleted []string
+	for start := 0; start < len(keys); start += MaxDeleteBatch {
+		batch := keys[start:min(start+MaxDeleteBatch, len(keys))]
+		done, err := s3.DeleteObjects(ctx, batch)
+		deleted = append(deleted, done...)
+		if err != nil {
+			return deleted, err
+		}
+	}
+	return deleted, nil
 }

@@ -101,6 +101,16 @@ func (f *fakeS3) PrefixExists(ctx context.Context, prefix string) (bool, error) 
 	return false, nil
 }
 
+func (f *fakeS3) DeleteObjects(_ context.Context, keys []string) ([]string, error) {
+	f.calls = append(f.calls, "delete")
+	return keys, nil
+}
+
+func (f *fakeS3) ListKeys(context.Context, string, func(string)) error {
+	f.calls = append(f.calls, "list")
+	return nil
+}
+
 func (f *fakeS3) PutObject(ctx context.Context, key string, body io.Reader, size int64) error {
 	f.calls = append(f.calls, "put")
 	f.putKeys = append(f.putKeys, key)
