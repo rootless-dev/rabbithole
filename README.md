@@ -4,6 +4,20 @@ Rabbithole is a personal backup tool for macOS. It sends files and folders to an
 S3 bucket in your own AWS account and keeps a local history of what it sent. It is
 built for one user on one Mac; it is not a hosted service.
 
+## Screenshots
+
+The images are the app's own screens rendered with sample data.
+
+| The window under the menu bar icon | The main window |
+|---|---|
+| <img src="docs/screenshots/tray.png" alt="The menu bar window with a drop area, the progress of the uploads and the menu" width="232"> | <img src="docs/screenshots/overview.png" alt="Overview with the uploads in progress and finished" width="560"> |
+
+| History | One upload |
+|---|---|
+| <img src="docs/screenshots/history.png" alt="History with a sending, two paused, a finished, a canceled and a downloading upload, and the actions menu open" width="400"> | <img src="docs/screenshots/upload-detail.png" alt="The files of a folder upload, each with its own progress" width="400"> |
+
+<img src="docs/screenshots/settings.png" alt="The upload settings" width="560">
+
 ## What it does
 
 - Uploads files and folders. A folder keeps its structure inside the bucket.
@@ -38,7 +52,8 @@ the settings and the credentials, which it hands to the daemon over the socket.
 
 - macOS 26.0 or later (the deployment target in `app/project.yml`).
 - Swift 6.0 and Xcode, to build the app.
-- Go 1.27.1 (the version in `daemon/go.mod`).
+- Go 1.27.4 or later (the version in `daemon/go.mod`). An older Go 1.27 downloads it
+  by itself on the first build.
 - `xcodegen`, which the build targets use to generate the Xcode project.
 - For `make generate` only: `buf`, `protoc-gen-swift` and `protoc-gen-grpc-swift-2`,
   installed with Homebrew. The Go protoc plugins are installed by `make tools`.
@@ -56,6 +71,13 @@ All commands run from the repository root.
 | `build`    | Builds the daemon, runs `xcodegen generate` and builds the app in Debug into `build/DerivedData`. |
 | `test`     | Builds the daemon, runs `go test -race ./...` in `daemon/`, then runs the app's tests with `xcodebuild test`. |
 | `run`      | Builds, quits any running Rabbithole, and starts the app in the foreground. |
+| `lint`     | Checks the daemon: `gofmt`, `go vet`, and no function over cyclomatic complexity 10 (needs `gocyclo`). |
+| `coverage` | Runs both test suites with coverage and writes the reports to `build/coverage`. |
+| `package`  | Builds the app in Release with a universal daemon (Apple silicon and Intel) and zips it to `build/Rabbithole.zip`. |
+
+The same targets run on GitHub Actions (`.github/workflows/ci.yml`): quality, tests,
+coverage, a security job (`govulncheck` and a secret scan) and the packaged app as a
+downloadable artifact. A second workflow runs CodeQL on the daemon.
 
 `make run` keeps the terminal attached to the app, so the daemon's JSON log lines
 appear there. The target ends when the app quits.
