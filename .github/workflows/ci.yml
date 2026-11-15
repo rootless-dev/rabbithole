@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+      - name: Install gocyclo
+        run: go install github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0
+      - name: Format, vet and complexity
+        run: make lint
+
+  test:
+    name: Test
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Tool versions
+        run: |
+          go version
+          xcodebuild -version
+          sw_vers
+      - name: Daemon and app tests
+        run: make test
+
+  coverage:
+    name: Coverage
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Tests with coverage
+        run: make coverage
+      - name: Coverage summary
+        if: always()
+        run: |
+          {
+            echo "## Coverage"
+            echo
+            echo "### Daemon (Go, statements, generated code left out)"
+            echo
+            echo '```'
+            tail -1 build/coverage/go.txt 2>/dev/null || echo "no report"
+            echo '```'
+            echo
+            echo "### App (Swift, lines)"
+            echo
+            echo '```'
+            grep -E "Rabbithole\.app|RabbitholeTests" build/coverage/app.txt 2>/dev/null || echo "no report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: |
+            build/coverage/go.out
+            build/coverage/go.txt
+            build/coverage/app.txt
+          if-no-files-found: warn
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The secret scan reads the whole history, not only the last commit.
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+      - name: Known vulnerabilities in the daemon and its dependencies
+        working-directory: daemon
+        # The tool is installed for this Linux runner; GOOS is set only for the
+        # scan, because the daemon ships for macOS and that build is what counts.
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          GOOS=darwin "$(go env GOPATH)/bin/govulncheck" ./...
+      - name: Secrets in the repository history
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  package:
+    name: Build and package
+    runs-on: macos-26
+    needs: [quality, test]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Release build, zipped
+        run: make package
+      - name: Check the packaged app
+        run: |
+          app=build/DerivedData/Build/Products/Release/Rabbithole.app
+          echo "app:    $(lipo -archs "$app/Contents/MacOS/Rabbithole")"
+          echo "daemon: $(lipo -archs "$app/Contents/Resources/rabbitholed")"
+          codesign --verify --deep --strict "$app"
+      - name: Upload Rabbithole.app
+        uses: actions/upload-artifact@v7
+        with:
+          name: Rabbithole-${{ github.sha }}
+          path: build/Rabbithole.zip
+          if-no-files-found: error

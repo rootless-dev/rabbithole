@@ -1,0 +1,12 @@
+# Secret scan configuration, used by the Security job of the CI workflow.
+title = "Rabbithole"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Made-up access key ids the tests use; they are not credentials"
+regexes = [
+  '''AKIANEWKEYID0000WXYZ''',
+  '''AKIAIOSFODNN7EXAMPLE''',
+]
