@@ -195,3 +195,7 @@ Other limitations:
 
 - The app is signed ad hoc and built locally. There is no notarized or downloadable release.
 - macOS only.
+
+## License
+
+Rabbithole is released under the MIT License. See [LICENSE](LICENSE).
